@@ -1,0 +1,33 @@
+ARG NODE_IMAGE=node:24.18.0-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
+
+FROM ${NODE_IMAGE}
+
+LABEL io.notty.guard.egress-abi="1"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    NODE_ENV=production
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      conntrack \
+      dnsmasq \
+      iproute2 \
+      nftables \
+    && dnsmasq --version | grep -qi conntrack \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/nosh-guard
+
+COPY package.json /opt/nosh-guard/package.json
+COPY lib/guardd/constants.js /opt/nosh-guard/lib/guardd/constants.js
+COPY lib/guardd/grants.js /opt/nosh-guard/lib/guardd/grants.js
+COPY lib/guardd/egress-policy.js /opt/nosh-guard/lib/guardd/egress-policy.js
+COPY lib/guardd/managed-dns-evidence.js /opt/nosh-guard/lib/guardd/managed-dns-evidence.js
+COPY lib/guardd/proxy-contract.js /opt/nosh-guard/lib/guardd/proxy-contract.js
+COPY scripts/nosh-guard-egress-gateway.mjs /opt/nosh-guard/scripts/nosh-guard-egress-gateway.mjs
+
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
+  CMD test -e /run/nosh-guard/healthy \
+    && nft list table inet nosh_guard >/dev/null 2>&1
+
+ENTRYPOINT ["node", "/opt/nosh-guard/scripts/nosh-guard-egress-gateway.mjs"]

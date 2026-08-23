@@ -1,0 +1,31 @@
+klock.c
+ ├─ parse_args()
+ ├─ main()
+ ├─ renderer.c
+ │    ├─ draw_frame()
+ │    ├─ geometry_polar()
+ │    ├─ geometry_twirl()
+ │    ├─ geometry_sine()
+ │    ├─ geometry_fold()
+ │    └─ geometry_feedback()
+ ├─ fractal.c
+ │    ├─ julia()
+ │    ├─ mandelbrot()
+ │    └─ fractal_selector()
+ ├─ palette.c
+ │    ├─ palette_fire()
+ │    ├─ palette_rainbow()
+ │    ├─ palette_neon()
+ │    ├─ palette_grayscale()
+ │    ├─ palette_plasma()
+ ├─ glyphs.c
+ │    ├─ glyph_for_iters()
+ │    ├─ glyph_map()
+ │    ├─ glyph_set()
+ │    └─ glyph_expr()
+ └─ lockscreen.c
+      ├─ raw_mode()
+      ├─ unlock_prompt()
+      ├─ file_mode()
+      └─ fractal_mode()
+

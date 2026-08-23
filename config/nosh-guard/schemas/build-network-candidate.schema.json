@@ -1,0 +1,486 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/build-network-candidate.schema.json",
+  "title": "Nosh build network candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "apiVersion", "kind", "generatedAt", "runId", "approved", "authoritative", "attested", "project", "evidence", "spec", "contentHash"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshBuildNetworkCandidate" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "runId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+    "approved": { "const": false },
+    "authoritative": { "const": false },
+    "attested": { "const": false },
+    "project": { "$ref": "build-evidence-manifest.schema.json#/$defs/project" },
+    "evidence": { "$ref": "build-profile-candidate.schema.json#/$defs/evidence" },
+    "spec": { "$ref": "#/$defs/spec" },
+    "contentHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  },
+  "$defs": {
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "outputImageDigest", "outputImageDigestUse", "observations", "provenance", "limitations"],
+      "properties": {
+        "platform": { "type": "string", "minLength": 1 },
+        "outputImageDigest": { "type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$" },
+        "outputImageDigestUse": { "const": "informational-only" },
+        "observations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["evidenceContractVersion", "destinations", "dns", "resources", "correlations", "coverage", "directIp", "encryptedDns", "privateDestinations", "parseFailures", "unresolved"],
+          "properties": {
+            "evidenceContractVersion": { "const": 2 },
+            "destinations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["fqdn", "ip", "protocol", "port", "source"],
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": { "fqdn": { "type": "null" } },
+                      "required": ["fqdn"]
+                    },
+                    "then": {
+                      "properties": { "source": { "const": "nosh-l4" } }
+                    },
+                    "else": {
+                      "properties": { "source": { "const": "nosh-build-dns+nosh-l4" } }
+                    }
+                  }
+                ],
+                "properties": {
+                  "fqdn": { "type": ["string", "null"] },
+                  "ip": { "$ref": "#/$defs/ipAddress" },
+                  "protocol": { "enum": ["tcp", "udp"] },
+                  "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                  "source": { "enum": ["nosh-l4", "nosh-build-dns+nosh-l4"] }
+                }
+              }
+            },
+            "dns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["queries", "answers", "snapshots"],
+              "properties": {
+                "queries": { "type": "array", "items": { "$ref": "#/$defs/dnsQuery" } },
+                "answers": { "type": "array", "items": { "$ref": "#/$defs/dnsAnswer" } },
+                "snapshots": { "type": "array", "items": { "$ref": "#/$defs/dnsSnapshot" } }
+              }
+            },
+            "resources": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/resource" }
+            },
+            "correlations": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/correlation" }
+            },
+            "coverage": { "$ref": "#/$defs/coverage" },
+            "directIp": { "type": "array" },
+            "encryptedDns": { "type": "array" },
+            "privateDestinations": { "type": "array" },
+            "parseFailures": { "type": "array" },
+            "unresolved": { "type": "array" }
+          }
+        },
+        "provenance": { "type": "object" },
+        "limitations": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "pass": {
+      "enum": ["cold", "warm"]
+    },
+    "dnsName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253
+    },
+    "ipAddress": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 45
+    },
+    "resolver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["address", "port"],
+      "properties": {
+        "address": { "$ref": "#/$defs/ipAddress" },
+        "port": { "type": "integer", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "dnsResolver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["address", "port"],
+      "properties": {
+        "address": { "$ref": "#/$defs/ipAddress" },
+        "port": { "const": 53 }
+      }
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pid", "comm"],
+      "properties": {
+        "pid": { "type": "integer", "minimum": 1 },
+        "comm": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "processOrNull": {
+      "anyOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/process" }
+      ]
+    },
+    "dnsQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "pass", "timestampNs", "transport", "qname", "queryType", "queryClass", "resolver", "clientPort", "socketCookie", "transactionId", "correlationComplete"],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "socketCookie": { "const": "0" } },
+            "required": ["socketCookie"]
+          },
+          "then": {
+            "properties": { "correlationComplete": { "const": false } }
+          },
+          "else": {
+            "properties": { "correlationComplete": { "const": true } }
+          }
+        }
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "pass": { "$ref": "#/$defs/pass" },
+        "timestampNs": { "$ref": "#/$defs/decimal" },
+        "transport": { "const": "udp" },
+        "qname": { "$ref": "#/$defs/dnsName" },
+        "queryType": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "queryClass": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "resolver": { "$ref": "#/$defs/dnsResolver" },
+        "clientPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "socketCookie": { "$ref": "#/$defs/decimal" },
+        "transactionId": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "correlationComplete": { "type": "boolean" }
+      }
+    },
+    "dnsAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshotId", "queryId", "pass", "index", "ownerName", "type", "class", "ttl", "valueKind", "value"],
+      "allOf": [
+        {
+          "if": { "properties": { "valueKind": { "const": "cname" } } },
+          "then": { "properties": { "type": { "const": 5 } } }
+        },
+        {
+          "if": { "properties": { "valueKind": { "const": "ipv4" } } },
+          "then": { "properties": { "type": { "const": 1 } } }
+        },
+        {
+          "if": { "properties": { "valueKind": { "const": "ipv6" } } },
+          "then": { "properties": { "type": { "const": 28 } } }
+        }
+      ],
+      "properties": {
+        "snapshotId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "queryId": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+        "pass": { "$ref": "#/$defs/pass" },
+        "index": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "ownerName": { "$ref": "#/$defs/dnsName" },
+        "type": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "class": { "const": 1 },
+        "ttl": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "valueKind": { "enum": ["cname", "ipv4", "ipv6"] },
+        "value": { "type": "string", "minLength": 1, "maxLength": 253 }
+      }
+    },
+    "dnsAddress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["address", "family", "ownerName", "ttl"],
+      "properties": {
+        "address": { "$ref": "#/$defs/ipAddress" },
+        "family": { "enum": ["ipv4", "ipv6"] },
+        "ownerName": { "$ref": "#/$defs/dnsName" },
+        "ttl": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+      }
+    },
+    "dnsSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "queryId", "pass", "timestampNs", "socketCookie", "transactionId", "clientPort", "queryTimestampNs", "qname", "queryType", "queryClass", "resolver", "correlationComplete", "responseCode", "truncated", "parseComplete", "answerLimitReached", "answersDeclared", "answersCaptured", "cnameChain", "addresses"],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "correlationComplete": { "const": true } },
+            "required": ["correlationComplete"]
+          },
+          "then": {
+            "properties": {
+              "queryId": { "type": "string", "minLength": 1, "maxLength": 512 },
+              "queryTimestampNs": { "$ref": "#/$defs/decimal" },
+              "socketCookie": { "type": "string", "pattern": "^[1-9][0-9]*$" }
+            }
+          },
+          "else": {
+            "properties": {
+              "queryId": { "type": "null" },
+              "queryTimestampNs": { "type": "null" }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "queryId": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+        "pass": { "$ref": "#/$defs/pass" },
+        "timestampNs": { "$ref": "#/$defs/decimal" },
+        "socketCookie": { "$ref": "#/$defs/decimal" },
+        "transactionId": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "clientPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "queryTimestampNs": {
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/decimal" }
+          ]
+        },
+        "qname": { "$ref": "#/$defs/dnsName" },
+        "queryType": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "queryClass": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "resolver": { "$ref": "#/$defs/dnsResolver" },
+        "correlationComplete": { "type": "boolean" },
+        "responseCode": { "type": "integer", "minimum": 0, "maximum": 15 },
+        "truncated": { "type": "boolean" },
+        "parseComplete": { "type": "boolean" },
+        "answerLimitReached": { "type": "boolean" },
+        "answersDeclared": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "answersCaptured": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "cnameChain": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/dnsName" } },
+        "addresses": { "type": "array", "items": { "$ref": "#/$defs/dnsAddress" } }
+      }
+    },
+    "dnsDestinationCorrelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "pass", "snapshotId", "queryId", "qname", "ownerName", "address", "protocol", "port", "destinationKey", "process", "timestampNs"],
+      "properties": {
+        "kind": { "const": "dns-destination" },
+        "pass": { "$ref": "#/$defs/pass" },
+        "snapshotId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "queryId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "qname": { "$ref": "#/$defs/dnsName" },
+        "ownerName": { "$ref": "#/$defs/dnsName" },
+        "address": { "$ref": "#/$defs/ipAddress" },
+        "protocol": { "enum": ["tcp", "udp"] },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "destinationKey": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "process": { "$ref": "#/$defs/processOrNull" },
+        "timestampNs": { "$ref": "#/$defs/decimal" }
+      }
+    },
+    "dnsQueryProcessCorrelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "correlationConfidence", "pass", "queryId", "socketCookie", "clientPort", "qname", "resolver", "process", "timestampNs", "attemptTimestampNs"],
+      "properties": {
+        "kind": { "const": "dns-query-process" },
+        "correlationConfidence": { "const": "heuristic-socket-resolver-bounded-time" },
+        "pass": { "$ref": "#/$defs/pass" },
+        "queryId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "socketCookie": { "$ref": "#/$defs/decimal" },
+        "clientPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "qname": { "$ref": "#/$defs/dnsName" },
+        "resolver": { "$ref": "#/$defs/resolver" },
+        "process": { "$ref": "#/$defs/processOrNull" },
+        "timestampNs": { "$ref": "#/$defs/decimal" },
+        "attemptTimestampNs": { "$ref": "#/$defs/decimal" }
+      }
+    },
+    "resourceDnsQueryCorrelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "correlationConfidence", "pass", "resourceId", "provider", "host", "queryId", "qname", "resolver", "resourceTimestampUnixNs", "queryTimestampNs", "resourceProcess", "dnsProcess"],
+      "properties": {
+        "kind": { "const": "resource-dns-query" },
+        "correlationConfidence": { "const": "heuristic-same-pid-host-bounded-time" },
+        "pass": { "$ref": "#/$defs/pass" },
+        "resourceId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "host": { "$ref": "#/$defs/resourceHost" },
+        "queryId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "qname": { "$ref": "#/$defs/dnsName" },
+        "resolver": { "$ref": "#/$defs/resolver" },
+        "resourceTimestampUnixNs": { "$ref": "#/$defs/decimal" },
+        "queryTimestampNs": { "$ref": "#/$defs/decimal" },
+        "resourceProcess": { "$ref": "#/$defs/process" },
+        "dnsProcess": { "$ref": "#/$defs/process" }
+      }
+    },
+    "resourceDestinationCorrelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "correlationConfidence", "pass", "resourceId", "provider", "host", "snapshotId", "queryId", "qname", "ownerName", "address", "protocol", "port", "destinationKey", "resourceTimestampUnixNs", "destinationTimestampNs", "resourceProcess", "networkProcess"],
+      "properties": {
+        "kind": { "const": "resource-destination" },
+        "correlationConfidence": { "const": "heuristic-same-pid-host-port-bounded-time" },
+        "pass": { "$ref": "#/$defs/pass" },
+        "resourceId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "host": { "$ref": "#/$defs/resourceHost" },
+        "snapshotId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "queryId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "qname": { "$ref": "#/$defs/dnsName" },
+        "ownerName": { "$ref": "#/$defs/dnsName" },
+        "address": { "$ref": "#/$defs/ipAddress" },
+        "protocol": { "enum": ["tcp", "udp"] },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "destinationKey": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "resourceTimestampUnixNs": { "$ref": "#/$defs/decimal" },
+        "destinationTimestampNs": { "$ref": "#/$defs/decimal" },
+        "resourceProcess": { "$ref": "#/$defs/process" },
+        "networkProcess": { "$ref": "#/$defs/process" }
+      }
+    },
+    "resourceDirectDestinationCorrelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "correlationConfidence", "pass", "resourceId", "provider", "host", "address", "protocol", "port", "destinationKey", "resourceTimestampUnixNs", "destinationTimestampNs", "resourceProcess", "networkProcess"],
+      "properties": {
+        "kind": { "const": "resource-direct-destination" },
+        "correlationConfidence": { "const": "heuristic-direct-ip-same-pid-port-bounded-time" },
+        "pass": { "$ref": "#/$defs/pass" },
+        "resourceId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "host": { "$ref": "#/$defs/resourceHost" },
+        "address": { "$ref": "#/$defs/ipAddress" },
+        "protocol": { "enum": ["tcp", "udp"] },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "destinationKey": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "resourceTimestampUnixNs": { "$ref": "#/$defs/decimal" },
+        "destinationTimestampNs": { "$ref": "#/$defs/decimal" },
+        "resourceProcess": { "$ref": "#/$defs/process" },
+        "networkProcess": { "$ref": "#/$defs/process" }
+      }
+    },
+    "correlation": {
+      "oneOf": [
+        { "$ref": "#/$defs/dnsDestinationCorrelation" },
+        { "$ref": "#/$defs/dnsQueryProcessCorrelation" },
+        { "$ref": "#/$defs/resourceDnsQueryCorrelation" },
+        { "$ref": "#/$defs/resourceDestinationCorrelation" },
+        { "$ref": "#/$defs/resourceDirectDestinationCorrelation" }
+      ]
+    },
+    "resourceHost": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^(?:\\[[0-9a-f:.]+\\]|[^\\s\\[\\]:/@?#\\\\%]+)$"
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "provider", "scheme", "host", "port", "path", "pathTruncated", "process", "pid", "tid", "timestampUnixNs", "timestampMonotonicNs", "targetCgroupId", "cgroupId", "pass", "source"],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "source": { "const": "nosh-url" } },
+            "required": ["source"]
+          },
+          "then": {
+            "properties": {
+              "id": { "type": "string", "pattern": "^url:sha256:[a-f0-9]{64}$" },
+              "process": { "type": "string", "minLength": 1 },
+              "pid": { "type": "integer", "minimum": 1 },
+              "tid": { "type": "integer", "minimum": 1 },
+              "timestampUnixNs": { "$ref": "#/$defs/decimal" },
+              "timestampMonotonicNs": { "$ref": "#/$defs/decimal" },
+              "targetCgroupId": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+              "cgroupId": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+              "pass": { "$ref": "#/$defs/pass" }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "id": { "type": ["string", "null"] },
+        "provider": { "type": "string", "minLength": 1 },
+        "scheme": { "type": "string", "pattern": "^[a-z][a-z0-9+.-]{0,31}$" },
+        "host": { "$ref": "#/$defs/resourceHost" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "path": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "pathTruncated": { "type": "boolean" },
+        "process": { "type": ["string", "null"] },
+        "pid": { "type": ["integer", "null"], "minimum": 0 },
+        "tid": { "type": ["integer", "null"], "minimum": 0 },
+        "timestampUnixNs": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" },
+        "timestampMonotonicNs": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" },
+        "targetCgroupId": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" },
+        "cgroupId": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" },
+        "pass": { "type": ["string", "null"] },
+        "source": { "type": ["string", "null"] }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dns", "url"],
+      "properties": {
+        "dns": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["queries", "responses", "answers", "transactionMisses", "parseFailures", "complete"],
+          "allOf": [
+            {
+              "if": {
+                "properties": { "complete": { "const": true } },
+                "required": ["complete"]
+              },
+              "then": {
+                "properties": {
+                  "transactionMisses": { "const": 0 },
+                  "parseFailures": { "const": 0 }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "queries": { "type": "integer", "minimum": 0 },
+            "responses": { "type": "integer", "minimum": 0 },
+            "answers": { "type": "integer", "minimum": 0 },
+            "transactionMisses": { "type": "integer", "minimum": 0 },
+            "parseFailures": { "type": "integer", "minimum": 0 },
+            "complete": { "type": "boolean" }
+          }
+        },
+        "url": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "providers", "observations", "discoveryMisses", "readErrors", "complete", "limitations"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "providers": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+            "observations": { "type": "integer", "minimum": 0 },
+            "discoveryMisses": { "type": "integer", "minimum": 0 },
+            "readErrors": { "type": "integer", "minimum": 0 },
+            "complete": { "const": false },
+            "limitations": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+          }
+        }
+      }
+    }
+  }
+}

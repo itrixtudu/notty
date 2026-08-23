@@ -1,0 +1,37 @@
+name: nosh l4 evidence
+description: Metadata-only TCP, UDP, ICMPv4, and ICMPv6 evidence for a Nosh cgroup
+datasources:
+  nosh_l4_events:
+    fields:
+      timestamp_ns:
+        annotations:
+          description: Kernel monotonic timestamp in nanoseconds
+      cgroup_id:
+        annotations:
+          description: Cgroup identifier attributed to the socket or packet
+      socket_cookie:
+        annotations:
+          description: Stable socket cookie used for process correlation
+      packets:
+        annotations:
+          description: Running packet total for the flow
+      bytes:
+        annotations:
+          description: Running byte total for the flow
+      flags:
+        annotations:
+          description: Observation, completion, fragment, and parsing flags
+      source_address:
+        annotations:
+          description: Network-order source address bytes; never payload data
+      destination_address:
+        annotations:
+          description: Network-order destination address bytes; never payload data
+  nosh_l4_totals:
+    fields:
+      packets:
+        annotations:
+          description: Total packets observed for the flow key
+      bytes:
+        annotations:
+          description: Total bytes observed for the flow key

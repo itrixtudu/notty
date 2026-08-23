@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/portable-gateway-target-context.schema.json",
+  "title": "Nosh portable gateway projection target context",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "target",
+    "platform",
+    "networkName",
+    "sourceIpv4",
+    "gatewayIpv4",
+    "uplinkInterface",
+    "capabilities"
+  ],
+  "properties": {
+    "target": {
+      "enum": ["gateway-pf", "gateway-ipfw", "gateway-ipfilter"]
+    },
+    "platform": {
+      "enum": ["openbsd", "freebsd", "illumos", "netbsd"]
+    },
+    "networkName": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "sourceIpv4": {
+      "type": "string",
+      "format": "ipv4"
+    },
+    "gatewayIpv4": {
+      "type": "string",
+      "format": "ipv4"
+    },
+    "uplinkInterface": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]{1,15}$"
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9]*$"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "target": { "const": "gateway-pf" } } },
+      "then": { "properties": { "platform": { "const": "openbsd" } } }
+    },
+    {
+      "if": { "properties": { "target": { "const": "gateway-ipfw" } } },
+      "then": { "properties": { "platform": { "const": "freebsd" } } }
+    },
+    {
+      "if": { "properties": { "target": { "const": "gateway-ipfilter" } } },
+      "then": { "properties": { "platform": { "enum": ["illumos", "netbsd"] } } }
+    }
+  ]
+}

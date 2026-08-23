@@ -1,0 +1,13 @@
+{
+  "maxContextChars": 20000,
+  "agents": [
+    {
+      "id": "collab",
+      "label": "Collab",
+      "adapter": "collab",
+      "enabled": true,
+      "channel": "lobby",
+      "description": "Posts terminal context to the collab/intragent JSONL bus."
+    }
+  ]
+}

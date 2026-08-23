@@ -1,0 +1,62 @@
+{
+  "true": {
+    "target": "true",
+    "added_at": "2026-07-13T18:56:46.092Z",
+    "role": "",
+    "model": "",
+    "session_id": ""
+  },
+  "cdx1": {
+    "target": "cdx1",
+    "added_at": "2026-07-13T19:02:54.012Z",
+    "role": "",
+    "model": "",
+    "session_id": ""
+  },
+  "codex": {
+    "target": "codex",
+    "added_at": "2026-07-13T19:06:41.309Z",
+    "role": "",
+    "model": "",
+    "session_id": ""
+  },
+  "legacy-coder": {
+    "target": "legacy-coder",
+    "added_at": "2026-07-13T20:31:49.826Z",
+    "role": "legacy-coder",
+    "model": "",
+    "session_id": "",
+    "runtime": "codex",
+    "think": "",
+    "runtime_session_id": "",
+    "permission_mode": "",
+    "harness": "codex",
+    "backend": "default"
+  },
+  "qa": {
+    "target": "collab-9416a046-qa",
+    "added_at": "2026-08-07T10:52:44.455Z",
+    "role": "qa",
+    "harness": "codex",
+    "backend": "default",
+    "runtime": "codex",
+    "model": "gpt-5.4",
+    "think": "",
+    "session_id": "9416a046-d659-408e-946f-b3079f8d03f4",
+    "runtime_session_id": "",
+    "permission_mode": "danger-full-access"
+  },
+  "coordinator": {
+    "target": "collab-9416a046-coordinator",
+    "added_at": "2026-08-08T21:29:09.348Z",
+    "role": "coordinator",
+    "harness": "codex",
+    "backend": "default",
+    "runtime": "codex",
+    "model": "gpt-5.4",
+    "think": "",
+    "session_id": "9416a046-d659-408e-946f-b3079f8d03f4",
+    "runtime_session_id": "",
+    "permission_mode": "danger-full-access"
+  }
+}

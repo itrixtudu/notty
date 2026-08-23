@@ -1,0 +1,29 @@
+ARG NODE_IMAGE=node:24.18.0-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
+
+FROM ${NODE_IMAGE}
+
+ENV DOCKER_CONTAINER=1 \
+    CI=1 \
+    HOME=/lock/runtime/home \
+    XDG_CACHE_HOME=/lock/runtime/xdg-cache \
+    XDG_CONFIG_HOME=/lock/runtime/xdg-config \
+    NPM_CONFIG_CACHE=/lock/runtime/npm-cache \
+    NPM_CONFIG_USERCONFIG=/dev/null \
+    NPM_CONFIG_GLOBALCONFIG=/lock/runtime/global-npmrc \
+    NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
+    NPM_CONFIG_OMIT_LOCKFILE_REGISTRY_RESOLVED=false \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
+    NEXT_TELEMETRY_DISABLED=1
+
+RUN install -d -o root -g root -m 0755 /lock \
+    && install -d -o node -g node -m 0700 /lock/runtime
+
+COPY scripts/regenerate-package-lock-container.sh /usr/local/libexec/notty-regenerate-package-lock
+RUN chown root:root /usr/local/libexec/notty-regenerate-package-lock \
+    && chmod 0555 /usr/local/libexec/notty-regenerate-package-lock
+
+USER node
+WORKDIR /lock
+
+ENTRYPOINT ["/usr/local/libexec/notty-regenerate-package-lock"]

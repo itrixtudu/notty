@@ -1,0 +1,2 @@
+As a test look at agents/README.md I'm giving another agent these exact intructions except for the MYID. I want you to coordinate with the other agent to modify `castle.asc` and go a couple of rounds of ascii art. The goal is to make an ascii castle with walls a turret and a draw bridge with some ascii ghosts. Your trying to test that you can lock the file and pass it back and forth without stepping on eachother. You each get three turns modifying the file. I've set each of your MYID's in an env var but just in case it didn't come through yours is                 ~
+

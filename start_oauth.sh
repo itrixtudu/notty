@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+export NOTTY_OAUTH_ENABLED=true
+export NOTTY_OAUTH_CLIENT_ID=c0d3x
+export NOTTY_OAUTH_CLIENT_SECRET=ru73z
+export NOTTY_OAUTH_BOOT_TOKEN=c0d3xru73z
+export NOTTY_OAUTH_TTL_SECONDS=3600
+export NOTTY_OAUTH_TOKEN_PATH=/tmp/notty.token
+

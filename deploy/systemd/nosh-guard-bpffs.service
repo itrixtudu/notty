@@ -1,0 +1,12 @@
+[Unit]
+Description=Mount and attest bpffs for Nosh Guard
+After=local-fs.target
+Before=nosh-guardd.service
+
+[Service]
+Type=oneshot
+ExecStart=@@NOSH_GUARD_PREFIX@@/libexec/nosh-guard/ensure-nosh-guard-bpffs
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

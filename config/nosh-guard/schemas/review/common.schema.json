@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/common.schema.json",
+  "title": "Nosh semantic review common definitions",
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "stableId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}:[a-f0-9]{64}$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "safeToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}$"
+    },
+    "jsonValue": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "string", "maxLength": 16384 },
+        {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/jsonValue" }
+        },
+        {
+          "type": "object",
+          "maxProperties": 128,
+          "propertyNames": {
+            "not": { "enum": ["__proto__", "prototype", "constructor"] }
+          },
+          "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+        }
+      ]
+    },
+    "jsonObject": {
+      "type": "object",
+      "maxProperties": 128,
+      "propertyNames": {
+        "not": { "enum": ["__proto__", "prototype", "constructor"] }
+      },
+      "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "fields"],
+      "properties": {
+        "classification": {
+          "enum": ["portable", "portable-sensitive", "private"]
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "class"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^(?:/(?:[^~/]|~[01])*)+$"
+              },
+              "class": {
+                "enum": [
+                  "portable",
+                  "portable-sensitive",
+                  "portable-hashed",
+                  "private",
+                  "never-store"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "subjectId", "scopeDigest"],
+      "properties": {
+        "class": { "enum": ["build", "runtime"] },
+        "subjectId": { "$ref": "#/$defs/stableId" },
+        "scopeDigest": { "$ref": "#/$defs/hash" },
+        "projectKey": {
+          "type": "string",
+          "pattern": "^(?:[a-f0-9]{64}|sha256:[a-f0-9]{64})$"
+        },
+        "platform": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "target": { "type": ["string", "null"], "maxLength": 256 },
+        "dockerfileDigest": {
+          "oneOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }]
+        },
+        "imageDigest": {
+          "oneOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }]
+        },
+        "workspaceDigest": {
+          "oneOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }]
+        }
+      }
+    },
+    "peer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "fqdn",
+            "ipv4",
+            "ipv4-cidr",
+            "ipv6",
+            "ipv6-cidr",
+            "workload",
+            "executable",
+            "path",
+            "syscall",
+            "container",
+            "http-resource"
+          ]
+        },
+        "value": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "selector": { "$ref": "#/$defs/jsonObject" }
+      },
+      "anyOf": [{ "required": ["value"] }, { "required": ["selector"] }]
+    },
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "ports"],
+      "properties": {
+        "protocol": { "enum": ["tcp", "udp", "icmp", "icmpv6"] },
+        "ports": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        },
+        "icmpType": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "icmpCode": { "type": "integer", "minimum": 0, "maximum": 255 }
+      }
+    },
+    "httpResponseIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "contentSha256"],
+      "properties": {
+        "kind": { "enum": ["native-integrity", "cas", "live-digest"] },
+        "contentSha256": { "$ref": "#/$defs/hash" },
+        "decodedContentSha256": { "$ref": "#/$defs/hash" },
+        "redirectLocationSha256": { "$ref": "#/$defs/hash" },
+        "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "length": { "$ref": "#/$defs/decimal" }
+      }
+    },
+    "httpIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "method", "scheme", "host", "port", "requestTargetSha256", "representationHeadersSha256"],
+      "properties": {
+        "contractVersion": { "const": 2 },
+        "method": { "type": "string", "pattern": "^[A-Z][A-Z0-9-]{0,31}$" },
+        "scheme": { "enum": ["http", "https"] },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^(?:[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?|[0-9a-f:.]*:[0-9a-f:.]+)$"
+        },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "requestTargetSha256": { "$ref": "#/$defs/hash" },
+        "requestBodySha256": { "$ref": "#/$defs/hash" },
+        "representationHeadersSha256": { "$ref": "#/$defs/hash" },
+        "response": { "$ref": "#/$defs/httpResponseIdentity" }
+      }
+    },
+    "policyIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domain", "subjectId", "effect"],
+      "properties": {
+        "domain": { "enum": ["network", "http", "process", "filesystem", "syscall"] },
+        "subjectId": { "$ref": "#/$defs/stableId" },
+        "effect": { "enum": ["allow", "deny", "monitor"] },
+        "direction": { "enum": ["ingress", "egress"] },
+        "peer": { "$ref": "#/$defs/peer" },
+        "transport": { "$ref": "#/$defs/transport" },
+        "operation": { "$ref": "#/$defs/safeToken" },
+        "constraints": { "$ref": "#/$defs/jsonObject" },
+        "http": { "$ref": "#/$defs/httpIntent" }
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+ebpfsource: nosh_l4.bpf.c
+metadata: gadget.yaml
+cflags:
+  - -DNOSH_L4_INSPEKTOR_GADGET=1
+  - -Iinclude

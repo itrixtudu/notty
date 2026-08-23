@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.invalid/schema/nosh-build-stats-v2.json",
+  "title": "Nosh build cumulative collector statistics",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordKind",
+    "timestampUnixNs",
+    "targetCgroupId",
+    "final",
+    "eventsSeen",
+    "decoderErrors",
+    "inflightSyscalls",
+    "fileSummaryRecords",
+    "counters"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "recordKind": { "const": "stats" },
+    "timestampUnixNs": { "$ref": "#/$defs/uint64" },
+    "targetCgroupId": { "$ref": "#/$defs/uint64" },
+    "final": { "type": "boolean" },
+    "eventsSeen": { "$ref": "#/$defs/uint64" },
+    "decoderErrors": { "$ref": "#/$defs/uint64" },
+    "inflightSyscalls": { "$ref": "#/$defs/uint64" },
+    "fileSummaryRecords": { "$ref": "#/$defs/uint64" },
+    "counters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ringbufDrops",
+        "syscallMapFull",
+        "inflightMapFull",
+        "configMissing",
+        "cgroupFilterErrors",
+        "dnsParseErrors",
+        "dnsCompressedNames",
+        "dnsTruncatedNames",
+        "dnsTruncatedResponses",
+        "dnsAnswerLimitReached",
+        "dnsUnsupportedAnswers",
+        "dnsCorrelationMissing",
+        "dnsQueryObservations",
+        "dnsResponseObservations",
+        "dnsNamePointers",
+        "fileMapFull",
+        "filePathErrors",
+        "fileOpenObservations"
+      ],
+      "properties": {
+        "ringbufDrops": { "$ref": "#/$defs/uint64" },
+        "syscallMapFull": { "$ref": "#/$defs/uint64" },
+        "inflightMapFull": { "$ref": "#/$defs/uint64" },
+        "configMissing": { "$ref": "#/$defs/uint64" },
+        "cgroupFilterErrors": { "$ref": "#/$defs/uint64" },
+        "dnsParseErrors": { "$ref": "#/$defs/uint64" },
+        "dnsCompressedNames": { "$ref": "#/$defs/uint64" },
+        "dnsTruncatedNames": { "$ref": "#/$defs/uint64" },
+        "dnsTruncatedResponses": { "$ref": "#/$defs/uint64" },
+        "dnsAnswerLimitReached": { "$ref": "#/$defs/uint64" },
+        "dnsUnsupportedAnswers": { "$ref": "#/$defs/uint64" },
+        "dnsCorrelationMissing": { "$ref": "#/$defs/uint64" },
+        "dnsQueryObservations": { "$ref": "#/$defs/uint64" },
+        "dnsResponseObservations": { "$ref": "#/$defs/uint64" },
+        "dnsNamePointers": { "$ref": "#/$defs/uint64" },
+        "fileMapFull": { "$ref": "#/$defs/uint64" },
+        "filePathErrors": { "$ref": "#/$defs/uint64" },
+        "fileOpenObservations": { "$ref": "#/$defs/uint64" }
+      }
+    }
+  },
+  "$defs": {
+    "uint64": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    }
+  }
+}

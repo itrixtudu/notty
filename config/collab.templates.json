@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 2,
+  "defaultTemplate": "pair-review",
+  "prompts": {
+    "coordinator": {
+      "label": "Coordinator",
+      "role": "coordinator",
+      "coordinatorCapable": true,
+      "instructions": "Coordinate the team, split the request into bounded work, track progress in the shared channel, integrate results, and own the final answer."
+    },
+    "pm": {
+      "label": "Project Manager",
+      "role": "pm",
+      "coordinatorCapable": true,
+      "instructions": "Clarify success criteria, organize the work, track dependencies, and keep the team focused on the requested outcome."
+    },
+    "qa": {
+      "label": "QA",
+      "role": "qa",
+      "coordinatorCapable": false,
+      "instructions": "Test behavior, review changes for regressions, and report concrete findings with reproducible evidence."
+    },
+    "implementer": {
+      "label": "Implementer",
+      "role": "implementer",
+      "coordinatorCapable": false,
+      "instructions": "Implement the assigned work end to end, preserve repository conventions, verify the result, and report concrete changes and remaining risks."
+    },
+    "reviewer": {
+      "label": "Reviewer",
+      "role": "reviewer",
+      "coordinatorCapable": false,
+      "instructions": "Review the proposed approach and changes independently, identify correctness or maintainability problems, and report actionable findings with evidence."
+    },
+    "observer": {
+      "label": "Observer",
+      "role": "observer",
+      "coordinatorCapable": false,
+      "instructions": "Observe team activity, surface missed context and emerging risks, and provide concise summaries without taking over coordination."
+    },
+    "bofh": {
+      "label": "BOFH",
+      "role": "bofh",
+      "coordinatorCapable": false,
+      "instructions": "Apply an adversarial operations perspective, challenge fragile assumptions, and flag unsafe, wasteful, or failure-prone choices with concrete alternatives."
+    },
+    "dev": {
+      "label": "Developer",
+      "role": "dev",
+      "coordinatorCapable": false,
+      "instructions": "Investigate and implement the assigned development task while coordinating dependencies through the shared channel."
+    },
+    "coder": {
+      "label": "Coder",
+      "role": "coder",
+      "coordinatorCapable": false,
+      "instructions": "Implement the assigned code slice, preserve repository conventions, and report exact changes and verification."
+    },
+    "project-harasser": {
+      "label": "Project Harasser",
+      "role": "project-harasser",
+      "coordinatorCapable": false,
+      "instructions": "Challenge vague assumptions, surface stalled work and scope drift, and push the team toward concrete evidence and completion."
+    }
+  },
+  "layouts": {
+    "pair-review": {
+      "label": "Pair Review",
+      "description": "Two equal agent terminals with the channel alongside.",
+      "mode": "pair"
+    },
+    "monitor": {
+      "label": "Monitor",
+      "description": "A large lead terminal with smaller supporting terminals.",
+      "mode": "lead-grid"
+    },
+    "grid": {
+      "label": "Grid",
+      "description": "Balanced terminal grid for peer agents.",
+      "mode": "grid"
+    }
+  },
+  "templates": {
+    "pair-review": {
+      "label": "Pair Review",
+      "description": "A coordinator and QA agent for focused implementation and review.",
+      "layout": "pair-review",
+      "channel": "lobby",
+      "defaultCoordinatorMode": "agent",
+      "coordinatorSpec": "coordinator_codex_gpt-5.6-sol",
+      "requiredNoshProfiles": ["agents"],
+      "startup": {},
+      "agents": [
+        "coordinator_codex_gpt-5.6-sol",
+        "qa_codex_gpt-5.6-sol"
+      ]
+    },
+    "delivery-team": {
+      "label": "Delivery Team",
+      "description": "Coordinator, developer, coder, and QA agent.",
+      "layout": "monitor",
+      "channel": "lobby",
+      "defaultCoordinatorMode": "agent",
+      "coordinatorSpec": "coordinator_codex_gpt-5.6-sol",
+      "requiredNoshProfiles": ["agents"],
+      "startup": {},
+      "agents": [
+        "coordinator_codex_gpt-5.6-sol",
+        "dev_codex_gpt-5.6-sol",
+        "coder_codex_gpt-5.6-sol",
+        "qa_codex_gpt-5.6-sol"
+      ]
+    },
+    "pressure-test": {
+      "label": "Pressure Test",
+      "description": "Coordinator, coder, QA, and a project harasser for adversarial delivery checks.",
+      "layout": "grid",
+      "channel": "lobby",
+      "defaultCoordinatorMode": "agent",
+      "coordinatorSpec": "coordinator_codex_gpt-5.6-sol",
+      "requiredNoshProfiles": ["agents"],
+      "startup": {},
+      "agents": [
+        "coordinator_codex_gpt-5.6-sol",
+        "coder_codex_gpt-5.6-sol",
+        "qa_codex_gpt-5.6-sol",
+        "project-harasser_codex_gpt-5.6-sol"
+      ]
+    },
+    "full-roster": {
+      "label": "Full Roster",
+      "description": "Coordinator, implementer, reviewer, QA, observer, and BOFH agents across cloud and local model backends.",
+      "layout": "grid",
+      "channel": "lobby",
+      "defaultCoordinatorMode": "agent",
+      "coordinatorSpec": {
+        "prompt": "coordinator",
+        "harness": "codex",
+        "backend": "default",
+        "model": "gpt-5.6-sol",
+        "think": "high"
+      },
+      "requiredNoshProfiles": ["agents"],
+      "startup": {},
+      "agents": [
+        {
+          "prompt": "coordinator",
+          "harness": "codex",
+          "backend": "default",
+          "model": "gpt-5.6-sol",
+          "think": "high"
+        },
+        {
+          "prompt": "implementer",
+          "harness": "codex",
+          "backend": "default",
+          "model": "gpt-5.6-sol",
+          "think": "medium"
+        },
+        {
+          "prompt": "reviewer",
+          "harness": "agy",
+          "backend": "default",
+          "model": "gemini-3.6-flash-medium",
+          "think": "high"
+        },
+        {
+          "prompt": "qa",
+          "harness": "codex",
+          "backend": "default",
+          "model": "gpt-5.6-sol",
+          "think": "max"
+        },
+        {
+          "prompt": "observer",
+          "harness": "codex",
+          "backend": "ollama",
+          "model": "qwen3:4b",
+          "think": "low"
+        },
+        {
+          "prompt": "bofh",
+          "harness": "claude",
+          "backend": "default",
+          "model": "sonnet",
+          "think": "low"
+        }
+      ]
+    }
+  }
+}

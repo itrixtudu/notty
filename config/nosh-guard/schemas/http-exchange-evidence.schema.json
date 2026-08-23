@@ -1,0 +1,338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/http-exchange-evidence.schema.json",
+  "title": "Nosh normalized HTTP exchange evidence",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" },
+    { "$ref": "#/$defs/redirect" },
+    { "$ref": "#/$defs/stats" }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "nullableDigest": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "nullableBytes": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "nullableMetadata": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^\\r\\n]+$"
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "captureAuthority": { "const": "managed" } },
+            "required": ["captureAuthority"]
+          },
+          "then": {
+            "properties": {
+              "provider": { "const": "mitmproxy" },
+              "captureMode": { "const": "managed-proxy" },
+              "clientAddress": { "type": "string", "minLength": 2, "maxLength": 45 },
+              "clientPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+              "proxyAddress": { "type": "string", "minLength": 2, "maxLength": 45 },
+              "proxyPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "captureAuthority": { "const": "review-only" } },
+            "required": ["captureAuthority"]
+          },
+          "then": { "properties": { "captureMode": { "const": "manual-import" } } }
+        },
+        {
+          "if": { "properties": { "requestBodyDigest": { "type": "null" } } },
+          "then": { "properties": { "requestBodyBytes": { "type": "null" } } },
+          "else": { "properties": { "requestBodyBytes": { "type": "integer" } } }
+        },
+        {
+          "if": { "properties": { "requestBodyBytes": { "type": "null" } } },
+          "then": { "properties": { "requestBodyDigest": { "type": "null" } } },
+          "else": { "properties": { "requestBodyDigest": { "$ref": "#/$defs/digest" } } }
+        }
+      ],
+      "required": [
+        "schemaVersion", "apiVersion", "recordKind", "runId", "observedAt",
+        "provider", "captureAuthority", "captureMode", "exchangeId", "method",
+        "scheme", "hostname", "port", "displayUrl", "requestTargetDigest",
+        "requestBodyDigest", "requestBodyBytes", "representationHeadersDigest",
+        "credentialed", "tlsInterception", "upstreamTlsVerified", "clientAddress",
+        "clientPort", "proxyAddress", "proxyPort"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "apiVersion": { "const": "notty.dev/v1alpha1" },
+        "recordKind": { "const": "http-request" },
+        "runId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$" },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "provider": { "enum": ["mitmproxy", "burp-har", "generic"] },
+        "captureAuthority": { "enum": ["managed", "review-only"] },
+        "captureMode": { "enum": ["managed-proxy", "manual-import"] },
+        "exchangeId": { "$ref": "#/$defs/digest" },
+        "method": { "type": "string", "pattern": "^[A-Z][A-Z0-9!#$%&'*+.^_`|~-]{0,31}$" },
+        "scheme": { "enum": ["http", "https"] },
+        "hostname": { "type": "string", "minLength": 1, "maxLength": 253 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "displayUrl": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "requestTargetDigest": { "$ref": "#/$defs/digest" },
+        "requestBodyDigest": { "$ref": "#/$defs/nullableDigest" },
+        "requestBodyBytes": { "$ref": "#/$defs/nullableBytes" },
+        "representationHeadersDigest": { "$ref": "#/$defs/digest" },
+        "credentialed": { "type": "boolean" },
+        "tlsInterception": { "enum": ["plaintext", "intercepted", "opaque"] },
+        "upstreamTlsVerified": { "type": ["boolean", "null"] },
+        "clientAddress": { "type": ["string", "null"], "minLength": 2, "maxLength": 45 },
+        "clientPort": { "type": ["integer", "null"], "minimum": 1, "maximum": 65535 },
+        "proxyAddress": { "type": ["string", "null"], "minLength": 2, "maxLength": 45 },
+        "proxyPort": { "type": ["integer", "null"], "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "captureAuthority": { "const": "managed" } },
+            "required": ["captureAuthority"]
+          },
+          "then": {
+            "properties": {
+              "provider": { "const": "mitmproxy" },
+              "captureMode": { "const": "managed-proxy" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "bodyDigest": { "type": "null" } } },
+          "then": { "properties": { "bodyBytes": { "type": "null" } } },
+          "else": { "properties": { "bodyBytes": { "type": "integer" } } }
+        },
+        {
+          "if": { "properties": { "bodyBytes": { "type": "null" } } },
+          "then": { "properties": { "bodyDigest": { "type": "null" } } },
+          "else": { "properties": { "bodyDigest": { "$ref": "#/$defs/digest" } } }
+        },
+        {
+          "if": { "properties": { "decodedBodyDigest": { "type": "null" } } },
+          "then": { "properties": { "decodedBodyBytes": { "type": "null" } } },
+          "else": { "properties": { "decodedBodyBytes": { "type": "integer" } } }
+        },
+        {
+          "if": { "properties": { "decodedBodyBytes": { "type": "null" } } },
+          "then": { "properties": { "decodedBodyDigest": { "type": "null" } } },
+          "else": { "properties": { "decodedBodyDigest": { "$ref": "#/$defs/digest" } } }
+        },
+        {
+          "if": { "properties": { "bodyComplete": { "const": true } } },
+          "then": {
+            "properties": {
+              "bodyDigest": { "$ref": "#/$defs/digest" },
+              "bodyBytes": { "type": "integer" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": 206 } } },
+          "then": { "properties": { "rangeResponse": { "const": true } } }
+        }
+      ],
+      "required": [
+        "schemaVersion", "apiVersion", "recordKind", "runId", "observedAt",
+        "provider", "captureAuthority", "captureMode", "exchangeId", "status",
+        "contentType", "contentEncoding", "headersDigest", "bodyDigest", "bodyBytes",
+        "decodedBodyDigest", "decodedBodyBytes", "bodyComplete", "delivery", "rangeResponse",
+        "upstreamAddress", "upstreamPort"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "apiVersion": { "const": "notty.dev/v1alpha1" },
+        "recordKind": { "const": "http-response" },
+        "runId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$" },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "provider": { "enum": ["mitmproxy", "burp-har", "generic"] },
+        "captureAuthority": { "enum": ["managed", "review-only"] },
+        "captureMode": { "enum": ["managed-proxy", "manual-import"] },
+        "exchangeId": { "$ref": "#/$defs/digest" },
+        "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "contentType": { "$ref": "#/$defs/nullableMetadata" },
+        "contentEncoding": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\r\\n]+$"
+        },
+        "headersDigest": { "$ref": "#/$defs/nullableDigest" },
+        "bodyDigest": { "$ref": "#/$defs/nullableDigest" },
+        "bodyBytes": { "$ref": "#/$defs/nullableBytes" },
+        "decodedBodyDigest": { "$ref": "#/$defs/nullableDigest" },
+        "decodedBodyBytes": { "$ref": "#/$defs/nullableBytes" },
+        "bodyComplete": { "type": "boolean" },
+        "delivery": { "enum": ["observed", "buffered", "cas", "manual-import"] },
+        "rangeResponse": { "type": "boolean" },
+        "upstreamAddress": { "type": ["string", "null"], "minLength": 2, "maxLength": 45 },
+        "upstreamPort": { "type": ["integer", "null"], "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "redirect": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "captureAuthority": { "const": "managed" } },
+            "required": ["captureAuthority"]
+          },
+          "then": {
+            "properties": {
+              "provider": { "const": "mitmproxy" },
+              "captureMode": { "const": "managed-proxy" }
+            }
+          }
+        }
+      ],
+      "required": [
+        "schemaVersion", "apiVersion", "recordKind", "runId", "observedAt",
+        "provider", "captureAuthority", "captureMode", "exchangeId", "status",
+        "locationDisplayUrl", "locationDigest"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "apiVersion": { "const": "notty.dev/v1alpha1" },
+        "recordKind": { "const": "http-redirect" },
+        "runId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$" },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "provider": { "enum": ["mitmproxy", "burp-har", "generic"] },
+        "captureAuthority": { "enum": ["managed", "review-only"] },
+        "captureMode": { "enum": ["managed-proxy", "manual-import"] },
+        "exchangeId": { "$ref": "#/$defs/digest" },
+        "status": { "type": "integer", "minimum": 300, "maximum": 399 },
+        "locationDisplayUrl": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "locationDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "captureAuthority": { "const": "managed" } },
+            "required": ["captureAuthority"]
+          },
+          "then": {
+            "properties": {
+              "provider": { "const": "mitmproxy" },
+              "captureMode": { "const": "managed-proxy" },
+              "reviewOnlyRecords": { "const": 0 },
+              "collectorImageDigest": { "$ref": "#/$defs/digest" },
+              "collectorAddonDigest": { "$ref": "#/$defs/digest" },
+              "collectorWrapperDigest": { "$ref": "#/$defs/digest" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "captureAuthority": { "const": "review-only" } },
+            "required": ["captureAuthority"]
+          },
+          "then": {
+            "properties": {
+              "captureMode": { "const": "manual-import" },
+              "complete": { "const": false },
+              "collectorImageDigest": { "type": "null" },
+              "collectorAddonDigest": { "type": "null" },
+              "collectorWrapperDigest": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "complete": { "const": true } } },
+          "then": {
+            "properties": {
+              "coverageGaps": { "maxItems": 0 },
+              "errors": { "const": 0 },
+              "opaqueConnects": { "const": 0 },
+              "incompleteBodies": { "const": 0 },
+              "droppedRecords": { "const": 0 }
+            }
+          },
+          "else": { "properties": { "coverageGaps": { "minItems": 1 } } }
+        }
+      ],
+      "required": [
+        "schemaVersion", "apiVersion", "recordKind", "runId", "observedAt",
+        "provider", "captureAuthority", "captureMode", "complete", "requests",
+        "responses", "redirects", "errors", "opaqueConnects", "incompleteBodies",
+        "droppedRecords", "reviewOnlyRecords", "coverageGaps",
+        "contentAssuranceGaps", "contentManifestDigest",
+        "collectorImageDigest", "collectorAddonDigest", "collectorWrapperDigest"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "apiVersion": { "const": "notty.dev/v1alpha1" },
+        "recordKind": { "const": "http-capture-stats" },
+        "runId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$" },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "provider": { "enum": ["mitmproxy", "burp-har", "generic"] },
+        "captureAuthority": { "enum": ["managed", "review-only"] },
+        "captureMode": { "enum": ["managed-proxy", "manual-import"] },
+        "complete": { "type": "boolean" },
+        "requests": { "type": "integer", "minimum": 0 },
+        "responses": { "type": "integer", "minimum": 0 },
+        "redirects": { "type": "integer", "minimum": 0 },
+        "errors": { "type": "integer", "minimum": 0 },
+        "opaqueConnects": { "type": "integer", "minimum": 0 },
+        "incompleteBodies": { "type": "integer", "minimum": 0 },
+        "droppedRecords": { "type": "integer", "minimum": 0 },
+        "reviewOnlyRecords": { "type": "integer", "minimum": 0 },
+        "coverageGaps": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "capture-error", "dropped-records", "incomplete-request-body",
+              "incomplete-response-body", "interim-response", "manual-import", "missing-response",
+              "opaque-connect", "oversized-body", "provider-loss", "range-response",
+              "streaming-response", "tls-passthrough", "unmatched-dns", "unmatched-network"
+            ]
+          }
+        },
+        "contentAssuranceGaps": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "ambiguous-request-identity", "cas-quota-exceeded", "credentialed-request",
+              "head-response", "incomplete-response", "interim-response", "manifest-too-large",
+              "manual-import", "no-replayable-responses", "not-modified-response",
+              "oversized-body", "range-response"
+            ]
+          }
+        },
+        "contentManifestDigest": { "$ref": "#/$defs/nullableDigest" },
+        "collectorImageDigest": { "$ref": "#/$defs/nullableDigest" },
+        "collectorAddonDigest": { "$ref": "#/$defs/nullableDigest" },
+        "collectorWrapperDigest": { "$ref": "#/$defs/nullableDigest" }
+      }
+    }
+  }
+}

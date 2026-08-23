@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": "notty.dev/v1alpha1",
+  "kind": "NoshEvidenceInputSet",
+  "inputs": [
+    {
+      "name": "tetragon-events",
+      "path": "{evidenceDir}/tetragon-events.jsonl",
+      "format": "ndjson",
+      "producer": "tetra getevents v1.7.0",
+      "requiredModes": [
+        "learn",
+        "audit",
+        "enforce"
+      ],
+      "authority": "kernel-observation",
+      "sensitiveFields": [
+        "process.arguments",
+        "process.environment",
+        "parent.arguments"
+      ]
+    },
+    {
+      "name": "ig-dns",
+      "path": "{evidenceDir}/ig-dns.jsonl",
+      "format": "ndjson",
+      "producer": "trace_dns v0.54.1",
+      "requiredModes": [
+        "learn",
+        "audit"
+      ],
+      "authority": "kernel-observation",
+      "limitations": [
+        "DNS over TCP is incomplete when a message spans multiple TCP packets.",
+        "DNS evidence does not prove that a subsequent connection was authorized."
+      ]
+    },
+    {
+      "name": "ig-syscalls",
+      "path": "{evidenceDir}/ig-syscalls.jsonl",
+      "format": "ig-seccomp-advice",
+      "producer": "advise_seccomp v0.54.1",
+      "requiredModes": [
+        "learn",
+        "audit"
+      ],
+      "authority": "advisory-recommendation",
+      "limitations": [
+        "The advisor flushes its aggregate when stopped; an unclean collector exit invalidates this input.",
+        "Advisor output is provenance-only and is never merged directly into observations or artifacts."
+      ]
+    },
+    {
+      "name": "nosh-egress",
+      "path": "{evidenceDir}/nosh-egress.jsonl",
+      "format": "ndjson",
+      "producer": "nosh-egress-loader 2",
+      "requiredModes": [
+        "egress-learn",
+        "egress-audit",
+        "egress-enforce"
+      ],
+      "authority": "kernel-enforcement-point",
+      "limitations": [
+        "Domain authorization is DNS-mediated and expires at the bounded response TTL.",
+        "TCP DNS is not a complete v2 capability; observing it is recorded as an explicit coverage gap and makes the candidate ineligible.",
+        "Ordinary private, local, DNS, and DoT destinations are reviewable evidence during LEARN; only exact per-run platform containment endpoints are denied independently of policy.",
+        "Encrypted DNS cannot create domain grants; its destination requires an independent IP or domain authorization."
+      ]
+    },
+    {
+      "name": "nosh-l4",
+      "path": "{evidenceDir}/nosh-l4.jsonl",
+      "format": "ndjson",
+      "producer": "nosh-l4-loader 1",
+      "requiredModes": [
+        "learn",
+        "audit",
+        "enforce"
+      ],
+      "authority": "kernel-observation",
+      "limitations": [
+        "Attempt hooks observe requested peers before the final syscall result and do not prove success.",
+        "A run is incomplete without a clean final stats record and zero loss/error counters."
+      ]
+    },
+    {
+      "name": "managed_dns",
+      "path": "{evidenceDir}/managed_dns.jsonl",
+      "format": "ndjson",
+      "producer": "managed-dns",
+      "requiredModes": [
+        "learn",
+        "audit",
+        "enforce"
+      ],
+      "authority": "dns-control-plane"
+    },
+    {
+      "name": "managed_gateway",
+      "path": "{evidenceDir}/managed_gateway.jsonl",
+      "format": "ndjson",
+      "producer": "managed-egress-gateway",
+      "requiredModes": [
+        "learn",
+        "audit",
+        "enforce"
+      ],
+      "authority": "network-enforcement-point"
+    }
+  ],
+  "correlation": {
+    "requiredIdentity": [
+      "runId",
+      "containerId",
+      "imageDigest"
+    ],
+    "networkJoin": [
+      "runId",
+      "destinationAddress"
+    ],
+    "observedDnsMaximumJoinWindowMs": 5000,
+    "networkJoinRequiresOneDnsNamePerAddress": true,
+    "maximumClockSkewMs": 1000,
+    "promotionRejectsMissingRequiredInput": true,
+    "promotionRejectsDroppedEvents": true
+  },
+  "handling": {
+    "rawEvidenceIsPolicyInputOnly": true,
+    "collectorOutputIsNeverActivatedDirectly": true,
+    "fileMode": "0600",
+    "directoryMode": "0700",
+    "redactBeforeReport": true
+  }
+}

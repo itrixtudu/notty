@@ -1,0 +1,173 @@
+{
+  "apiVersion": "notty.dev/v1alpha1",
+  "kind": "NoshTetragonRuleFragments",
+  "metadata": {
+    "name": "dangerous-syscall-review-example",
+    "reviewOnly": true
+  },
+  "spec": {
+    "kprobes": [
+      {
+        "call": "sys_bpf",
+        "syscall": true,
+        "selectors": [
+          {
+            "matchNamespaces": [
+              {
+                "namespace": "Cgroup",
+                "operator": "In",
+                "values": [
+                  "{cgroupNamespace}"
+                ]
+              }
+            ],
+            "matchActions": [
+              {
+                "action": "Override",
+                "argError": -1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "call": "sys_mount",
+        "syscall": true,
+        "selectors": [
+          {
+            "matchNamespaces": [
+              {
+                "namespace": "Cgroup",
+                "operator": "In",
+                "values": [
+                  "{cgroupNamespace}"
+                ]
+              }
+            ],
+            "matchActions": [
+              {
+                "action": "Override",
+                "argError": -1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "call": "sys_perf_event_open",
+        "syscall": true,
+        "selectors": [
+          {
+            "matchNamespaces": [
+              {
+                "namespace": "Cgroup",
+                "operator": "In",
+                "values": [
+                  "{cgroupNamespace}"
+                ]
+              }
+            ],
+            "matchActions": [
+              {
+                "action": "Override",
+                "argError": -1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "call": "sys_pivot_root",
+        "syscall": true,
+        "selectors": [
+          {
+            "matchNamespaces": [
+              {
+                "namespace": "Cgroup",
+                "operator": "In",
+                "values": [
+                  "{cgroupNamespace}"
+                ]
+              }
+            ],
+            "matchActions": [
+              {
+                "action": "Override",
+                "argError": -1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "call": "sys_ptrace",
+        "syscall": true,
+        "selectors": [
+          {
+            "matchNamespaces": [
+              {
+                "namespace": "Cgroup",
+                "operator": "In",
+                "values": [
+                  "{cgroupNamespace}"
+                ]
+              }
+            ],
+            "matchActions": [
+              {
+                "action": "Override",
+                "argError": -1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "call": "sys_setns",
+        "syscall": true,
+        "selectors": [
+          {
+            "matchNamespaces": [
+              {
+                "namespace": "Cgroup",
+                "operator": "In",
+                "values": [
+                  "{cgroupNamespace}"
+                ]
+              }
+            ],
+            "matchActions": [
+              {
+                "action": "Override",
+                "argError": -1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "call": "sys_unshare",
+        "syscall": true,
+        "selectors": [
+          {
+            "matchNamespaces": [
+              {
+                "namespace": "Cgroup",
+                "operator": "In",
+                "values": [
+                  "{cgroupNamespace}"
+                ]
+              }
+            ],
+            "matchActions": [
+              {
+                "action": "Override",
+                "argError": -1
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

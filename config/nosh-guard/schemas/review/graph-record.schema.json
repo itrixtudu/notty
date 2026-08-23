@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/graph-record.schema.json",
+  "title": "Nosh semantic graph NDJSON record",
+  "type": "object",
+  "required": ["apiVersion", "kind", "schemaVersion", "id", "scopeDigest", "privacy"],
+  "properties": {
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "schemaVersion": { "const": 1 },
+    "id": { "$ref": "common.schema.json#/$defs/stableId" },
+    "scopeDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "privacy": { "$ref": "common.schema.json#/$defs/privacy" }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/node" },
+    { "$ref": "#/$defs/observation" },
+    { "$ref": "#/$defs/coverage" },
+    { "$ref": "#/$defs/finding" },
+    { "$ref": "#/$defs/proposal" },
+    { "$ref": "#/$defs/diff" }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "node": {
+      "required": ["kind", "nodeType", "label", "identity", "properties", "evidenceRefs"],
+      "properties": {
+        "kind": { "const": "NoshGraphNode" },
+        "nodeType": {
+          "enum": [
+            "project", "buildRun", "buildPass", "buildkitVertex", "collector",
+            "evidenceSource", "sourceRecord", "process", "executable", "file",
+            "syscall", "domain", "networkEndpoint", "cgroup", "image", "package",
+            "httpRequest", "httpResponse", "workload", "policySet", "coverageSource"
+          ]
+        },
+        "label": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "identity": { "$ref": "common.schema.json#/$defs/jsonObject" },
+        "properties": { "$ref": "common.schema.json#/$defs/jsonObject" },
+        "evidenceRefs": {
+          "type": "array", "maxItems": 256, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/stableId" }
+        }
+      }
+    },
+    "observation": {
+      "required": [
+        "kind", "observationType", "subjectId", "objectId", "basis", "confidence",
+        "count", "evidenceRefs", "properties"
+      ],
+      "properties": {
+        "kind": { "const": "NoshObservation" },
+        "observationType": {
+          "enum": [
+            "contains", "executes", "exits", "accesses", "invokes", "queries",
+            "resolvesTo", "connects", "communicatesWith", "accounts", "installs",
+            "loads", "selects", "owns", "derivedFrom", "observedBy",
+            "mayHaveOccurredDuring", "parentPidObserved", "correlatesWith",
+            "requests", "respondsWith"
+          ]
+        },
+        "subjectId": { "$ref": "common.schema.json#/$defs/stableId" },
+        "objectId": { "$ref": "common.schema.json#/$defs/stableId" },
+        "basis": { "enum": ["observed", "correlated", "inferred"] },
+        "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "algorithm": { "$ref": "common.schema.json#/$defs/safeToken" },
+        "count": { "$ref": "common.schema.json#/$defs/decimal" },
+        "firstObservedAt": { "type": "string", "format": "date-time" },
+        "lastObservedAt": { "type": "string", "format": "date-time" },
+        "evidenceRefs": {
+          "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/stableId" }
+        },
+        "properties": { "$ref": "common.schema.json#/$defs/jsonObject" }
+      }
+    },
+    "coverage": {
+      "required": ["kind", "domain", "status", "sourceIds", "counters", "gaps", "blocking"],
+      "properties": {
+        "kind": { "const": "NoshCoverageMarker" },
+        "domain": {
+          "enum": [
+            "buildkit-progress", "buildx-history", "cgroup-metrics", "process", "syscall",
+            "network", "dns", "http-capture", "artifact-integrity", "file", "sbom-source", "sbom-image", "runtime-process",
+            "runtime-file", "runtime-network", "hubble", "cpg"
+          ]
+        },
+        "status": { "enum": ["complete", "incomplete", "unavailable", "degraded"] },
+        "sourceIds": {
+          "type": "array", "maxItems": 256, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/stableId" }
+        },
+        "counters": {
+          "type": "object", "maxProperties": 64,
+          "additionalProperties": { "$ref": "common.schema.json#/$defs/decimal" }
+        },
+        "gaps": {
+          "type": "array", "maxItems": 256, "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 8192 }
+        },
+        "blocking": { "type": "boolean" }
+      }
+    },
+    "finding": {
+      "required": [
+        "kind", "findingType", "severity", "blocking", "message", "semanticRefs",
+        "evidenceRefs", "properties"
+      ],
+      "properties": {
+        "kind": { "const": "NoshFinding" },
+        "findingType": {
+          "enum": [
+            "drift-new", "drift-broadened", "package-change", "provenance-change",
+            "unresolved-evidence", "coverage-degraded", "denied-traffic",
+            "unsupported-target", "policy-conflict"
+          ]
+        },
+        "severity": { "enum": ["info", "low", "medium", "high", "critical"] },
+        "blocking": { "type": "boolean" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "semanticRefs": {
+          "type": "array", "maxItems": 256, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/stableId" }
+        },
+        "evidenceRefs": {
+          "type": "array", "maxItems": 256, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/stableId" }
+        },
+        "properties": { "$ref": "common.schema.json#/$defs/jsonObject" }
+      }
+    },
+    "proposal": {
+      "required": [
+        "kind", "scopeClass", "proposalType", "intent", "baselineState", "rationale",
+        "evidenceRefs", "targetFeasibility"
+      ],
+      "properties": {
+        "kind": { "const": "NoshPolicyProposal" },
+        "scopeClass": { "enum": ["build", "runtime"] },
+        "proposalType": { "$ref": "common.schema.json#/$defs/safeToken" },
+        "intent": { "$ref": "common.schema.json#/$defs/policyIntent" },
+        "baselineState": { "enum": ["new", "broadened", "unchanged", "removed"] },
+        "rationale": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "evidenceRefs": {
+          "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/stableId" }
+        },
+        "observationRefs": {
+          "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/stableId" }
+        },
+        "authorityGroupId": { "$ref": "common.schema.json#/$defs/stableId" },
+        "assurance": { "$ref": "#/$defs/httpAssurance" },
+        "targetFeasibility": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["target", "status", "reasons"],
+            "properties": {
+              "target": { "enum": ["cilium", "guard-ebpf", "guard-nftables", "gateway-iptables", "gateway-pf", "gateway-ipfw", "gateway-ipfilter", "gateway-l7-proxy"] },
+              "status": {
+                "enum": ["exact", "restrictive", "conditional", "permissive", "unsupported", "outsideScope"]
+              },
+              "reasons": {
+                "type": "array", "maxItems": 64, "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1, "maxLength": 8192 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "httpAssurance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion", "level", "mutableContent", "evidenceBacked",
+        "requestEvidenceRefs", "responseEvidenceRefs", "integrityKind"
+      ],
+      "properties": {
+        "contractVersion": { "const": 2 },
+        "level": {
+          "enum": ["endpoint-only", "url-restricted", "native-integrity", "cas-replay", "live-digest-gate"]
+        },
+        "mutableContent": { "type": "boolean" },
+        "evidenceBacked": { "const": true },
+        "requestEvidenceRefs": {
+          "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/stableId" }
+        },
+        "responseEvidenceRefs": {
+          "type": "array", "maxItems": 256, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/stableId" }
+        },
+        "integrityKind": {
+          "enum": ["none", "npm-sri", "apt-signed-metadata", "publisher-signature", "reviewed-digest", "cas-object", "live-response-digest"]
+        },
+        "contentDigest": { "$ref": "common.schema.json#/$defs/hash" },
+        "proofDigest": { "$ref": "common.schema.json#/$defs/hash" }
+      }
+    },
+    "diff": {
+      "required": [
+        "kind", "entityId", "changeType", "beforeDigest", "afterDigest",
+        "policyRelevant", "summary", "evidenceRefs"
+      ],
+      "properties": {
+        "kind": { "const": "NoshGraphDiff" },
+        "entityId": { "$ref": "common.schema.json#/$defs/stableId" },
+        "changeType": {
+          "enum": ["unchanged", "added", "broadened", "removed", "coverage-degraded", "metric-only"]
+        },
+        "beforeDigest": {
+          "oneOf": [{ "$ref": "common.schema.json#/$defs/hash" }, { "type": "null" }]
+        },
+        "afterDigest": {
+          "oneOf": [{ "$ref": "common.schema.json#/$defs/hash" }, { "type": "null" }]
+        },
+        "policyRelevant": { "type": "boolean" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "evidenceRefs": {
+          "type": "array", "maxItems": 256, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/stableId" }
+        }
+      }
+    }
+  }
+}

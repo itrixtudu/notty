@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.invalid/schema/nosh-build-capabilities-v2.json",
+  "title": "Nosh build collector capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordKind",
+    "timestampUnixNs",
+    "collectionDepth",
+    "availableSources",
+    "unavailableSources"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "recordKind": { "const": "capabilities" },
+    "timestampUnixNs": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "collectionDepth": { "enum": ["balanced", "policy"] },
+    "availableSources": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "process-exec",
+          "process-exit",
+          "syscall-summary",
+          "udp-dns-query",
+          "udp-dns-response",
+          "file-operations"
+        ]
+      }
+    },
+    "unavailableSources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "reason"],
+        "properties": {
+          "name": {
+            "enum": [
+              "tcp-dns",
+              "encrypted-dns",
+              "ipv6-extension-dns",
+              "fragmented-dns",
+              "oversized-udp-dns",
+              "cpu-samples",
+              "off-cpu",
+              "file-operations",
+              "block-latency"
+            ]
+          },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

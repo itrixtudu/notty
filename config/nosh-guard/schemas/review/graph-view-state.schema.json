@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/graph-view-state.schema.json",
+  "title": "Non-authoritative Nosh semantic graph layout",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion", "kind", "schemaVersion", "viewStateId", "graphDigest", "updatedAt",
+    "renderer", "projection", "positions", "collapsedNodeIds", "filters", "camera",
+    "authoritative"
+  ],
+  "properties": {
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshGraphViewState" },
+    "schemaVersion": { "const": 1 },
+    "viewStateId": { "$ref": "common.schema.json#/$defs/stableId" },
+    "graphDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "renderer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "$ref": "common.schema.json#/$defs/safeToken" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "projection": { "enum": ["baseline-drift", "build", "behavior", "network", "evidence", "policy", "runtime"] },
+    "positions": {
+      "type": "array",
+      "maxItems": 250000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["nodeId", "x", "y", "z", "pinned"],
+        "properties": {
+          "nodeId": { "$ref": "common.schema.json#/$defs/stableId" },
+          "x": { "type": "number", "minimum": -10000000, "maximum": 10000000 },
+          "y": { "type": "number", "minimum": -10000000, "maximum": 10000000 },
+          "z": { "type": ["number", "null"], "minimum": -10000000, "maximum": 10000000 },
+          "pinned": { "type": "boolean" }
+        }
+      }
+    },
+    "collapsedNodeIds": {
+      "type": "array", "maxItems": 250000, "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/stableId" }
+    },
+    "filters": { "$ref": "common.schema.json#/$defs/jsonObject" },
+    "camera": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/camera" }]
+    },
+    "authoritative": { "const": false }
+  },
+  "$defs": {
+    "vector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "number", "minimum": -10000000, "maximum": 10000000 },
+        "y": { "type": "number", "minimum": -10000000, "maximum": 10000000 },
+        "z": { "type": "number", "minimum": -10000000, "maximum": 10000000 }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position", "target", "zoom"],
+      "properties": {
+        "position": { "$ref": "#/$defs/vector" },
+        "target": { "$ref": "#/$defs/vector" },
+        "zoom": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000 }
+      }
+    }
+  }
+}

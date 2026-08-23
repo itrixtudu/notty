@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/semantic-graph-delta.schema.json",
+  "title": "Live non-approvable Nosh semantic graph delta",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion", "kind", "schemaVersion", "graphId", "baseRevision", "scopeDigest",
+    "sequence", "previousDeltaDigest", "createdAt", "sourceWatermarks", "operations",
+    "frozen", "deltaDigest"
+  ],
+  "properties": {
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshSemanticGraphDelta" },
+    "schemaVersion": { "const": 1 },
+    "graphId": { "$ref": "common.schema.json#/$defs/stableId" },
+    "baseRevision": { "$ref": "common.schema.json#/$defs/hash" },
+    "scopeDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "sequence": { "$ref": "common.schema.json#/$defs/decimal" },
+    "previousDeltaDigest": {
+      "oneOf": [{ "$ref": "common.schema.json#/$defs/hash" }, { "type": "null" }]
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "sourceWatermarks": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceId", "sequence", "observedAt"],
+        "properties": {
+          "sourceId": { "$ref": "common.schema.json#/$defs/stableId" },
+          "sequence": { "$ref": "common.schema.json#/$defs/decimal" },
+          "observedAt": { "type": ["string", "null"], "format": "date-time" }
+        }
+      }
+    },
+    "operations": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["op", "role", "recordId", "recordDigest"],
+        "properties": {
+          "op": { "enum": ["upsert", "remove"] },
+          "role": { "enum": ["nodes", "observations", "coverage", "findings", "proposals", "diff"] },
+          "recordId": { "$ref": "common.schema.json#/$defs/stableId" },
+          "recordDigest": { "$ref": "common.schema.json#/$defs/hash" },
+          "record": { "$ref": "graph-record.schema.json" }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "op": { "const": "upsert" } }, "required": ["op"] },
+            "then": { "required": ["record"] },
+            "else": { "not": { "required": ["record"] } }
+          }
+        ]
+      }
+    },
+    "frozen": { "const": false },
+    "deltaDigest": { "$ref": "common.schema.json#/$defs/hash" }
+  }
+}

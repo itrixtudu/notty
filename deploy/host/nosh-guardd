@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+PATH="@@NOSH_GUARD_PREFIX@@/lib/notty/nosh-guard/current/payload/runtime:@@NOSH_GUARD_PREFIX@@/sbin:@@NOSH_GUARD_PREFIX@@/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+exec @@NOSH_GUARD_PREFIX@@/lib/notty/nosh-guard/current/payload/runtime/node \
+  @@NOSH_GUARD_PREFIX@@/lib/notty/nosh-guard/current/payload/bin/nosh-guardd \
+  "$@"

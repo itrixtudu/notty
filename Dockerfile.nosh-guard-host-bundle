@@ -1,0 +1,41 @@
+ARG NODE_IMAGE=node:24.18.0-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
+
+FROM ${NODE_IMAGE}
+
+LABEL io.notty.nosh-guard-host-bundle="1"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      bpftool \
+      ca-certificates \
+      clang-14 \
+      coreutils \
+      findutils \
+      gcc \
+      git \
+      gzip \
+      libbpf-dev \
+      libelf-dev \
+      make \
+      pkg-config \
+      ripgrep \
+      tar \
+      zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -o root -g root -m 0555 /input /output /usr/local/libexec
+
+COPY scripts/run-nosh-guard-host-bundle-container.sh \
+  /usr/local/libexec/run-nosh-guard-host-bundle-container
+
+RUN chown root:root /usr/local/libexec/run-nosh-guard-host-bundle-container \
+    && chmod 0555 /usr/local/libexec/run-nosh-guard-host-bundle-container
+
+ENV NOSH_GUARD_HOST_BUNDLE_CONTAINER=1 \
+    NOSH_GUARD_HOST_BUNDLE_NETWORK_MODE=none \
+    TMPDIR=/bundle-work/tmp \
+    HOME=/bundle-work/home
+
+USER node
+WORKDIR /input
+
+ENTRYPOINT ["/usr/local/libexec/run-nosh-guard-host-bundle-container"]

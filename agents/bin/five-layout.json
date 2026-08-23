@@ -1,0 +1,83 @@
+{
+    "child": {
+        "child1": {
+            "directory": "\/home\/xpatchdev\/branches\/3jsui-cleaning\/private\/iniquicy-v3",
+            "height": 973,
+            "profile": "2b7c4080-0ddd-46c5-8f23-563fd3ba789d",
+            "readOnly": false,
+            "synchronizedInput": true,
+            "type": "Terminal",
+            "uuid": "2060f8cd-a33a-430a-af54-6f70e6f97ec5",
+            "width": 1012
+        },
+        "child2": {
+            "child1": {
+                "child1": {
+                    "directory": "\/home\/xpatchdev\/branches\/3jsui-cleaning\/private\/iniquicy-v3",
+                    "height": 245,
+                    "profile": "2b7c4080-0ddd-46c5-8f23-563fd3ba789d",
+                    "readOnly": false,
+                    "synchronizedInput": true,
+                    "type": "Terminal",
+                    "uuid": "4d2bb9ea-5eb9-4d73-9981-48ab31d8a9a6",
+                    "width": 907
+                },
+                "child2": {
+                    "directory": "\/home\/xpatchdev\/branches\/3jsui-cleaning\/private\/iniquicy-v3",
+                    "height": 244,
+                    "profile": "2b7c4080-0ddd-46c5-8f23-563fd3ba789d",
+                    "readOnly": false,
+                    "synchronizedInput": true,
+                    "type": "Terminal",
+                    "uuid": "a2de8dbc-bb3a-4bdf-8243-97eb88dc2a65",
+                    "width": 907
+                },
+                "orientation": 1,
+                "position": 25,
+                "ratio": 0.5,
+                "type": "Paned"
+            },
+            "child2": {
+                "child1": {
+                    "directory": "\/home\/xpatchdev\/branches\/3jsui-cleaning\/private\/iniquicy-v3",
+                    "height": 241,
+                    "profile": "2b7c4080-0ddd-46c5-8f23-563fd3ba789d",
+                    "readOnly": false,
+                    "synchronizedInput": true,
+                    "type": "Terminal",
+                    "uuid": "290c1f34-c593-46ef-97d0-f9cf64c51dfa",
+                    "width": 907
+                },
+                "child2": {
+                    "directory": "\/home\/xpatchdev\/branches\/3jsui-cleaning\/private\/iniquicy-v3",
+                    "height": 240,
+                    "profile": "2b7c4080-0ddd-46c5-8f23-563fd3ba789d",
+                    "readOnly": false,
+                    "synchronizedInput": true,
+                    "type": "Terminal",
+                    "uuid": "80bfbfdc-b871-40a2-b61d-f2209fed59d8",
+                    "width": 907
+                },
+                "orientation": 1,
+                "position": 24,
+                "ratio": 0.5,
+                "type": "Paned"
+            },
+            "orientation": 1,
+            "position": 50,
+            "ratio": 0.503597122302158251,
+            "type": "Paned"
+        },
+        "orientation": 0,
+        "position": 52,
+        "ratio": 0.527083333333333348,
+        "type": "Paned"
+    },
+    "height": 973,
+    "name": "${title}",
+    "synchronizedInput": false,
+    "type": "Session",
+    "uuid": "8e12fbf5-183a-4031-a94c-64b60a6e59cb",
+    "version": "1.0",
+    "width": 1920
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.invalid/schema/nosh-build-syscall-summary-v2.json",
+  "title": "Nosh build final syscall summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordKind",
+    "timestampUnixNs",
+    "targetCgroupId",
+    "syscallNumber",
+    "calls",
+    "completions",
+    "errors",
+    "totalDurationNs",
+    "maxDurationNs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "recordKind": { "const": "syscall-summary" },
+    "timestampUnixNs": { "$ref": "#/$defs/uint64" },
+    "targetCgroupId": { "$ref": "#/$defs/uint64" },
+    "syscallNumber": {
+      "type": "integer",
+      "minimum": -9223372036854775808,
+      "maximum": 9223372036854775807
+    },
+    "calls": { "$ref": "#/$defs/uint64" },
+    "completions": { "$ref": "#/$defs/uint64" },
+    "errors": { "$ref": "#/$defs/uint64" },
+    "totalDurationNs": { "$ref": "#/$defs/uint64" },
+    "maxDurationNs": { "$ref": "#/$defs/uint64" }
+  },
+  "$defs": {
+    "uint64": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    }
+  }
+}

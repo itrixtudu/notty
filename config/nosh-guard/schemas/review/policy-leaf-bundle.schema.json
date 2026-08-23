@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/policy-leaf-bundle.schema.json",
+  "title": "Nosh independently deployable policy leaf bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion", "kind", "schemaVersion", "createdAt", "target",
+    "activationEligible", "graphDigest", "decisionSetDigest", "policyIrDigest",
+    "targetContextDigest", "capabilityDigest", "projectionDigest", "artifacts",
+    "bundleDigest"
+  ],
+  "properties": {
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshPolicyLeafBundle" },
+    "schemaVersion": { "const": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "target": { "enum": ["cilium", "guard-ebpf", "guard-nftables", "gateway-iptables", "gateway-pf", "gateway-ipfw", "gateway-ipfilter", "gateway-l7-proxy"] },
+    "activationEligible": { "type": "boolean" },
+    "graphDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "decisionSetDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "policyIrDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "targetContextDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "capabilityDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "projectionDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "artifacts": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "mediaType", "bytes", "sha256"],
+        "properties": {
+          "path": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,511}$" },
+          "mediaType": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "bytes": { "$ref": "common.schema.json#/$defs/decimal" },
+          "sha256": { "$ref": "common.schema.json#/$defs/hash" }
+        }
+      }
+    },
+    "bundleDigest": { "$ref": "common.schema.json#/$defs/hash" }
+  }
+}

@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+
+import { main } from '../scripts/nosh-gateway.mjs';
+
+main()
+  .then((status) => {
+    process.exitCode = status;
+  })
+  .catch((error) => {
+    process.stderr.write(`nosh-gateway: ${error.message}\n`);
+    if (process.env.NOSH_GATEWAY_DEBUG === '1') {
+      process.stderr.write(`${error.stack}\n`);
+    }
+    process.exitCode = 1;
+  });

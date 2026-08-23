@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/policy-decision-set.schema.json",
+  "title": "Nosh policy proposal review decisions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion", "kind", "schemaVersion", "decisionSetId", "createdAt", "reviewer",
+    "scopeDigest", "graphDigest", "graphContentDigest", "proposalSetDigest", "basePolicyDigest", "decisions",
+    "contentDigest"
+  ],
+  "properties": {
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshPolicyDecisionSet" },
+    "schemaVersion": { "const": 1 },
+    "decisionSetId": { "$ref": "common.schema.json#/$defs/stableId" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "reviewer": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "scopeDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "graphDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "graphContentDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "proposalSetDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "basePolicyDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "decisions": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "proposalId", "disposition", "rationale", "targetAcknowledgements"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/stableId" },
+          "proposalId": { "$ref": "common.schema.json#/$defs/stableId" },
+          "disposition": { "enum": ["accept", "reject", "needs-review"] },
+          "rationale": { "type": "string", "minLength": 1, "maxLength": 8192 },
+          "targetAcknowledgements": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["target", "status", "rationale"],
+              "properties": {
+                "target": { "enum": ["cilium", "guard-ebpf", "guard-nftables", "gateway-iptables", "gateway-pf", "gateway-ipfw", "gateway-ipfilter", "gateway-l7-proxy"] },
+                "status": { "enum": ["restrictive", "conditional"] },
+                "rationale": { "type": "string", "minLength": 1, "maxLength": 8192 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "contentDigest": { "$ref": "common.schema.json#/$defs/hash" }
+  }
+}

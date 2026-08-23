@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.invalid/schema/nosh-l4-control-v1.json",
+  "title": "Nosh L3/L4 loader status and diagnostics",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/status"
+    },
+    {
+      "$ref": "#/$defs/diagnostic"
+    }
+  ],
+  "$defs": {
+    "uint64": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "nullableString": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "recordKind",
+        "timestampUnixNs",
+        "status",
+        "pid",
+        "cgroupPath",
+        "cgroupId",
+        "attachedPrograms",
+        "outputMode",
+        "message"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "recordKind": {
+          "const": "status"
+        },
+        "timestampUnixNs": {
+          "$ref": "#/$defs/uint64"
+        },
+        "status": {
+          "enum": [
+            "healthy",
+            "unhealthy",
+            "starting",
+            "ready",
+            "stopping",
+            "stopped",
+            "error"
+          ]
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cgroupPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "cgroupId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uint64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attachedPrograms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        "outputMode": {
+          "enum": [
+            "events",
+            "flow-summary"
+          ]
+        },
+        "message": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "checks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "effectiveRoot",
+            "kernelAtLeast5_8",
+            "kernelBtf",
+            "cgroupV2",
+            "targetCgroup"
+          ],
+          "properties": {
+            "effectiveRoot": {
+              "type": "boolean"
+            },
+            "kernelAtLeast5_8": {
+              "type": "boolean"
+            },
+            "kernelBtf": {
+              "type": "boolean"
+            },
+            "cgroupV2": {
+              "type": "boolean"
+            },
+            "targetCgroup": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "recordKind",
+        "timestampUnixNs",
+        "level",
+        "component",
+        "message"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "recordKind": {
+          "const": "diagnostic"
+        },
+        "timestampUnixNs": {
+          "$ref": "#/$defs/uint64"
+        },
+        "level": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "component": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

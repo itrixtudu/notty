@@ -1,0 +1,241 @@
+{
+  "schemaVersion": 1,
+  "kind": "NoshBuildCollectorSet",
+  "adapters": [
+    {
+      "name": "nosh-build",
+      "requiredModes": [
+        "build-profile",
+        "build-net-learn"
+      ],
+      "supportedDepths": [
+        "balanced",
+        "policy"
+      ],
+      "health": {
+        "command": "/usr/local/libexec/nosh-build/nosh-build-loader",
+        "args": [
+          "health",
+          "--cgroup",
+          "{cgroupPath}",
+          "--cgroup-id",
+          "{cgroupId}",
+          "--depth",
+          "{depth}"
+        ]
+      },
+      "attach": {
+        "command": "/usr/local/libexec/nosh-build/nosh-build-loader",
+        "args": [
+          "run",
+          "--cgroup",
+          "{cgroupPath}",
+          "--cgroup-id",
+          "{cgroupId}",
+          "--depth",
+          "{depth}"
+        ]
+      },
+      "detach": {
+        "command": "true",
+        "args": []
+      },
+      "readiness": {
+        "stream": "stderr",
+        "match": {
+          "recordKind": "status",
+          "status": "ready"
+        },
+        "timeoutMs": 10000
+      },
+      "completion": {
+        "stream": "stdout",
+        "match": {
+          "recordKind": "stats",
+          "final": true
+        },
+        "requireZero": [
+          "decoderErrors",
+          "counters.ringbufDrops",
+          "counters.syscallMapFull",
+          "counters.inflightMapFull",
+          "counters.configMissing",
+          "counters.cgroupFilterErrors",
+          "counters.dnsAnswerLimitReached",
+          "counters.dnsCorrelationMissing",
+          "counters.fileMapFull",
+          "counters.filePathErrors"
+        ],
+        "diagnosticOnly": [
+          "inflightSyscalls",
+          "counters.dnsParseErrors",
+          "counters.dnsCompressedNames",
+          "counters.dnsTruncatedNames",
+          "counters.dnsTruncatedResponses",
+          "counters.dnsUnsupportedAnswers",
+          "counters.dnsNamePointers"
+        ]
+      },
+      "outputFile": "nosh-build.jsonl",
+      "stderrFile": "nosh-build.status.jsonl",
+      "detachSignal": "SIGTERM",
+      "detachTimeoutMs": 10000,
+      "cleanupCritical": true,
+      "longRunning": true
+    },
+    {
+      "name": "nosh-l4",
+      "requiredModes": [
+        "build-profile",
+        "build-net-learn"
+      ],
+      "supportedDepths": [
+        "balanced",
+        "policy",
+        "deep"
+      ],
+      "health": {
+        "command": "/usr/local/libexec/nosh-guard/nosh-l4-loader",
+        "args": [
+          "health",
+          "--cgroup",
+          "{cgroupPath}",
+          "--cgroup-id",
+          "{cgroupId}",
+          "--output-mode",
+          "flow-summary"
+        ]
+      },
+      "attach": {
+        "command": "/usr/local/libexec/nosh-guard/nosh-l4-loader",
+        "args": [
+          "run",
+          "--cgroup",
+          "{cgroupPath}",
+          "--cgroup-id",
+          "{cgroupId}",
+          "--output-mode",
+          "flow-summary"
+        ]
+      },
+      "detach": {
+        "command": "true",
+        "args": []
+      },
+      "readiness": {
+        "stream": "stderr",
+        "match": {
+          "recordKind": "status",
+          "status": "ready",
+          "outputMode": "flow-summary"
+        },
+        "timeoutMs": 10000
+      },
+      "completion": {
+        "stream": "stdout",
+        "match": {
+          "recordKind": "stats",
+          "final": true,
+          "outputMode": "flow-summary"
+        },
+        "requireZero": [
+          "decoderErrors",
+          "counters.ringbufDrops",
+          "counters.parseErrors",
+          "counters.flowMapFull",
+          "counters.configMissing"
+        ],
+        "diagnosticOnly": [
+          "counters.unsupportedProtocol"
+        ]
+      },
+      "outputFile": "nosh-l4.jsonl",
+      "stderrFile": "nosh-l4.status.jsonl",
+      "detachSignal": "SIGTERM",
+      "detachTimeoutMs": 10000,
+      "cleanupCritical": true,
+      "longRunning": true
+    },
+    {
+      "name": "nosh-url",
+      "requiredModes": [],
+      "modes": [],
+      "supportedDepths": [
+        "balanced",
+        "policy"
+      ],
+      "health": {
+        "command": "/usr/local/libexec/nosh-build/nosh-url-loader",
+        "args": [
+          "health",
+          "--cgroup",
+          "{cgroupPath}",
+          "--cgroup-id",
+          "{cgroupId}"
+        ]
+      },
+      "attach": {
+        "command": "/usr/local/libexec/nosh-build/nosh-url-loader",
+        "args": [
+          "run",
+          "--cgroup",
+          "{cgroupPath}",
+          "--cgroup-id",
+          "{cgroupId}"
+        ]
+      },
+      "detach": {
+        "command": "true",
+        "args": []
+      },
+      "readiness": {
+        "stream": "stderr",
+        "match": {
+          "recordKind": "status",
+          "status": "ready",
+          "provider": "libcurl",
+          "observationOnly": true,
+          "coverageComplete": false
+        },
+        "timeoutMs": 10000
+      },
+      "completion": {
+        "stream": "stdout",
+        "match": {
+          "recordKind": "stats",
+          "provider": "libcurl",
+          "final": true,
+          "observationOnly": true,
+          "coverageComplete": false
+        },
+        "requireZero": [
+          "counters.ringbufDrops",
+          "counters.configMissing",
+          "counters.cgroupFilterErrors",
+          "counters.readErrors",
+          "counters.decoderErrors",
+          "counters.outputLimitReached"
+        ],
+        "diagnosticOnly": [
+          "counters.discoveryMisses",
+          "counters.sanitizerRejects",
+          "counters.pathTruncations"
+        ]
+      },
+      "outputFile": "nosh-url.jsonl",
+      "stderrFile": "nosh-url.status.jsonl",
+      "detachSignal": "SIGTERM",
+      "detachTimeoutMs": 10000,
+      "evidenceRequired": false,
+      "cleanupCritical": true,
+      "longRunning": true
+    }
+  ],
+  "limitations": [
+    "The balanced collector correlates bounded IPv4/IPv6 UDP DNS queries and responses on port 53 and captures A, AAAA, and CNAME answer snapshots; DNS over TCP, UDP behind IPv6 extension headers, encrypted DNS, and responses beyond the fixed answer budget remain explicit coverage gaps.",
+    "Policy collection requires Linux 5.10+, kernel BTF, cgroup v2, and an enabled BPF LSM; file paths and access counts are metadata-only, paths longer than 255 bytes are rejected, and map/path loss fails completion.",
+    "Deep off-CPU and block-latency sources are unavailable and deep preflight must fail.",
+    "nosh-l4 supplies L3/L4 flow evidence and is required independently of nosh-build; build flow-summary mode suppresses packet records but retains live connect/sendmsg attempts.",
+    "nosh-url is retained as a disabled legacy observation-only collector. Managed HTTP capture provides complete request evidence; the libcurl uprobe is not activated by any default build mode and never authorizes policy."
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.invalid/schema/nosh-build-control-v2.json",
+  "title": "Nosh build loader status and diagnostics",
+  "oneOf": [
+    { "$ref": "#/$defs/status" },
+    { "$ref": "#/$defs/diagnostic" }
+  ],
+  "$defs": {
+    "uint64": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "nullableString": {
+      "oneOf": [{ "type": "string" }, { "type": "null" }]
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "recordKind",
+        "timestampUnixNs",
+        "status",
+        "pid",
+        "cgroupPath",
+        "cgroupId",
+        "attachedPrograms",
+        "collectionDepth",
+        "policyCollectionEnabled",
+        "deepCollectionSupported",
+        "message"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 2 },
+        "recordKind": { "const": "status" },
+        "timestampUnixNs": { "$ref": "#/$defs/uint64" },
+        "status": {
+          "enum": [
+            "healthy",
+            "unhealthy",
+            "starting",
+            "ready",
+            "stopping",
+            "stopped",
+            "error"
+          ]
+        },
+        "pid": { "type": "integer", "minimum": 1 },
+        "cgroupPath": { "$ref": "#/$defs/nullableString" },
+        "cgroupId": {
+          "oneOf": [
+            { "$ref": "#/$defs/uint64" },
+            { "type": "null" }
+          ]
+        },
+        "attachedPrograms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "collectionDepth": { "enum": ["balanced", "policy", "deep"] },
+        "policyCollectionEnabled": { "type": "boolean" },
+        "deepCollectionSupported": { "const": false },
+        "message": { "$ref": "#/$defs/nullableString" },
+        "checks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "effectiveRoot",
+            "kernelAtLeast5_8",
+            "kernelBtf",
+            "kernelAtLeast5_10",
+            "bpfLsm",
+            "cgroupV2",
+            "targetCgroup",
+            "requestedDepthSupported"
+          ],
+          "properties": {
+            "effectiveRoot": { "type": "boolean" },
+            "kernelAtLeast5_8": { "type": "boolean" },
+            "kernelBtf": { "type": "boolean" },
+            "kernelAtLeast5_10": { "type": "boolean" },
+            "bpfLsm": { "type": "boolean" },
+            "cgroupV2": { "type": "boolean" },
+            "targetCgroup": { "type": "boolean" },
+            "requestedDepthSupported": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "recordKind",
+        "timestampUnixNs",
+        "level",
+        "component",
+        "message"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 2 },
+        "recordKind": { "const": "diagnostic" },
+        "timestampUnixNs": { "$ref": "#/$defs/uint64" },
+        "level": { "enum": ["info", "warning", "error"] },
+        "component": { "type": "string", "minLength": 1 },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

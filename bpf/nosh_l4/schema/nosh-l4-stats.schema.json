@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.invalid/schema/nosh-l4-stats-v1.json",
+  "title": "Nosh L3/L4 cumulative loss statistics",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordKind",
+    "timestampUnixNs",
+    "cgroupId",
+    "final",
+    "outputMode",
+    "eventsSeen",
+    "decoderErrors",
+    "flowSummaryRecords",
+    "counters"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "recordKind": {
+      "const": "stats"
+    },
+    "timestampUnixNs": {
+      "$ref": "#/$defs/uint64"
+    },
+    "cgroupId": {
+      "$ref": "#/$defs/uint64"
+    },
+    "final": {
+      "type": "boolean"
+    },
+    "outputMode": {
+      "enum": [
+        "events",
+        "flow-summary"
+      ]
+    },
+    "eventsSeen": {
+      "$ref": "#/$defs/uint64"
+    },
+    "decoderErrors": {
+      "$ref": "#/$defs/uint64"
+    },
+    "flowSummaryRecords": {
+      "$ref": "#/$defs/uint64"
+    },
+    "counters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ringbufDrops",
+        "parseErrors",
+        "unsupportedProtocol",
+        "flowMapFull",
+        "configMissing"
+      ],
+      "properties": {
+        "ringbufDrops": {
+          "$ref": "#/$defs/uint64"
+        },
+        "parseErrors": {
+          "$ref": "#/$defs/uint64"
+        },
+        "unsupportedProtocol": {
+          "$ref": "#/$defs/uint64"
+        },
+        "flowMapFull": {
+          "$ref": "#/$defs/uint64"
+        },
+        "configMissing": {
+          "$ref": "#/$defs/uint64"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "uint64": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    }
+  }
+}

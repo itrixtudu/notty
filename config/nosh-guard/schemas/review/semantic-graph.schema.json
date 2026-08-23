@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/semantic-graph.schema.json",
+  "title": "Materialized read-only Nosh semantic graph",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion", "kind", "schemaVersion", "graphId", "revision", "graphDigest", "proposalSetDigest", "basePolicyDigest",
+    "scope", "sources", "nodes", "observations", "coverage", "findings",
+    "proposals", "diff", "frozen", "contentDigest"
+  ],
+  "properties": {
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshSemanticGraph" },
+    "schemaVersion": { "const": 1 },
+    "graphId": { "$ref": "common.schema.json#/$defs/stableId" },
+    "revision": { "$ref": "common.schema.json#/$defs/hash" },
+    "graphDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "proposalSetDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "basePolicyDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "sources": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": { "$ref": "review-bundle.schema.json#/$defs/source" }
+    },
+    "nodes": { "$ref": "#/$defs/records" },
+    "observations": { "$ref": "#/$defs/records" },
+    "coverage": { "$ref": "#/$defs/records" },
+    "findings": { "$ref": "#/$defs/records" },
+    "proposals": { "$ref": "#/$defs/records" },
+    "diff": { "$ref": "#/$defs/records" },
+    "frozen": { "const": true },
+    "contentDigest": { "$ref": "common.schema.json#/$defs/hash" }
+  },
+  "$defs": {
+    "records": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": { "$ref": "graph-record.schema.json" }
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "../schemas/raw-fixture.schema.json",
+  "schemaVersion": 1,
+  "source": "ig-syscalls",
+  "producerVersion": "v0.54.1",
+  "records": [
+    {
+      "containerName": "nosh-fixture",
+      "profile": {
+        "defaultAction": "SCMP_ACT_ERRNO",
+        "architectures": [
+          "SCMP_ARCH_X86_64"
+        ],
+        "syscalls": [
+          {
+            "names": [
+              "brk",
+              "close",
+              "execve",
+              "exit_group",
+              "futex",
+              "mmap",
+              "openat",
+              "read",
+              "rt_sigaction",
+              "write"
+            ],
+            "action": "SCMP_ACT_ALLOW"
+          }
+        ]
+      }
+    }
+  ],
+  "expectedEvents": [
+    {
+      "schemaVersion": 1,
+      "source": {
+        "kind": "ig",
+        "name": "advise_seccomp",
+        "version": "v0.54.1"
+      },
+      "runId": "fixture-run-0001",
+      "observedAt": "2026-07-25T12:05:00.000Z",
+      "container": {
+        "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "name": "nosh-fixture",
+        "image": "nosh:fixture",
+        "imageDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "event": {
+        "type": "recommendation",
+        "domain": "seccomp",
+        "action": "allow-syscalls",
+        "value": [
+          "brk",
+          "close",
+          "execve",
+          "exit_group",
+          "futex",
+          "mmap",
+          "openat",
+          "read",
+          "rt_sigaction",
+          "write"
+        ],
+        "generator": "advise_seccomp:v0.54.1"
+      }
+    }
+  ]
+}

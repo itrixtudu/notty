@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.invalid/schema/nosh-url-stats-v1.json",
+  "title": "Nosh URL collector statistics",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordKind",
+    "timestampUnixNs",
+    "cgroupId",
+    "provider",
+    "providersAttached",
+    "final",
+    "observationOnly",
+    "coverageComplete",
+    "coverageLimitation",
+    "counters"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "recordKind": { "const": "stats" },
+    "timestampUnixNs": { "$ref": "#/$defs/decimal" },
+    "cgroupId": { "$ref": "#/$defs/nonzeroDecimal" },
+    "provider": { "const": "libcurl" },
+    "providersAttached": {
+      "type": "array",
+      "maxItems": 1,
+      "uniqueItems": true,
+      "items": { "const": "libcurl" }
+    },
+    "final": { "type": "boolean" },
+    "observationOnly": { "const": true },
+    "coverageComplete": { "const": false },
+    "coverageLimitation": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "counters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ringbufDrops",
+        "configMissing",
+        "cgroupFilterErrors",
+        "readErrors",
+        "optionCalls",
+        "rawObservations",
+        "discoveryScans",
+        "processesInspected",
+        "libraryMappingsSeen",
+        "attachments",
+        "discoveryMisses",
+        "sanitizerRejects",
+        "pathTruncations",
+        "decoderErrors",
+        "observations",
+        "outputLimitReached"
+      ],
+      "properties": {
+        "ringbufDrops": { "$ref": "#/$defs/decimal" },
+        "configMissing": { "$ref": "#/$defs/decimal" },
+        "cgroupFilterErrors": { "$ref": "#/$defs/decimal" },
+        "readErrors": { "$ref": "#/$defs/decimal" },
+        "optionCalls": { "$ref": "#/$defs/decimal" },
+        "rawObservations": { "$ref": "#/$defs/decimal" },
+        "discoveryScans": { "$ref": "#/$defs/decimal" },
+        "processesInspected": { "$ref": "#/$defs/decimal" },
+        "libraryMappingsSeen": { "$ref": "#/$defs/decimal" },
+        "attachments": { "$ref": "#/$defs/decimal" },
+        "discoveryMisses": { "$ref": "#/$defs/decimal" },
+        "sanitizerRejects": { "$ref": "#/$defs/decimal" },
+        "pathTruncations": { "$ref": "#/$defs/decimal" },
+        "decoderErrors": { "$ref": "#/$defs/decimal" },
+        "observations": { "$ref": "#/$defs/decimal" },
+        "outputLimitReached": { "$ref": "#/$defs/decimal" }
+      }
+    }
+  },
+  "$defs": {
+    "decimal": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "nonzeroDecimal": { "type": "string", "pattern": "^[1-9][0-9]*$" }
+  }
+}

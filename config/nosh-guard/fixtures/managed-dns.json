@@ -1,0 +1,50 @@
+{
+  "$schema": "../schemas/raw-fixture.schema.json",
+  "schemaVersion": 1,
+  "source": "managed_dns",
+  "producerVersion": "notty.dev/v1alpha1",
+  "records": [
+    {
+      "runId": "fixture-run-0001",
+      "containerId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "observedAt": "2026-07-25T12:00:02.050Z",
+      "queryId": 4660,
+      "name": "api.openai.com",
+      "qtype": "A",
+      "rcode": "NOERROR",
+      "answers": [
+        {
+          "address": "104.18.7.192",
+          "ttlSeconds": 60
+        }
+      ],
+      "decision": "allowed",
+      "ruleId": "coding-https"
+    }
+  ],
+  "expectedEvents": [
+    {
+      "schemaVersion": 1,
+      "source": {
+        "kind": "managed_dns",
+        "name": "managed-resolver",
+        "version": "notty.dev/v1alpha1"
+      },
+      "runId": "fixture-run-0001",
+      "observedAt": "2026-07-25T12:00:02.050Z",
+      "container": {
+        "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "name": "nosh-fixture",
+        "image": "nosh:fixture",
+        "imageDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "event": {
+        "type": "network",
+        "direction": "egress",
+        "protocol": "any",
+        "address": "104.18.7.192",
+        "dnsName": "api.openai.com"
+      }
+    }
+  ]
+}

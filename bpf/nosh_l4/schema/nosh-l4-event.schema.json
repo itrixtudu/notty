@@ -1,0 +1,364 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.invalid/schema/nosh-l4-event-v1.json",
+  "title": "Nosh metadata-only L3/L4 evidence event",
+  "description": "Normalized userspace representation of a nosh_l4 kernel event. It contains network and process metadata only and never packet payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "metadataOnly",
+    "eventKind",
+    "hook",
+    "timestampNs",
+    "cgroupId",
+    "socketCookie",
+    "network",
+    "process",
+    "sensorDecision",
+    "attempt",
+    "accounting",
+    "flags"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "metadataOnly": {
+      "const": true
+    },
+    "eventKind": {
+      "enum": [
+        "attempt",
+        "packet"
+      ]
+    },
+    "hook": {
+      "enum": [
+        "connect4",
+        "connect6",
+        "sendmsg4",
+        "sendmsg6",
+        "ingress",
+        "egress"
+      ]
+    },
+    "timestampNs": {
+      "$ref": "#/$defs/uint64",
+      "description": "Unix epoch timestamp in nanoseconds. The loader converts the kernel monotonic timestamp before serialization."
+    },
+    "cgroupId": {
+      "$ref": "#/$defs/uint64"
+    },
+    "socketCookie": {
+      "$ref": "#/$defs/uint64"
+    },
+    "network": {
+      "$ref": "#/$defs/network"
+    },
+    "process": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/process"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sensorDecision": {
+      "$ref": "#/$defs/sensorDecision"
+    },
+    "attempt": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/attempt"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "accounting": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/accounting"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "flags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "observed-only",
+          "completion-unknown",
+          "fragment",
+          "l4-unavailable"
+        ]
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "eventKind": {
+          "const": "attempt"
+        },
+        "hook": {
+          "enum": [
+            "connect4",
+            "connect6",
+            "sendmsg4",
+            "sendmsg6"
+          ]
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt"
+        },
+        "accounting": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "properties": {
+        "eventKind": {
+          "const": "packet"
+        },
+        "hook": {
+          "enum": [
+            "ingress",
+            "egress"
+          ]
+        },
+        "attempt": {
+          "type": "null"
+        },
+        "accounting": {
+          "$ref": "#/$defs/accounting"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "uint64": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$",
+      "description": "Unsigned 64-bit integer serialized as a decimal string to avoid JSON precision loss."
+    },
+    "nullablePort": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullableByte": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullableAddress": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "ipv4"
+        },
+        {
+          "type": "string",
+          "format": "ipv6"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "direction",
+        "family",
+        "protocol",
+        "sourceAddress",
+        "destinationAddress",
+        "sourcePort",
+        "destinationPort",
+        "icmpType",
+        "icmpCode",
+        "ifindex"
+      ],
+      "properties": {
+        "direction": {
+          "enum": [
+            "unspecified",
+            "ingress",
+            "egress"
+          ]
+        },
+        "family": {
+          "enum": [
+            "ipv4",
+            "ipv6"
+          ]
+        },
+        "protocol": {
+          "enum": [
+            "tcp",
+            "udp",
+            "icmp",
+            "icmpv6"
+          ]
+        },
+        "sourceAddress": {
+          "$ref": "#/$defs/nullableAddress"
+        },
+        "destinationAddress": {
+          "$ref": "#/$defs/nullableAddress"
+        },
+        "sourcePort": {
+          "$ref": "#/$defs/nullablePort"
+        },
+        "destinationPort": {
+          "$ref": "#/$defs/nullablePort"
+        },
+        "icmpType": {
+          "$ref": "#/$defs/nullableByte"
+        },
+        "icmpCode": {
+          "$ref": "#/$defs/nullableByte"
+        },
+        "ifindex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attribution",
+        "pid",
+        "tid",
+        "uid",
+        "gid",
+        "comm"
+      ],
+      "properties": {
+        "attribution": {
+          "enum": [
+            "current-task",
+            "socket-cookie-cache"
+          ]
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "tid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "uid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "gid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "comm": {
+          "type": "string",
+          "maxLength": 16
+        }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "completionKnown"
+      ],
+      "properties": {
+        "operation": {
+          "enum": [
+            "connect",
+            "sendmsg"
+          ]
+        },
+        "completionKnown": {
+          "const": false
+        }
+      }
+    },
+    "sensorDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict",
+        "observedOnly",
+        "hookReturn"
+      ],
+      "properties": {
+        "verdict": {
+          "const": "allow"
+        },
+        "observedOnly": {
+          "const": true
+        },
+        "hookReturn": {
+          "const": 1
+        }
+      }
+    },
+    "accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "packetBytes",
+        "packets",
+        "bytes"
+      ],
+      "properties": {
+        "scope": {
+          "const": "running-flow-total"
+        },
+        "packetBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "packets": {
+          "$ref": "#/$defs/uint64"
+        },
+        "bytes": {
+          "$ref": "#/$defs/uint64"
+        }
+      }
+    }
+  }
+}

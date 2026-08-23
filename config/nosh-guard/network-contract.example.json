@@ -1,0 +1,99 @@
+{
+  "$schema": "./schemas/network-contract.schema.json",
+  "apiVersion": "notty.dev/v1alpha1",
+  "kind": "NoshNetworkContract",
+  "metadata": {
+    "name": "coding-agent-example",
+    "revision": "review-me"
+  },
+  "spec": {
+    "networkName": "nosh-guard-a1b2c3d4e5f6",
+    "subnet": "10.240.8.0/29",
+    "gatewayAddress": "10.240.8.2",
+    "enforcementOwner": "external-gateway",
+    "defaultAction": "deny",
+    "failMode": "closed",
+    "dns": {
+      "listenAddress": "10.240.8.2",
+      "listenPort": 53,
+      "allowedTransports": [
+        "udp",
+        "tcp"
+      ],
+      "denyDirectResolvers": true,
+      "denyEncryptedDnsBypass": true,
+      "minimumTtlSeconds": 1,
+      "maximumTtlSeconds": 300,
+      "negativeTtlSeconds": 30,
+      "allowedNames": [
+        "api.openai.com",
+        "api.github.com",
+        "github.com",
+        "*.githubusercontent.com",
+        "registry.npmjs.org",
+        "pypi.org",
+        "files.pythonhosted.org"
+      ],
+      "upstreams": [
+        {
+          "address": "1.1.1.1",
+          "port": 53,
+          "transport": "udp"
+        },
+        {
+          "address": "9.9.9.9",
+          "port": 53,
+          "transport": "udp"
+        }
+      ]
+    },
+    "egress": {
+      "invariantDeniedCidrs": [
+        "0.0.0.0/8",
+        "10.0.0.0/8",
+        "100.64.0.0/10",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "224.0.0.0/4",
+        "::/128",
+        "::1/128",
+        "fc00::/7",
+        "fe80::/10",
+        "ff00::/8"
+      ],
+      "allow": [
+        {
+          "id": "coding-https",
+          "purpose": "Agent APIs, source control, and package indexes",
+          "protocols": [
+            "tcp"
+          ],
+          "ports": [
+            443
+          ],
+          "domains": [
+            "api.openai.com",
+            "api.github.com",
+            "github.com",
+            "*.githubusercontent.com",
+            "registry.npmjs.org",
+            "pypi.org",
+            "files.pythonhosted.org"
+          ]
+        }
+      ]
+    },
+    "evidence": {
+      "requiredSources": [
+        "nosh-l4",
+        "managed_dns",
+        "managed_gateway"
+      ],
+      "correlationWindowMs": 5000,
+      "logAllowed": true,
+      "logDenied": true
+    }
+  }
+}

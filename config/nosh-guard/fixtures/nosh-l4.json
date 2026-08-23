@@ -1,0 +1,76 @@
+{
+  "$schema": "../schemas/raw-fixture.schema.json",
+  "schemaVersion": 1,
+  "source": "nosh-l4",
+  "producerVersion": "notty.dev/v1alpha1",
+  "records": [
+    {
+      "schemaVersion": 1,
+      "metadataOnly": true,
+      "eventKind": "attempt",
+      "hook": "connect4",
+      "timestampNs": "1784980803000000000",
+      "cgroupId": "71624591",
+      "socketCookie": "9283746501",
+      "network": {
+        "direction": "egress",
+        "family": "ipv4",
+        "protocol": "tcp",
+        "sourceAddress": "10.240.8.3",
+        "destinationAddress": "104.18.7.192",
+        "sourcePort": 49152,
+        "destinationPort": 443,
+        "icmpType": null,
+        "icmpCode": null,
+        "ifindex": 0
+      },
+      "process": {
+        "attribution": "current-task",
+        "pid": 4242,
+        "tid": 4242,
+        "uid": 1000,
+        "gid": 1000,
+        "comm": "node"
+      },
+      "sensorDecision": {
+        "verdict": "allow",
+        "observedOnly": true,
+        "hookReturn": 1
+      },
+      "attempt": {
+        "operation": "connect",
+        "completionKnown": false
+      },
+      "accounting": null,
+      "flags": [
+        "observed-only",
+        "completion-unknown"
+      ]
+    }
+  ],
+  "expectedEvents": [
+    {
+      "schemaVersion": 1,
+      "source": {
+        "kind": "nosh_l4",
+        "name": "docker-network",
+        "version": "notty.dev/v1alpha1"
+      },
+      "runId": "fixture-run-0001",
+      "observedAt": "2026-07-25T12:00:03.000Z",
+      "container": {
+        "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "name": "nosh-fixture",
+        "image": "nosh:fixture",
+        "imageDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "event": {
+        "type": "network",
+        "direction": "egress",
+        "protocol": "tcp",
+        "address": "104.18.7.192",
+        "port": 443
+      }
+    }
+  ]
+}

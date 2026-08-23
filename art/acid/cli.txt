@@ -1,0 +1,106 @@
+Proposed Command-Line Switches
+🎨 Fractal Mode (existing + new)
+--mandelbrot
+--julia
+--fire                 (Julia + fire palette + flicker)
+--acidwarp             (rotating color maps, psychedelic)
+
+🌈 Palette Variant
+--palette rainbow      (your original pretty one)
+--palette fire         (BBS 196→231 ramp)
+--palette grayscale
+--palette plasma
+--palette neon
+
+🔥 Fire Layout
+--fire-full            (whole screen fractal fire)
+--fire-bottom          (only bottom rows turn into fire)
+--fire-hybrid          (top rainbow, bottom fire with smooth blend)
+
+🔩 Geometry / Render Options
+--width <N>
+--height <N>
+--zoom <float>
+--speed <float>
+--glyph <char>         (default '@' but user can choose)
+
+🔁 Animation Modes
+--drift                (default: drifting Julia seed)
+--no-drift             (static Julia seed)
+--rotate               (rotate color palette each frame)
+--warp                 (warp seeds in a sine pattern)
+
+🔐 Lock Screen Behavior
+--timeout <sec>
+--prompt-on-bottom     (move unlock prompt)
+--dark                 (clear screen black)
+--dim                  (lower initial brightness)
+
+🎛 A Friendly Example CLI
+
+Here are some combos users might actually run:
+
+Full fractal fire:
+klock --fire --fire-full --speed 0.05
+
+AcidWarp psychedelic lock screen:
+klock --acidwarp --palette neon --warp --rotate
+
+Pretty classic Julia (your screenshot):
+klock --julia --palette rainbow --drift --glyph '.'
+
+Rainbow → fire hybrid:
+klock --julia --fire-hybrid --palette fire --speed 0.03
+
+
+✔ Pick fractal modes:
+
+ --mandelbrot
+
+ --julia
+
+ --fire
+
+ --acidwarp
+
+✔ Pick palette switches:
+
+ --palette rainbow
+
+ --palette fire
+
+ --palette grayscale
+
+ --palette plasma
+
+ --palette neon
+
+✔ Pick fire layout:
+
+ --fire-full
+
+ --fire-bottom
+
+ --fire-hybrid
+
+✔ Pick geometry controls:
+
+ --width <N>
+
+ --height <N>
+
+ --zoom <float>
+
+ --speed <float>
+
+ --glyph <char>
+
+✔ Pick animation:
+
+ --drift
+
+ --no-drift
+
+ --rotate
+
+ --warp

@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": "notty.dev/v1alpha1",
+  "kind": "NoshGuardModeContract",
+  "baselineAlwaysOn": [
+    "non-root-user",
+    "capabilities-drop-all",
+    "no-new-privileges",
+    "read-only-root-filesystem",
+    "bounded-pids-cpu-memory-and-tmp",
+    "no-host-namespaces-devices-or-docker-socket",
+    "mode-scoped-managed-network"
+  ],
+  "modes": {
+    "learn": {
+      "purpose": "Collect representative evidence and compile an unapproved candidate.",
+      "tetragonPolicyMode": "monitor",
+      "requiredEvidence": [
+        "tetragon-events",
+        "ig-dns",
+        "ig-syscalls",
+        "nosh-l4",
+        "managed_dns",
+        "managed_gateway"
+      ],
+      "candidateMayBlock": false,
+      "networkDecision": "record-and-allow-except-invariant-denies",
+      "admissionFailure": "deny-start",
+      "runtimeFailure": "stop-and-mark-incomplete"
+    },
+    "audit": {
+      "purpose": "Evaluate one exact candidate artifact set without activating candidate denies.",
+      "tetragonPolicyMode": "monitor",
+      "requiredEvidence": [
+        "tetragon-events",
+        "ig-dns",
+        "ig-syscalls",
+        "nosh-l4",
+        "managed_dns",
+        "managed_gateway"
+      ],
+      "candidateMayBlock": false,
+      "promotionEvaluation": {
+        "requiresExactArtifactHashes": [
+          "tetragon.yaml",
+          "seccomp.json",
+          "apparmor.profile",
+          "docker.json",
+          "network-policy.yaml"
+        ],
+        "requiresCompleteBackends": [
+          "tetragon",
+          "seccomp",
+          "apparmor",
+          "docker",
+          "network"
+        ],
+        "missingCoverageIsOverrideable": false
+      },
+      "networkDecision": "record-would-deny-and-allow-except-invariant-denies",
+      "admissionFailure": "deny-start",
+      "runtimeFailure": "quarantine-stop-and-mark-incomplete"
+    },
+    "enforce": {
+      "purpose": "Run only an approved, image-bound profile and deny behavior outside it.",
+      "standaloneAdmission": "disabled-until-a-complete-ingress-backend-is-integrated",
+      "tetragonPolicyMode": "enforce-approved-only",
+      "requiredEvidence": [
+        "tetragon-events",
+        "nosh-l4",
+        "managed_dns",
+        "managed_gateway"
+      ],
+      "candidateMayBlock": false,
+      "approvedArtifactsMayBlock": true,
+      "standaloneApprovedArtifactsMayBlock": false,
+      "networkDecision": "deny-by-default",
+      "standaloneNetworkDecision": "reject-before-runtime",
+      "admissionFailure": "deny-start",
+      "runtimeFailure": "quarantine-then-stop"
+    },
+    "egress-learn": {
+      "purpose": "Collect scoped outbound network evidence for one workspace and image.",
+      "profileScope": "egress-only",
+      "tetragonPolicyMode": "none",
+      "requiredEvidence": [
+        "nosh-egress"
+      ],
+      "trainingEligible": true,
+      "fullProfileArtifactsLoaded": false,
+      "candidateMayBlock": false,
+      "networkDecision": "ebpf-record-and-allow-except-exact-platform-containment",
+      "admissionFailure": "deny-start",
+      "runtimeFailure": "stop-and-mark-incomplete"
+    },
+    "egress-audit": {
+      "purpose": "Evaluate one exact scoped egress candidate while recording would-deny traffic.",
+      "profileScope": "egress-only",
+      "tetragonPolicyMode": "none",
+      "requiredEvidence": [
+        "nosh-egress"
+      ],
+      "trainingEligible": false,
+      "evidenceUse": "diagnostic-only",
+      "fullProfileArtifactsLoaded": false,
+      "candidateMayBlock": false,
+      "networkDecision": "record-would-deny-and-allow-except-exact-platform-containment",
+      "admissionFailure": "deny-start",
+      "runtimeFailure": "quarantine-stop-and-mark-incomplete"
+    },
+    "egress-enforce": {
+      "purpose": "Apply an approved workspace- and image-bound outbound allowlist without claiming ingress enforcement.",
+      "profileScope": "egress-only",
+      "enforcementScope": "egress-only",
+      "standaloneAdmission": "enabled-for-egress-only",
+      "tetragonPolicyMode": "none",
+      "appliedArtifacts": [
+        "rendered/ebpf-policy.json",
+        "approval-envelope.dsse.json",
+        "deployment-grant.dsse.json"
+      ],
+      "ignoredCandidateArtifacts": [
+        "tetragon.yaml",
+        "seccomp.json",
+        "apparmor.profile",
+        "docker.json",
+        "network-policy.yaml"
+      ],
+      "requiredEvidence": [
+        "nosh-egress"
+      ],
+      "trainingEligible": false,
+      "evidenceUse": "diagnostic-only",
+      "candidateMayBlock": false,
+      "approvedArtifactsMayBlock": true,
+      "approvedEgressMayBlock": true,
+      "fullProfileArtifactsLoaded": false,
+      "networkDecision": "ebpf-dns-mediated-allowlist-and-default-drop",
+      "ingressDecision": "baseline-isolation-only-not-policy-enforced",
+      "admissionFailure": "deny-start",
+      "runtimeFailure": "quarantine-then-stop"
+    }
+  },
+  "promotion": {
+    "automatic": false,
+    "requiresHumanApproval": true,
+    "requiresExactImageDigest": true,
+    "requiresCompleteEvidence": true,
+    "requiresCandidateArtifactHashBinding": true,
+    "requiresCompleteBackendEvaluations": true,
+    "requiresNegativeTests": true,
+    "rejectsSelfTrainingFromEnforcedWorkload": true,
+    "egressApproval": {
+      "automatic": false,
+      "requiresHumanApproval": true,
+      "requiresCompleteManifestedLearnEvidence": true,
+      "requiresExactWorkspaceAndImageDigest": true,
+      "requiresSourcePolicyHashBinding": true,
+      "fullBackendAuditThresholdApplies": false
+    },
+    "guardEbpfActivation": {
+      "legacyNetApprovalActivates": false,
+      "requiresSignedReviewApproval": true,
+      "requiresSingleUseDeploymentGrant": true,
+      "requiresRootOwnedActivationState": true,
+      "bindsExactImageWorkspaceBackendAndObject": true
+    }
+  },
+  "notes": [
+    "Learn and audit load no compiler-generated Tetragon policy; built-in lifecycle events and separately authored monitor sensors provide evidence.",
+    "An enforcement-capable Tetragon policy may be activated only from an approved profile directory after the daemon verifies every approval hash.",
+    "The current audit runtime records exact candidate hashes but marks Tetragon, seccomp, AppArmor, Docker, and full network evaluation incomplete; those runs are evidence-bearing but cannot satisfy promotion.",
+    "The shipped standalone supervisor rejects enforce admission because its managed gateway enforces egress but does not evaluate the compiled ingress policy; use an external manager only after it supplies and attests that missing backend.",
+    "Scoped egress modes never load candidate seccomp, AppArmor, Tetragon, Docker, or ingress artifacts; the baseline runner hardening remains active.",
+    "egress-enforce releases a runner only after the daemon snapshots the verified scoped approval and nosh-egress attests the exact cgroup, run, image, workspace, policy digest, pinned maps, links, and programs.",
+    "egress-audit and egress-enforce evidence is diagnostic-only and cannot train a wider replacement allowlist.",
+    "Legacy local net approve records are historical review receipts and never authorize egress-enforce; only the current root-owned signed guard-ebpf activation can do so.",
+    "Scoped egress uses an ordinary per-run Docker bridge for routing and NAT; nosh-egress is the sole scoped allow/deny decision point.",
+    "egress-learn DNS and L4 decisions are emitted by one eBPF backend; loss, truncation, parser errors, map exhaustion, and ambiguous correlations invalidate candidate promotion."
+  ]
+}

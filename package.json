@@ -1,0 +1,71 @@
+{
+  "name": "notty",
+  "version": "0.1.0-rc.1",
+  "private": true,
+  "type": "module",
+  "description": "Node-pty MCP server",
+  "main": "server.js",
+  "bin": {
+    "nosh": "./nosh.sh",
+    "nosh-guard": "./bin/nosh-guard",
+    "nosh-gateway": "./bin/nosh-gateway",
+    "nosh-guardd": "./bin/nosh-guardd",
+    "nosh-guard-fail-closed": "./bin/nosh-guard-fail-closed",
+    "nosh-guard-tetragon-verify": "./bin/nosh-guard-tetragon-verify",
+    "notty-mcp": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "start:multi": "node scripts/start-multi.mjs",
+    "start:next": "node server.js",
+    "start:next:sse": "MCP_TRANSPORT=sse node server.js",
+    "start:stdio": "NOTTY_MODE=stdio node server.js",
+    "start:sse": "NOTTY_MODE=sse node server.js",
+    "guard:doctor": "node scripts/nosh-guard.mjs doctor",
+    "guard:daemon": "node scripts/nosh-guard.mjs daemon",
+    "stop": "bash scripts/stop.sh",
+    "test": "bash tests/profile-wrapper-security.test.sh && node --test tests/*.test.cjs",
+    "test:integration:runtimes": "node scripts/collab-real-runtime-smoke.mjs",
+    "test:integration:durdraw-agents": "node scripts/durdraw-agent-art-smoke.mjs",
+    "dev:ui": "NEXT_PUBLIC_ENABLE_WEBXR_POLYFILL=false node scripts/dev-ui.mjs",
+    "build": "next build",
+    "start:ui": "NODE_ENV=production NOTTY_MODE=next node server.js"
+  },
+  "author": "",
+  "license": "0BSD",
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.10.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@react-three/drei": "^10.7.6",
+    "@react-three/fiber": "^9.4.0",
+    "@react-three/uikit": "^1.0.56",
+    "@react-three/xr": "^6.6.27",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/addon-webgl": "^0.18.0",
+    "@xterm/xterm": "^5.5.0",
+    "express": "^4.22.2",
+    "leva": "^0.9.35",
+    "lucide-react": "^1.24.0",
+    "next": "^16.2.12",
+    "node-fetch": "^3.3.2",
+    "node-pty": "^1.1.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "three": "^0.160.0",
+    "three-mesh-ui": "^6.5.0",
+    "webxr-polyfill": "^2.0.3",
+    "ws": "^8.21.0",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "baseline-browser-mapping": "^2.9.11"
+  },
+  "overrides": {
+    "@hono/node-server": "2.0.12",
+    "fast-uri": "3.1.5",
+    "hono": "4.12.34",
+    "postcss": "8.5.25",
+    "sharp": "0.35.3"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "../schemas/raw-fixture.schema.json",
+  "schemaVersion": 1,
+  "source": "tetragon-events",
+  "producerVersion": "v1.7.0",
+  "records": [
+    {
+      "process_exec": {
+        "process": {
+          "exec_id": "Zml4dHVyZS1leGVjLWlk",
+          "pid": 4242,
+          "uid": 1000,
+          "cwd": "/workspace",
+          "binary": "/usr/bin/node",
+          "arguments": "/app/server.js",
+          "docker": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "parent_exec_id": "Zml4dHVyZS1wYXJlbnQtaWQ="
+        },
+        "parent": {
+          "exec_id": "Zml4dHVyZS1wYXJlbnQtaWQ=",
+          "pid": 4200,
+          "uid": 1000,
+          "cwd": "/workspace",
+          "binary": "/bin/bash",
+          "docker": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "node_name": "fixture-host",
+      "time": "2026-07-25T12:00:01.000000000Z"
+    }
+  ],
+  "expectedEvents": [
+    {
+      "schemaVersion": 1,
+      "source": {
+        "kind": "tetragon",
+        "name": "process_exec",
+        "version": "v1.7.0"
+      },
+      "runId": "fixture-run-0001",
+      "observedAt": "2026-07-25T12:00:01.000Z",
+      "container": {
+        "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "name": "nosh-fixture",
+        "image": "nosh:fixture",
+        "imageDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "event": {
+        "type": "process.exec",
+        "executable": "/usr/bin/node",
+        "parentExecutable": "/bin/bash",
+        "arguments": "/app/server.js"
+      }
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "../schemas/raw-fixture.schema.json",
+  "schemaVersion": 1,
+  "source": "ig-dns",
+  "producerVersion": "v0.54.1",
+  "records": [
+    {
+      "comm": "node",
+      "pid": 4242,
+      "qr": "Q",
+      "qtype": "A",
+      "name": "api.openai.com.",
+      "rcode": "",
+      "addresses": "",
+      "src": {
+        "addr": "10.240.8.3",
+        "port": 45123,
+        "proto": 17,
+        "version": 4
+      },
+      "dst": {
+        "addr": "10.240.8.2",
+        "port": 53,
+        "proto": 17,
+        "version": 4
+      },
+      "runtime": {
+        "containerId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "containerImageDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "containerImageName": "nosh:fixture",
+        "containerName": "nosh-fixture",
+        "runtimeName": "docker"
+      },
+      "timestamp": "2026-07-25T12:00:02.000000000Z"
+    }
+  ],
+  "expectedEvents": [
+    {
+      "schemaVersion": 1,
+      "source": {
+        "kind": "ig",
+        "name": "trace_dns",
+        "version": "v0.54.1"
+      },
+      "runId": "fixture-run-0001",
+      "observedAt": "2026-07-25T12:00:02.000Z",
+      "container": {
+        "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "name": "nosh-fixture",
+        "image": "nosh:fixture",
+        "imageDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "event": {
+        "type": "network",
+        "direction": "egress",
+        "protocol": "udp",
+        "address": "10.240.8.2",
+        "dnsName": "api.openai.com",
+        "port": 53
+      }
+    }
+  ]
+}

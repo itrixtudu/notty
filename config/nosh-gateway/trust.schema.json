@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-gateway-trust-v1.json",
+  "title": "Nosh gateway trust configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "schemaVersion",
+    "audience",
+    "target",
+    "targetBindingDigest",
+    "targetContextDigest",
+    "capabilityDigest",
+    "activeGrantSetDigest",
+    "reviewKeys",
+    "deploymentKeys",
+    "commands",
+    "paths",
+    "services"
+  ],
+  "properties": {
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshGatewayTrustConfig" },
+    "schemaVersion": { "const": 1 },
+    "audience": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "target": {
+      "enum": ["guard-nftables", "gateway-iptables"]
+    },
+    "targetBindingDigest": { "$ref": "#/$defs/digest" },
+    "targetContextDigest": { "$ref": "#/$defs/digest" },
+    "capabilityDigest": { "$ref": "#/$defs/digest" },
+    "activeGrantSetDigest": { "$ref": "#/$defs/digest" },
+    "reviewKeys": { "$ref": "#/$defs/keys" },
+    "deploymentKeys": { "$ref": "#/$defs/keys" },
+    "commands": { "type": "object" },
+    "paths": { "type": "object" },
+    "services": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dnsmasq"],
+      "properties": {
+        "dnsmasq": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9@_.:-]{0,254}\\.service$"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "target": { "const": "guard-nftables" } } },
+      "then": {
+        "properties": {
+          "commands": {
+            "$ref": "#/$defs/nftCommands"
+          },
+          "paths": {
+            "$ref": "#/$defs/nftPaths"
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "target": { "const": "gateway-iptables" } } },
+      "then": {
+        "properties": {
+          "commands": {
+            "$ref": "#/$defs/iptablesCommands"
+          },
+          "paths": {
+            "$ref": "#/$defs/iptablesPaths"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "absolutePath": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 4096,
+      "pattern": "^/[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyId", "publicKeyPem"],
+      "properties": {
+        "keyId": { "$ref": "#/$defs/digest" },
+        "publicKeyPem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        }
+      }
+    },
+    "keys": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/key" }
+    },
+    "nftCommands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conntrack", "dnsmasq", "nft", "systemctl"],
+      "properties": {
+        "conntrack": { "$ref": "#/$defs/absolutePath" },
+        "dnsmasq": { "$ref": "#/$defs/absolutePath" },
+        "nft": { "$ref": "#/$defs/absolutePath" },
+        "systemctl": { "$ref": "#/$defs/absolutePath" }
+      }
+    },
+    "nftPaths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dnsmasqConfig", "nftablesConfig", "stateDirectory"],
+      "properties": {
+        "dnsmasqConfig": { "$ref": "#/$defs/absolutePath" },
+        "nftablesConfig": { "$ref": "#/$defs/absolutePath" },
+        "stateDirectory": { "$ref": "#/$defs/absolutePath" }
+      }
+    },
+    "iptablesCommands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conntrack",
+        "dnsmasq",
+        "ipset",
+        "iptables",
+        "iptablesRestore",
+        "iptablesSave",
+        "systemctl"
+      ],
+      "properties": {
+        "conntrack": { "$ref": "#/$defs/absolutePath" },
+        "dnsmasq": { "$ref": "#/$defs/absolutePath" },
+        "ipset": { "$ref": "#/$defs/absolutePath" },
+        "iptables": { "$ref": "#/$defs/absolutePath" },
+        "iptablesRestore": { "$ref": "#/$defs/absolutePath" },
+        "iptablesSave": { "$ref": "#/$defs/absolutePath" },
+        "systemctl": { "$ref": "#/$defs/absolutePath" }
+      }
+    },
+    "iptablesPaths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dnsmasqConfig",
+        "ipsetRestoreConfig",
+        "iptablesRestoreConfig",
+        "stateDirectory"
+      ],
+      "properties": {
+        "dnsmasqConfig": { "$ref": "#/$defs/absolutePath" },
+        "ipsetRestoreConfig": { "$ref": "#/$defs/absolutePath" },
+        "iptablesRestoreConfig": { "$ref": "#/$defs/absolutePath" },
+        "stateDirectory": { "$ref": "#/$defs/absolutePath" }
+      }
+    }
+  }
+}

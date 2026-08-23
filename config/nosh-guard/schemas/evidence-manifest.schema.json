@@ -1,0 +1,1356 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/evidence-manifest.schema.json",
+  "title": "Nosh Guard evidence manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "apiVersion",
+    "kind",
+    "generatedAt",
+    "runId",
+    "mode",
+    "subject",
+    "startedAt",
+    "endedAt",
+    "profileRevision",
+    "trainingEligible",
+    "evidenceUse",
+    "complete",
+    "sources"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "apiVersion": {
+      "const": "notty.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "NoshSecurityEvidenceManifest"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "$ref": "#/$defs/mode"
+    },
+    "subject": {
+      "$ref": "#/$defs/subject"
+    },
+    "startedAt": {
+      "$ref": "#/$defs/nullableDateTime"
+    },
+    "endedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "profileRevision": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "auditEvaluation": {
+      "$ref": "#/$defs/auditEvaluation"
+    },
+    "egressEvaluation": {
+      "$ref": "#/$defs/egressEvaluation"
+    },
+    "ebpfEgressEvaluation": {
+      "$ref": "#/$defs/ebpfEgressEvaluation"
+    },
+    "trainingEligible": {
+      "type": "boolean"
+    },
+    "evidenceUse": {
+      "enum": [
+        "training",
+        "diagnostic-only"
+      ]
+    },
+    "complete": {
+      "type": "boolean"
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "audit"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "auditEvaluation": {
+            "$ref": "#/$defs/auditEvaluation"
+          }
+        },
+        "required": [
+          "auditEvaluation"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "complete": {
+            "const": true
+          }
+        },
+        "required": [
+          "complete"
+        ]
+      },
+      "then": {
+        "properties": {
+          "subject": {
+            "type": "object",
+            "properties": {
+              "containerId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "containerName": {
+                "type": "string",
+                "minLength": 1
+              },
+              "image": {
+                "type": "string",
+                "minLength": 1
+              },
+              "imageDigest": {
+                "$ref": "#/$defs/imageDigest"
+              }
+            }
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "if": {
+                "type": "object",
+                "properties": {
+                  "required": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "required"
+                ]
+              },
+              "then": {
+                "type": "object",
+                "properties": {
+                  "present": {
+                    "const": true
+                  },
+                  "complete": {
+                    "const": true
+                  },
+                  "hash": {
+                    "$ref": "#/$defs/hash"
+                  },
+                  "lostEvents": {
+                    "const": 0
+                  },
+                  "parseErrors": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "learn",
+              "audit"
+            ]
+          },
+          "complete": {
+            "const": true
+          }
+        },
+        "required": [
+          "mode",
+          "complete"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sources": {
+            "type": "array",
+            "allOf": [
+              {
+                "$ref": "#/$defs/requiresTetragonEvents"
+              },
+              {
+                "$ref": "#/$defs/requiresIgDns"
+              },
+              {
+                "$ref": "#/$defs/requiresIgSyscalls"
+              },
+              {
+                "$ref": "#/$defs/requiresNoshL4"
+              },
+              {
+                "$ref": "#/$defs/requiresManagedDns"
+              },
+              {
+                "$ref": "#/$defs/requiresManagedGateway"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "enforce"
+          },
+          "complete": {
+            "const": true
+          }
+        },
+        "required": [
+          "mode",
+          "complete"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sources": {
+            "type": "array",
+            "allOf": [
+              {
+                "$ref": "#/$defs/requiresTetragonEvents"
+              },
+              {
+                "$ref": "#/$defs/requiresNoshL4"
+              },
+              {
+                "$ref": "#/$defs/requiresManagedDns"
+              },
+              {
+                "$ref": "#/$defs/requiresManagedGateway"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "egress-learn"
+          },
+          "complete": {
+            "const": true
+          }
+        },
+        "required": [
+          "mode",
+          "complete"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sources": {
+            "type": "array",
+            "allOf": [
+              {
+                "$ref": "#/$defs/requiresNoshEgress"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "egress-learn",
+              "egress-audit",
+              "egress-enforce"
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "egressEvaluation"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "egress-learn",
+              "egress-audit",
+              "egress-enforce"
+            ]
+          },
+          "complete": {
+            "const": true
+          }
+        },
+        "required": [
+          "mode",
+          "complete"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sources": {
+            "type": "array",
+            "allOf": [
+              {
+                "$ref": "#/$defs/requiresNoshEgress"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "learn",
+              "audit",
+              "egress-learn"
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "trainingEligible": {
+            "const": true
+          },
+          "evidenceUse": {
+            "const": "training"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "enforce",
+              "egress-audit",
+              "egress-enforce"
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "trainingEligible": {
+            "const": false
+          },
+          "evidenceUse": {
+            "const": "diagnostic-only"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "egress-learn",
+              "egress-audit",
+              "egress-enforce"
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "ebpfEgressEvaluation"
+        ],
+        "properties": {
+          "subject": {
+            "required": [
+              "workspaceIdentity"
+            ],
+            "properties": {
+              "workspace": {
+                "type": "string",
+                "minLength": 1
+              },
+              "workspaceIdentity": {
+                "$ref": "#/$defs/workspaceIdentity"
+              }
+            }
+          },
+          "ebpfEgressEvaluation": {
+            "$ref": "#/$defs/ebpfEgressEvaluation"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "egress-learn",
+              "egress-audit",
+              "egress-enforce"
+            ]
+          },
+          "complete": {
+            "const": true
+          }
+        },
+        "required": [
+          "mode",
+          "complete"
+        ]
+      },
+      "then": {
+        "properties": {
+          "ebpfEgressEvaluation": {
+            "properties": {
+              "eligible": {
+                "const": true
+              },
+              "unresolved": {
+                "maxItems": 0
+              }
+            }
+          },
+          "egressEvaluation": {
+            "properties": {
+              "policyHash": {
+                "$ref": "#/$defs/hash"
+              },
+              "dnsEvaluationComplete": {
+                "const": true
+              },
+              "complete": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "mode": {
+      "enum": [
+        "learn",
+        "audit",
+        "enforce",
+        "egress-learn",
+        "egress-audit",
+        "egress-enforce"
+      ]
+    },
+    "nullableDateTime": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullableString": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "workspaceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dev",
+        "ino"
+      ],
+      "properties": {
+        "dev": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "ino": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        }
+      }
+    },
+    "nullableWorkspaceIdentity": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/workspaceIdentity"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "imageDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "nullableHash": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/hash"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "auditBackendEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evaluator",
+        "complete",
+        "wouldDenyCount",
+        "reason"
+      ],
+      "properties": {
+        "evaluator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "wouldDenyCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "auditEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "candidateArtifacts",
+        "backends"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "candidateArtifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tetragon.yaml",
+            "seccomp.json",
+            "apparmor.profile",
+            "docker.json",
+            "network-policy.yaml"
+          ],
+          "properties": {
+            "tetragon.yaml": {
+              "$ref": "#/$defs/nullableHash"
+            },
+            "seccomp.json": {
+              "$ref": "#/$defs/nullableHash"
+            },
+            "apparmor.profile": {
+              "$ref": "#/$defs/nullableHash"
+            },
+            "docker.json": {
+              "$ref": "#/$defs/nullableHash"
+            },
+            "network-policy.yaml": {
+              "$ref": "#/$defs/nullableHash"
+            }
+          }
+        },
+        "backends": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tetragon",
+            "seccomp",
+            "apparmor",
+            "docker",
+            "network"
+          ],
+          "properties": {
+            "tetragon": {
+              "$ref": "#/$defs/auditBackendEvaluation"
+            },
+            "seccomp": {
+              "$ref": "#/$defs/auditBackendEvaluation"
+            },
+            "apparmor": {
+              "$ref": "#/$defs/auditBackendEvaluation"
+            },
+            "docker": {
+              "$ref": "#/$defs/auditBackendEvaluation"
+            },
+            "network": {
+              "$ref": "#/$defs/auditBackendEvaluation"
+            }
+          }
+        }
+      }
+    },
+    "egressEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "policyHash",
+        "wouldDenyCount",
+        "deniedCount",
+        "dnsWouldDenyCount",
+        "dnsDeniedCount",
+        "dnsEvaluationComplete",
+        "dnsEvaluationError",
+        "complete"
+      ],
+      "properties": {
+        "backend": {
+          "const": "nosh-egress"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "policyHash": {
+          "$ref": "#/$defs/nullableHash"
+        },
+        "wouldDenyCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deniedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dnsWouldDenyCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dnsDeniedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dnsEvaluationComplete": {
+          "type": "boolean"
+        },
+        "dnsEvaluationError": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ebpfEgressEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "backend",
+        "backendAbi",
+        "objectDigest",
+        "policyDigest",
+        "targetContextHash",
+        "ruleIdMap",
+        "counts",
+        "decisionClasses",
+        "fatalCounters",
+        "coverageCounters",
+        "containmentDenied",
+        "unresolved",
+        "eligible"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 2
+        },
+        "backend": {
+          "const": "nosh-egress"
+        },
+        "backendAbi": {
+          "const": "nosh-egress-v2"
+        },
+        "objectDigest": {
+          "$ref": "#/$defs/hash"
+        },
+        "policyDigest": {
+          "$ref": "#/$defs/hash"
+        },
+        "targetContextHash": {
+          "$ref": "#/$defs/hash"
+        },
+        "ruleIdMap": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "allow",
+            "would-deny",
+            "deny"
+          ],
+          "properties": {
+            "allow": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "would-deny": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "deny": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "decisionClasses": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "backend-deny",
+            "containment-deny",
+            "coverage-gap",
+            "dns-observation",
+            "infrastructure-allow",
+            "observed",
+            "policy-allow",
+            "policy-deny",
+            "would-deny"
+          ],
+          "properties": {
+            "backend-deny": { "type": "integer", "minimum": 0 },
+            "containment-deny": { "type": "integer", "minimum": 0 },
+            "coverage-gap": { "type": "integer", "minimum": 0 },
+            "dns-observation": { "type": "integer", "minimum": 0 },
+            "infrastructure-allow": { "type": "integer", "minimum": 0 },
+            "observed": { "type": "integer", "minimum": 0 },
+            "policy-allow": { "type": "integer", "minimum": 0 },
+            "policy-deny": { "type": "integer", "minimum": 0 },
+            "would-deny": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "fatalCounters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "decoderErrors",
+            "ringbufDrops",
+            "configInvalid",
+            "dnsGrantFailures",
+            "backendDenied"
+          ],
+          "properties": {
+            "decoderErrors": {
+              "$ref": "#/$defs/nullableDecimalCounter"
+            },
+            "ringbufDrops": {
+              "$ref": "#/$defs/nullableDecimalCounter"
+            },
+            "configInvalid": {
+              "$ref": "#/$defs/nullableDecimalCounter"
+            },
+            "dnsGrantFailures": {
+              "$ref": "#/$defs/nullableDecimalCounter"
+            },
+            "backendDenied": {
+              "$ref": "#/$defs/nullableDecimalCounter"
+            }
+          }
+        },
+        "coverageCounters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "parseErrors",
+            "fragments",
+            "dnsTransactionMisses",
+            "dnsUnsupported",
+            "unsupportedProtocol",
+            "coverageAllowed",
+            "coverageWouldDeny",
+            "coverageDenied"
+          ],
+          "properties": {
+            "parseErrors": { "$ref": "#/$defs/nullableDecimalCounter" },
+            "fragments": { "$ref": "#/$defs/nullableDecimalCounter" },
+            "dnsTransactionMisses": { "$ref": "#/$defs/nullableDecimalCounter" },
+            "dnsUnsupported": { "$ref": "#/$defs/nullableDecimalCounter" },
+            "unsupportedProtocol": { "$ref": "#/$defs/nullableDecimalCounter" },
+            "coverageAllowed": { "$ref": "#/$defs/nullableDecimalCounter" },
+            "coverageWouldDeny": { "$ref": "#/$defs/nullableDecimalCounter" },
+            "coverageDenied": { "$ref": "#/$defs/nullableDecimalCounter" }
+          }
+        },
+        "containmentDenied": {
+          "$ref": "#/$defs/nullableDecimalCounter"
+        },
+        "unresolved": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ebpfFatalCounterFinding"
+              },
+              {
+                "$ref": "#/$defs/ebpfUnsupportedDecisionFinding"
+              },
+              {
+                "$ref": "#/$defs/ebpfUnknownRuleFinding"
+              },
+              {
+                "$ref": "#/$defs/ebpfCoverageFinding"
+              },
+              {
+                "$ref": "#/$defs/ebpfContainmentFinding"
+              }
+            ]
+          }
+        },
+        "eligible": {
+          "type": "boolean"
+        }
+      }
+    },
+    "nullableDecimalCounter": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ebpfFatalCounterFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "name",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "fatal-counter"
+        },
+        "name": {
+          "enum": [
+            "decoderErrors",
+            "ringbufDrops",
+            "configInvalid",
+            "dnsGrantFailures",
+            "backendDenied"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/nullableDecimalCounter"
+        }
+      }
+    },
+    "ebpfUnsupportedDecisionFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "reasonCode",
+        "count"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unsupported-decision"
+        },
+        "reasonCode": {
+          "enum": [
+            6,
+            7,
+            8,
+            10,
+            11,
+            14,
+            15
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ebpfCoverageFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "value"],
+      "properties": {
+        "kind": { "const": "coverage-gap" },
+        "name": {
+          "enum": [
+            "parseErrors",
+            "fragments",
+            "dnsTransactionMisses",
+            "dnsUnsupported",
+            "unsupportedProtocol",
+            "coverageAllowed",
+            "coverageWouldDeny",
+            "coverageDenied"
+          ]
+        },
+        "value": { "$ref": "#/$defs/nullableDecimalCounter" }
+      }
+    },
+    "ebpfContainmentFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "value"],
+      "properties": {
+        "kind": { "const": "platform-containment" },
+        "name": { "const": "containmentDenied" },
+        "value": { "$ref": "#/$defs/nullableDecimalCounter" }
+      }
+    },
+    "ebpfUnknownRuleFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ruleId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unknown-rule-id"
+        },
+        "ruleId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "containerId",
+        "containerName",
+        "image",
+        "imageDigest",
+        "workspace"
+      ],
+      "properties": {
+        "containerId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "containerName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "image": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "imageDigest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/imageDigest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workspace": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "workspaceIdentity": {
+          "$ref": "#/$defs/nullableWorkspaceIdentity"
+        }
+      }
+    },
+    "diagnostics": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "bytes",
+            "hash"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "hash": {
+              "$ref": "#/$defs/hash"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "path",
+        "required",
+        "present",
+        "bytes",
+        "records",
+        "hash",
+        "lostEvents",
+        "parseErrors",
+        "completionMarker",
+        "complete"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "tetragon-events",
+            "tetragon-enforce-policy",
+            "ig-dns",
+            "ig-syscalls",
+            "nosh-l4",
+            "nosh-egress",
+            "managed_dns",
+            "managed_gateway"
+          ]
+        },
+        "path": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "format": {
+          "enum": [
+            "ndjson",
+            "ig-seccomp-advice"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "records": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hash": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/hash"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lostEvents": {
+          "type": "number",
+          "minimum": 0
+        },
+        "parseErrors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completionMarker": {
+          "type": "string",
+          "minLength": 1
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/diagnostics"
+        },
+        "adapterState": {
+          "oneOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "error": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "requiredCompleteSource": {
+      "type": "object",
+      "properties": {
+        "required": {
+          "const": true
+        },
+        "present": {
+          "const": true
+        },
+        "complete": {
+          "const": true
+        }
+      },
+      "required": [
+        "required",
+        "present",
+        "complete"
+      ]
+    },
+    "requiresTetragonEvents": {
+      "type": "array",
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/requiredCompleteSource"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "const": "tetragon-events"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        ]
+      }
+    },
+    "requiresIgDns": {
+      "type": "array",
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/requiredCompleteSource"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "const": "ig-dns"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        ]
+      }
+    },
+    "requiresIgSyscalls": {
+      "type": "array",
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/requiredCompleteSource"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "const": "ig-syscalls"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        ]
+      }
+    },
+    "requiresNoshL4": {
+      "type": "array",
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/requiredCompleteSource"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "const": "nosh-l4"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        ]
+      }
+    },
+    "requiresNoshEgress": {
+      "type": "array",
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/requiredCompleteSource"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "const": "nosh-egress"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        ]
+      }
+    },
+    "requiresManagedDns": {
+      "type": "array",
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/requiredCompleteSource"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "const": "managed_dns"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        ]
+      }
+    },
+    "requiresManagedGateway": {
+      "type": "array",
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/requiredCompleteSource"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "const": "managed_gateway"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

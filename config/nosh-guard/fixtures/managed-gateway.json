@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/raw-fixture.schema.json",
+  "schemaVersion": 1,
+  "source": "managed_gateway",
+  "producerVersion": "notty.dev/v1alpha1",
+  "records": [
+    {
+      "runId": "fixture-run-0001",
+      "containerId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "observedAt": "2026-07-25T12:00:03.010Z",
+      "direction": "egress",
+      "protocol": "tcp",
+      "destinationAddress": "104.18.7.192",
+      "destinationPort": 443,
+      "dnsName": "api.openai.com",
+      "decision": "allowed",
+      "ruleId": "coding-https"
+    }
+  ],
+  "expectedEvents": [
+    {
+      "schemaVersion": 1,
+      "source": {
+        "kind": "managed_gateway",
+        "name": "egress-gateway",
+        "version": "notty.dev/v1alpha1"
+      },
+      "runId": "fixture-run-0001",
+      "observedAt": "2026-07-25T12:00:03.010Z",
+      "container": {
+        "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "name": "nosh-fixture",
+        "image": "nosh:fixture",
+        "imageDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "event": {
+        "type": "network",
+        "direction": "egress",
+        "protocol": "tcp",
+        "address": "104.18.7.192",
+        "dnsName": "api.openai.com",
+        "port": 443
+      }
+    }
+  ]
+}

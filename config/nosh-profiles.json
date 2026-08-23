@@ -1,0 +1,228 @@
+{
+  "profiles": {
+    "codex": {
+      "mounts": [
+        {
+          "source": "~/.codex",
+          "target": "$HOME/.codex",
+          "mode": "rw",
+          "required": false
+        },
+        {
+          "source": "~/.codex/auth.json",
+          "target": "$HOME/.codex/auth.json",
+          "mode": "ro",
+          "required": false
+        },
+        {
+          "source": "~/.codex/config.toml",
+          "target": "$HOME/.codex/config.toml",
+          "mode": "ro",
+          "required": false
+        },
+        {
+          "source": "~/.codex/history.jsonl",
+          "target": "$HOME/.codex/history.jsonl",
+          "mode": "rw",
+          "required": false,
+          "create": "file"
+        },
+        {
+          "source": "~/.codex/sessions",
+          "target": "$HOME/.codex/sessions",
+          "mode": "rw",
+          "required": false,
+          "create": "directory"
+        },
+        {
+          "source": "~/.codex/archived_sessions",
+          "target": "$HOME/.codex/archived_sessions",
+          "mode": "rw",
+          "required": false,
+          "create": "directory"
+        },
+        {
+          "source": "~/.codex/log",
+          "target": "$HOME/.codex/log",
+          "mode": "rw",
+          "required": false,
+          "create": "directory"
+        }
+      ]
+    },
+    "gemini": {
+      "mounts": [
+        {
+          "source": "~/.gemini",
+          "target": "$HOME/.gemini",
+          "mode": "rw",
+          "required": false
+        }
+      ]
+    },
+    "antigravity": {
+      "mounts": [
+        {
+          "source": "~/.gemini/antigravity-cli",
+          "target": "$HOME/.gemini/antigravity-cli",
+          "mode": "rw",
+          "required": false,
+          "create": "directory"
+        }
+      ]
+    },
+    "claude": {
+      "mounts": [
+        {
+          "source": "~/.claude",
+          "target": "$HOME/.claude",
+          "mode": "rw",
+          "required": false
+        }
+      ]
+    },
+    "claud": {
+      "mounts": [
+        {
+          "source": "~/.claude",
+          "target": "$HOME/.claude",
+          "mode": "rw",
+          "required": false
+        }
+      ]
+    },
+    "agents": {
+      "mounts": [
+        {
+          "source": "~/.codex",
+          "target": "$HOME/.codex",
+          "mode": "rw",
+          "required": false
+        },
+        {
+          "source": "~/.codex/auth.json",
+          "target": "$HOME/.codex/auth.json",
+          "mode": "ro",
+          "required": false
+        },
+        {
+          "source": "~/.codex/config.toml",
+          "target": "$HOME/.codex/config.toml",
+          "mode": "ro",
+          "required": false
+        },
+        {
+          "source": "~/.codex/history.jsonl",
+          "target": "$HOME/.codex/history.jsonl",
+          "mode": "rw",
+          "required": false,
+          "create": "file"
+        },
+        {
+          "source": "~/.codex/sessions",
+          "target": "$HOME/.codex/sessions",
+          "mode": "rw",
+          "required": false,
+          "create": "directory"
+        },
+        {
+          "source": "~/.codex/archived_sessions",
+          "target": "$HOME/.codex/archived_sessions",
+          "mode": "rw",
+          "required": false,
+          "create": "directory"
+        },
+        {
+          "source": "~/.codex/log",
+          "target": "$HOME/.codex/log",
+          "mode": "rw",
+          "required": false,
+          "create": "directory"
+        },
+        {
+          "source": "~/.gemini",
+          "target": "$HOME/.gemini",
+          "mode": "rw",
+          "required": false
+        },
+        {
+          "source": "~/.claude",
+          "target": "$HOME/.claude",
+          "mode": "rw",
+          "required": false
+        },
+        {
+          "source": "~/.config/notty",
+          "target": "$HOME/.config/notty",
+          "mode": "rw",
+          "required": false,
+          "create": "directory"
+        }
+      ]
+    },
+    "durdraw": {
+      "env": {
+        "NOTTY_MCP_TOOLSET": "durdraw"
+      },
+      "mounts": [
+        {
+          "source": "~/.durdraw",
+          "target": "$HOME/.durdraw",
+          "mode": "rw",
+          "required": false,
+          "create": "directory"
+        }
+      ]
+    },
+    "zig": {
+      "mounts": [
+        {
+          "source": "~/zig-x86_64",
+          "target": "$HOME/zig-x86_64",
+          "mode": "ro",
+          "required": false
+        }
+      ]
+    },
+    "arduino": {
+      "mounts": [
+        {
+          "source": "~/.arduino15",
+          "target": "$HOME/.arduino15",
+          "mode": "ro",
+          "required": false
+        },
+        {
+          "source": "~/Arduino",
+          "target": "$HOME/Arduino",
+          "mode": "ro",
+          "required": false
+        }
+      ],
+      "devices": [
+        {
+          "glob": "/dev/ttyUSB[0-9]",
+          "required": false
+        }
+      ]
+    },
+    "node-modules": {
+      "mounts": [
+        {
+          "source": "~/node_modules",
+          "target": "$HOME/node_modules",
+          "mode": "ro",
+          "required": false
+        }
+      ]
+    },
+    "tty-usb": {
+      "devices": [
+        {
+          "glob": "/dev/ttyUSB[0-9]",
+          "required": false
+        }
+      ]
+    }
+  }
+}

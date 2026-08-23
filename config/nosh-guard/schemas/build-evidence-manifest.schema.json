@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/build-evidence-manifest.schema.json",
+  "title": "Nosh build evidence manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "apiVersion",
+    "kind",
+    "generatedAt",
+    "runId",
+    "mode",
+    "project",
+    "builder",
+    "startedAt",
+    "endedAt",
+    "build",
+    "coverage",
+    "sources",
+    "metrics",
+    "observations",
+    "complete",
+    "candidateEligible",
+    "evidenceUse",
+    "incompleteReasons",
+    "candidateIneligibleReasons",
+    "attestation",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshBuildEvidenceManifest" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "runId": { "$ref": "#/$defs/safeName" },
+    "mode": { "enum": ["build-profile", "build-net-learn"] },
+    "project": { "$ref": "#/$defs/project" },
+    "builder": { "$ref": "#/$defs/builder" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": "string", "format": "date-time" },
+    "build": { "$ref": "#/$defs/build" },
+    "coverage": { "$ref": "#/$defs/coverage" },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "metrics": { "type": "object" },
+    "observations": { "type": "object" },
+    "complete": { "type": "boolean" },
+    "candidateEligible": { "type": "boolean" },
+    "evidenceUse": { "enum": ["candidate", "diagnostic-only"] },
+    "incompleteReasons": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "candidateIneligibleReasons": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "attestation": { "$ref": "#/$defs/attestation" },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "complete": { "const": true } },
+        "required": ["complete"]
+      },
+      "then": {
+        "properties": { "incompleteReasons": { "maxItems": 0 } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "candidateEligible": { "const": true } },
+        "required": ["candidateEligible"]
+      },
+      "then": {
+        "properties": {
+          "complete": { "const": true },
+          "evidenceUse": { "const": "candidate" },
+          "candidateIneligibleReasons": { "maxItems": 0 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "safeName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.-]+$"
+    },
+    "hash": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalPath", "key", "dev", "ino"],
+      "properties": {
+        "canonicalPath": { "type": "string", "pattern": "^/" },
+        "key": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "dev": { "type": "string", "pattern": "^[0-9]+$" },
+        "ino": { "type": "string", "pattern": "^[0-9]+$" }
+      }
+    },
+    "builder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "containerId", "image", "imageDigest", "pid", "cgroup", "dockerEndpoint"],
+      "properties": {
+        "id": { "type": ["string", "null"] },
+        "containerId": { "type": ["string", "null"] },
+        "image": { "type": ["string", "null"] },
+        "imageDigest": { "$ref": "#/$defs/hash" },
+        "pid": { "type": ["integer", "null"], "minimum": 1 },
+        "cgroup": { "type": ["string", "null"] },
+        "dockerEndpoint": { "type": ["string", "null"] }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["success", "exitCode", "platform", "cacheMode", "depth", "target", "outputImageDigest", "configDigest", "durationMs", "passes"],
+      "properties": {
+        "success": { "type": "boolean" },
+        "exitCode": { "type": "integer", "minimum": 0 },
+        "platform": { "type": "string", "minLength": 1, "pattern": "^[^,]+$" },
+        "cacheMode": { "enum": ["compare", "cold", "warm"] },
+        "depth": { "enum": ["balanced", "policy", "deep"] },
+        "target": { "type": ["string", "null"] },
+        "outputImageDigest": { "$ref": "#/$defs/hash" },
+        "configDigest": { "$ref": "#/$defs/hash" },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "passes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pass" }
+        }
+      }
+    },
+    "pass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "success", "exitCode", "durationMs", "cache", "metrics"],
+      "properties": {
+        "name": { "enum": ["cold", "warm"] },
+        "success": { "type": "boolean" },
+        "exitCode": { "type": ["integer", "null"], "minimum": 0 },
+        "durationMs": { "type": ["integer", "null"], "minimum": 0 },
+        "cache": { "type": "object" },
+        "metrics": { "type": "object" }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["builderIdentityStable", "exclusiveBuilderLease", "parentObserved", "cleanupComplete", "freshBuilder", "forcedSourcePulls", "cacheImportsDisabled", "allReachableStepsExecuted"],
+      "properties": {
+        "builderIdentityStable": { "type": "boolean" },
+        "exclusiveBuilderLease": { "type": "boolean" },
+        "parentObserved": { "type": "boolean" },
+        "cleanupComplete": { "type": "boolean" },
+        "freshBuilder": { "type": "boolean" },
+        "forcedSourcePulls": { "type": "boolean" },
+        "cacheImportsDisabled": { "type": "boolean" },
+        "allReachableStepsExecuted": { "type": "boolean" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "format", "file", "required", "present", "complete", "bytes", "records", "hash", "lostEvents", "parseErrors", "completionMarker"],
+      "properties": {
+        "name": { "$ref": "#/$defs/safeName" },
+        "format": { "type": "string", "minLength": 1 },
+        "file": { "type": ["string", "null"], "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
+        "required": { "type": "boolean" },
+        "present": { "type": "boolean" },
+        "complete": { "type": "boolean" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "records": { "type": "integer", "minimum": 0 },
+        "hash": { "$ref": "#/$defs/hash" },
+        "lostEvents": { "type": "integer", "minimum": 0 },
+        "parseErrors": { "type": "integer", "minimum": 0 },
+        "completionMarker": { "type": ["string", "null"] }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authoritative", "attested", "integrityOnly"],
+      "properties": {
+        "authoritative": { "const": false },
+        "attested": { "const": false },
+        "integrityOnly": { "const": true }
+      }
+    }
+  }
+}

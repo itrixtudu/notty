@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.invalid/schema/nosh-url-status-v1.json",
+  "title": "Nosh URL collector status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordKind",
+    "timestampUnixNs",
+    "status",
+    "cgroupPath",
+    "cgroupId",
+    "provider",
+    "attachedObjects",
+    "observationOnly",
+    "coverageComplete",
+    "message"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "recordKind": { "const": "status" },
+    "timestampUnixNs": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "status": { "enum": ["healthy", "ready", "stopping", "complete", "error"] },
+    "cgroupPath": { "type": ["string", "null"] },
+    "cgroupId": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "pattern": "^[1-9][0-9]*$" }
+      ]
+    },
+    "provider": { "const": "libcurl" },
+    "attachedObjects": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "observationOnly": { "const": true },
+    "coverageComplete": { "const": false },
+    "message": { "type": ["string", "null"], "maxLength": 512 }
+  }
+}

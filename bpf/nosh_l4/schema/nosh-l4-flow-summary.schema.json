@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.invalid/schema/nosh-l4-flow-summary-v1.json",
+  "title": "Nosh metadata-only bounded L3/L4 flow summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordKind",
+    "metadataOnly",
+    "timestampUnixNs",
+    "firstObservedNs",
+    "lastObservedNs",
+    "cgroupId",
+    "socketCookie",
+    "network",
+    "process",
+    "accounting",
+    "flags"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "recordKind": { "const": "flow-summary" },
+    "metadataOnly": { "const": true },
+    "timestampUnixNs": { "$ref": "#/$defs/uint64" },
+    "firstObservedNs": { "$ref": "#/$defs/uint64" },
+    "lastObservedNs": { "$ref": "#/$defs/uint64" },
+    "cgroupId": { "$ref": "#/$defs/uint64" },
+    "socketCookie": { "$ref": "#/$defs/uint64" },
+    "network": { "$ref": "#/$defs/network" },
+    "process": {
+      "oneOf": [
+        { "$ref": "#/$defs/process" },
+        { "type": "null" }
+      ]
+    },
+    "accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "packets", "bytes"],
+      "properties": {
+        "scope": { "const": "capture-flow-total" },
+        "packets": { "$ref": "#/$defs/uint64" },
+        "bytes": { "$ref": "#/$defs/uint64" }
+      }
+    },
+    "flags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": ["observed-only", "fragment", "l4-unavailable"]
+      }
+    }
+  },
+  "$defs": {
+    "uint64": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "nullablePort": {
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 65535 },
+        { "type": "null" }
+      ]
+    },
+    "nullableByte": {
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 255 },
+        { "type": "null" }
+      ]
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "direction",
+        "family",
+        "protocol",
+        "sourceAddress",
+        "destinationAddress",
+        "sourcePort",
+        "destinationPort",
+        "icmpType",
+        "icmpCode",
+        "ifindex"
+      ],
+      "properties": {
+        "direction": { "enum": ["ingress", "egress"] },
+        "family": { "enum": ["ipv4", "ipv6"] },
+        "protocol": { "enum": ["tcp", "udp", "icmp", "icmpv6"] },
+        "sourceAddress": { "type": "string", "minLength": 2 },
+        "destinationAddress": { "type": "string", "minLength": 2 },
+        "sourcePort": { "$ref": "#/$defs/nullablePort" },
+        "destinationPort": { "$ref": "#/$defs/nullablePort" },
+        "icmpType": { "$ref": "#/$defs/nullableByte" },
+        "icmpCode": { "$ref": "#/$defs/nullableByte" },
+        "ifindex": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+      }
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attribution", "pid", "tid", "uid", "gid", "comm"],
+      "properties": {
+        "attribution": { "const": "socket-cookie-cache" },
+        "pid": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "tid": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "uid": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "gid": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "comm": { "type": "string", "maxLength": 16 }
+      }
+    }
+  }
+}

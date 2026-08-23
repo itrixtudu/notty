@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-dns-evidence-v1.schema.json",
+  "title": "nosh-dns observe-only evidence v1",
+  "oneOf": [
+    { "$ref": "#/$defs/event" },
+    { "$ref": "#/$defs/stats" }
+  ],
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "required": ["schemaVersion", "source", "runId", "cgroupId", "timestampNs", "observedAt"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "source": { "const": "nosh-dns" },
+        "runId": { "type": "string", "minLength": 1 },
+        "cgroupId": { "type": "string", "pattern": "^[0-9]+$" },
+        "timestampNs": { "type": "string", "pattern": "^[0-9]+$" },
+        "observedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "answer": {
+      "type": "object",
+      "required": ["name", "type", "data", "ttl"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "data": { "type": "string", "minLength": 1 },
+        "ttl": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "event": {
+      "allOf": [
+        { "$ref": "#/$defs/identity" },
+        {
+          "type": "object",
+          "required": ["recordKind", "messageKind", "transport", "transactionId", "qname", "qtype", "answers", "truncated", "encrypted"],
+          "properties": {
+            "recordKind": { "const": "event" },
+            "messageKind": { "enum": ["query", "response"] },
+            "transport": { "enum": ["udp", "tcp"] },
+            "transactionId": { "type": "integer", "minimum": 0, "maximum": 65535 },
+            "correlationId": { "type": "string", "minLength": 1 },
+            "retryOf": { "type": ["string", "null"] },
+            "qname": { "type": "string", "minLength": 1 },
+            "qtype": { "type": "string", "minLength": 1 },
+            "answers": { "type": "array", "items": { "$ref": "#/$defs/answer" } },
+            "truncated": { "type": "boolean" },
+            "encrypted": { "type": "boolean" },
+            "rcode": { "type": ["string", "integer"] }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "stats": {
+      "allOf": [
+        { "$ref": "#/$defs/identity" },
+        {
+          "type": "object",
+          "required": ["recordKind", "final", "counters"],
+          "properties": {
+            "recordKind": { "const": "stats" },
+            "final": { "type": "boolean" },
+            "counters": {
+              "type": "object",
+              "required": ["ringbufDrops", "parseErrors", "tcpReassemblyDrops", "transactionEvictions"],
+              "properties": {
+                "ringbufDrops": { "type": "integer", "minimum": 0 },
+                "parseErrors": { "type": "integer", "minimum": 0 },
+                "tcpReassemblyDrops": { "type": "integer", "minimum": 0 },
+                "transactionEvictions": { "type": "integer", "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

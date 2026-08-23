@@ -1,0 +1,54 @@
+[Unit]
+Description=Nosh guarded runner supervisor
+Documentation=file:@@NOSH_GUARD_PREFIX@@/share/doc/notty/nosh-guard.md
+After=apparmor.service docker.service nosh-guard-bpffs.service tetragon.service network-online.target
+Requires=docker.service nosh-guard-bpffs.service
+Wants=apparmor.service tetragon.service network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=-/etc/nosh-guard/nosh-guard.env
+ExecStartPre=@@NOSH_GUARD_PREFIX@@/libexec/nosh-guard/nosh-guard-host-verify --service
+ExecStart=@@NOSH_GUARD_PREFIX@@/bin/nosh-guardd
+ExecStopPost=@@NOSH_GUARD_PREFIX@@/bin/nosh-guard-fail-closed
+Restart=on-failure
+RestartSec=2
+OOMPolicy=stop
+KillMode=mixed
+RuntimeDirectory=nosh-guard
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+StateDirectory=nosh-guard
+StateDirectoryMode=0700
+ConfigurationDirectory=nosh-guard
+ConfigurationDirectoryMode=0750
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=read-only
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+# The daemon creates /run/nosh-guardd.sock. AppArmor policy replacement uses
+# securityfs, and the eBPF adapters may use bpffs; keep only those kernel
+# filesystem subtrees writable inside the service mount namespace.
+ReadWritePaths=/var/lib/nosh-guard /run
+ReadWritePaths=-/sys/fs/bpf -/sys/kernel/security/apparmor
+KeyringMode=private
+LockPersonality=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target

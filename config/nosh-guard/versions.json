@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "tetragon": {
+    "version": "v1.7.0",
+    "image": "quay.io/cilium/tetragon:v1.7.0",
+    "policyApiVersion": "cilium.io/v1alpha1",
+    "documentation": "https://tetragon.io/docs/installation/container/"
+  },
+  "inspektorGadget": {
+    "version": "v0.54.1",
+    "image": "ghcr.io/inspektor-gadget/ig:v0.54.1",
+    "gadgets": {
+      "dns": "ghcr.io/inspektor-gadget/gadget/trace_dns:v0.54.1",
+      "syscalls": "ghcr.io/inspektor-gadget/gadget/advise_seccomp:v0.54.1"
+    },
+    "documentation": "https://inspektor-gadget.io/docs/v0.54.1/reference/ig/"
+  },
+  "noshL4": {
+    "loaderVersion": "1",
+    "evidenceSchemaVersion": 1,
+    "loaderPath": "/usr/local/libexec/nosh-guard/nosh-l4-loader",
+    "source": "bpf/nosh_l4"
+  },
+  "noshEgress": {
+    "loaderVersion": "2",
+    "evidenceSchemaVersion": 2,
+    "mapAbi": 2,
+    "programAbi": 2,
+    "loaderPath": "/usr/local/libexec/nosh-guard/nosh-egress-loader",
+    "source": "bpf/nosh_egress"
+  },
+  "supplyChain": {
+    "requireImmutableDigestsForProduction": true,
+    "requireGadgetSignatureVerification": true,
+    "allowLatestTags": false
+  }
+}

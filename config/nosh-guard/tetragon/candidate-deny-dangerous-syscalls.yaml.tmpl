@@ -1,0 +1,97 @@
+# REVIEW-ONLY ENFORCEMENT TEMPLATE.
+#
+# Render both placeholders and validate the result against the exact host
+# kernel before approval:
+#   __RUN_ID__                     lowercase letters, digits, and hyphens;
+#                                  keep the final metadata.name at <=63 bytes
+#   __CGROUP_NAMESPACE_INODE__     target /proc/PID/ns/cgroup inode
+#
+# The embedded mode is monitor. The Override actions become active only after
+# an approved policy is loaded with `tetra tracingpolicy add --mode enforce`.
+# Never load this template itself.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: nosh-guard-__RUN_ID__
+spec:
+  options:
+    - name: policy-mode
+      value: monitor
+  kprobes:
+    - call: sys_setns
+      syscall: true
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+          matchActions:
+            - action: Override
+              argError: -1
+    - call: sys_unshare
+      syscall: true
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+          matchActions:
+            - action: Override
+              argError: -1
+    - call: sys_mount
+      syscall: true
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+          matchActions:
+            - action: Override
+              argError: -1
+    - call: sys_pivot_root
+      syscall: true
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+          matchActions:
+            - action: Override
+              argError: -1
+    - call: sys_ptrace
+      syscall: true
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+          matchActions:
+            - action: Override
+              argError: -1
+    - call: sys_bpf
+      syscall: true
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+          matchActions:
+            - action: Override
+              argError: -1
+    - call: sys_perf_event_open
+      syscall: true
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+          matchActions:
+            - action: Override
+              argError: -1

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.invalid/schema/nosh-url-event-v1.json",
+  "title": "Nosh URL observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordKind",
+    "timestampUnixNs",
+    "timestampMonotonicNs",
+    "targetCgroupId",
+    "cgroupId",
+    "pid",
+    "tid",
+    "process",
+    "provider",
+    "source",
+    "scheme",
+    "host",
+    "port",
+    "path",
+    "pathTruncated",
+    "observationOnly"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "recordKind": { "const": "url-observation" },
+    "timestampUnixNs": { "$ref": "#/$defs/decimal" },
+    "timestampMonotonicNs": { "$ref": "#/$defs/decimal" },
+    "targetCgroupId": { "$ref": "#/$defs/nonzeroDecimal" },
+    "cgroupId": { "$ref": "#/$defs/nonzeroDecimal" },
+    "pid": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+    "tid": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+    "process": { "type": "string", "minLength": 1, "maxLength": 15 },
+    "provider": { "const": "libcurl" },
+    "source": { "const": "libcurl:CURLOPT_URL" },
+    "scheme": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9+.-]*$"
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[^\\s\\u0000-\\u001f\\u007f/@?#]+$"
+    },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^/[^?#\\u0000-\\u001f\\u007f]*$"
+    },
+    "pathTruncated": { "type": "boolean" },
+    "observationOnly": { "const": true }
+  },
+  "$defs": {
+    "decimal": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "nonzeroDecimal": { "type": "string", "pattern": "^[1-9][0-9]*$" }
+  }
+}

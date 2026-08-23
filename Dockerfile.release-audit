@@ -1,0 +1,43 @@
+ARG NODE_IMAGE=node:24.18.0-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
+
+FROM ${NODE_IMAGE}
+
+ENV DOCKER_CONTAINER=1 \
+    CI=1 \
+    NEXT_TELEMETRY_DISABLED=1 \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
+    NPM_CONFIG_USERCONFIG=/dev/null
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      bpftool \
+      clang-14 \
+      g++ \
+      gcc \
+      git \
+      libbpf-dev \
+      libelf-dev \
+      make \
+      pkg-config \
+      procps \
+      python3 \
+      ripgrep \
+      tmux \
+      zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -o node -g node -m 0700 \
+      /audit \
+      /audit/volume \
+      /audit/volume/deps \
+      /audit/runtime
+
+COPY scripts/release-audit-container.sh /usr/local/libexec/notty-release-audit
+RUN chown root:root /usr/local/libexec/notty-release-audit \
+    && chmod 0555 /usr/local/libexec/notty-release-audit
+
+USER node
+WORKDIR /audit
+
+ENTRYPOINT ["/usr/local/libexec/notty-release-audit"]

@@ -1,0 +1,63 @@
+# Build-only Guard/eBPF development toolchain with a digest-pinned base.
+# Debian tool packages are resolved when the image is built.
+#
+# Build the toolchain image:
+#   docker build --pull --file Dockerfile.guard \
+#     --tag notty-guard-toolchain:node24.18.0 .
+#
+# Compile and test every collector from the current checkout without network,
+# capabilities, or host compiler tools:
+#   docker run --rm --network none --read-only --cap-drop ALL \
+#     --security-opt no-new-privileges=true \
+#     --user "$(id -u):$(id -g)" \
+#     --tmpfs /tmp:rw,nosuid,nodev,exec,size=256m,mode=1777 \
+#     --mount "type=bind,src=$(pwd -P),dst=/workspace" \
+#     --mount type=bind,src=/sys/kernel/btf/vmlinux,dst=/sys/kernel/btf/vmlinux,readonly \
+#     notty-guard-toolchain:node24.18.0 \
+#     bash -euc 'for component in bpf/nosh_build bpf/nosh_url bpf/nosh_l4 bpf/nosh_egress; do
+#       make -C "$component" clean
+#       make -C "$component" test
+#       make -C "$component" loader
+#     done'
+#
+# The image intentionally contains no Guard runtime state or enforcement
+# privileges. `make test` does not need BTF; every `make loader` uses the
+# target host's read-only /sys/kernel/btf/vmlinux mount. Compilation generates
+# objects and loaders but never loads or attaches a BPF program. Generated
+# files remain in the bind-mounted checkout.
+
+ARG NODE_IMAGE=node:24.18.0-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
+
+FROM ${NODE_IMAGE}
+
+LABEL io.notty.nosh-guard-toolchain="1"
+
+ENV DOCKER_CONTAINER=1 \
+    CI=1 \
+    CLANG=clang-14 \
+    BPFTOOL=bpftool \
+    HOME=/tmp
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      bpftool \
+      bash \
+      ca-certificates \
+      clang-14 \
+      coreutils \
+      gcc \
+      grep \
+      libbpf-dev \
+      libelf-dev \
+      make \
+      mawk \
+      pkg-config \
+      ripgrep \
+      zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -o node -g node -m 0755 /workspace
+
+USER node
+WORKDIR /workspace
+
+CMD ["/bin/bash"]

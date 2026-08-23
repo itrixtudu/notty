@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/build-portable-bundle.schema.json",
+  "title": "Nosh redacted portable build bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "apiVersion", "kind", "generatedAt", "runId", "mode", "projectKey", "authoritative", "attested", "integrityOnly", "redacted", "files", "contentHash"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshBuildPortableBundle" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "runId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+    "mode": { "enum": ["build-profile", "build-net-learn"] },
+    "projectKey": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "authoritative": { "const": false },
+    "attested": { "const": false },
+    "integrityOnly": { "const": true },
+    "redacted": { "const": true },
+    "files": {
+      "type": "object",
+      "minProperties": 5,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["hash", "bytes", "mediaType"],
+        "properties": {
+          "hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "bytes": { "type": "integer", "minimum": 0 },
+          "mediaType": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "contentHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  }
+}

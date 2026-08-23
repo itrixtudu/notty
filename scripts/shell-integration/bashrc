@@ -1,0 +1,95 @@
+# Notty command lifecycle integration for interactive Bash terminals.
+# Capture the private marker nonce before loading user configuration, and never export it
+# to commands launched from this shell.
+
+_notty_marker_nonce="${NOTTY_SHELL_MARKER_NONCE:-}"
+export -n _notty_marker_nonce 2>/dev/null || true
+unset NOTTY_SHELL_MARKER_NONCE
+
+if [[ -r "$HOME/.bashrc" ]]; then
+  source "$HOME/.bashrc"
+fi
+
+if [[ $- != *i* || -n "${NOTTY_SHELL_INTEGRATION_ACTIVE:-}" ]]; then
+  return
+fi
+
+export NOTTY_SHELL_INTEGRATION_ACTIVE=1
+
+_notty_hex() {
+  local LC_ALL=C
+  local value="${1-}"
+  local output=""
+  local byte
+  local index
+  for ((index = 0; index < ${#value}; index += 1)); do
+    printf -v byte '%d' "'${value:index:1}"
+    printf -v byte '%02x' "$byte"
+    output+="$byte"
+  done
+  printf '%s' "$output"
+}
+
+_notty_history_id=""
+_notty_history_command=""
+_notty_capture_history() {
+  local entry
+  _notty_history_id=""
+  _notty_history_command=""
+  entry="$(HISTTIMEFORMAT= builtin history 1 2>/dev/null)" || return 0
+  if [[ "$entry" =~ ^[[:space:]]*([0-9]+)[[:space:]]+(.*)$ ]]; then
+    _notty_history_id="${BASH_REMATCH[1]}"
+    _notty_history_command="${BASH_REMATCH[2]}"
+  fi
+}
+
+_notty_emit_marker() {
+  local type="$1"
+  local command_id="$2"
+  local exit_code="$3"
+  local cwd_value="$4"
+  local command_value="$5"
+  printf '\033]6973;notty-command;2;%s;%s;%s;%s;%s;%s\007' \
+    "$_notty_marker_nonce" \
+    "$type" \
+    "$command_id" \
+    "$exit_code" \
+    "$(_notty_hex "$cwd_value")" \
+    "$(_notty_hex "$command_value")"
+}
+
+_notty_capture_history
+_notty_last_history_id="$_notty_history_id"
+_notty_prompt_seen=0
+_notty_command_sequence=0
+
+_notty_prompt_command() {
+  local command_status=$?
+  local command_value=""
+  _notty_capture_history
+
+  if (( _notty_prompt_seen == 0 )); then
+    _notty_prompt_seen=1
+    _notty_emit_marker prompt "" "" "$PWD" ""
+  else
+    _notty_command_sequence=$((_notty_command_sequence + 1))
+    if [[ -n "$_notty_history_id" && "$_notty_history_id" != "$_notty_last_history_id" ]]; then
+      command_value="$_notty_history_command"
+    fi
+    _notty_emit_marker \
+      complete \
+      "bash-${BASHPID}-${_notty_command_sequence}" \
+      "$command_status" \
+      "$PWD" \
+      "$command_value"
+  fi
+
+  _notty_last_history_id="$_notty_history_id"
+  return "$command_status"
+}
+
+if declare -p PROMPT_COMMAND 2>/dev/null | command grep -q '^declare -a'; then
+  PROMPT_COMMAND=(_notty_prompt_command "${PROMPT_COMMAND[@]}")
+else
+  PROMPT_COMMAND="_notty_prompt_command${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+fi

@@ -1,0 +1,1359 @@
+.page {
+  --surface-0: #0e100e;
+  --surface-1: #161916;
+  --surface-2: #20241f;
+  --surface-3: #292e28;
+  --terminal-bg: #080a08;
+  --field-bg: #111411;
+  --line: #3a4139;
+  --line-strong: #4a5448;
+  --muted: #9aa398;
+  --text: #eef2ec;
+  --green: #79d69a;
+  --cyan: #75cbd3;
+  --amber: #e5bd68;
+  --red: #f07f78;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-0);
+  color: var(--text);
+  color-scheme: dark;
+}
+
+.page * {
+  scrollbar-color: var(--surface-3) transparent;
+  scrollbar-width: thin;
+}
+
+.page button,
+.page select,
+.page input,
+.page textarea {
+  font: inherit;
+  letter-spacing: 0;
+}
+
+.page button {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+
+.page button:hover:not(:disabled),
+.page :global(button.secondary):hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--surface-3);
+}
+
+.page button:focus-visible,
+.page a:focus-visible {
+  outline: 2px solid rgba(117, 203, 211, 0.72);
+  outline-offset: 2px;
+}
+
+.page button:disabled {
+  opacity: 0.42;
+}
+
+.page :global(button.secondary) {
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.appHeader {
+  height: 62px;
+  flex: 0 0 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0 1.15rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.brandBlock {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.brandLine {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.brandLine > svg {
+  flex: 0 0 auto;
+  color: var(--cyan);
+}
+
+.brandLine h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 720;
+  line-height: 1.2;
+}
+
+.serviceState {
+  min-height: 19px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.1rem 0.42rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.serviceReady {
+  border-color: rgba(121, 214, 154, 0.48);
+  background: rgba(121, 214, 154, 0.1);
+  color: var(--green);
+}
+
+.serviceSyncing {
+  border-color: rgba(229, 189, 104, 0.45);
+  background: rgba(229, 189, 104, 0.08);
+  color: var(--amber);
+}
+
+.serviceAttention {
+  border-color: rgba(240, 127, 120, 0.48);
+  background: rgba(240, 127, 120, 0.1);
+  color: var(--red);
+}
+
+.workspacePath {
+  max-width: min(62vw, 720px);
+  overflow: hidden;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.66rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.primaryNav {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-0);
+}
+
+.primaryNav a {
+  padding: 0.36rem 0.65rem;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.primaryNav a:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.primaryNav a[aria-current='page'] {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.workspaceToolbar {
+  min-height: 54px;
+  flex: 0 0 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.sessionTabs {
+  min-width: 140px;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 0.22rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.16rem;
+  scrollbar-width: thin;
+}
+
+.page .sessionTab {
+  height: 34px;
+  min-width: 0;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.38rem 0.62rem;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.page .sessionTab:hover:not(:disabled) {
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.page .sessionTabActive,
+.page .sessionTabActive:hover:not(:disabled) {
+  border-color: rgba(117, 203, 211, 0.56);
+  background: rgba(117, 203, 211, 0.12);
+  color: var(--cyan);
+}
+
+.page .sessionTab:focus-visible {
+  outline-offset: -1px;
+}
+
+.sessionTabStatus {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.sessionTabActive .sessionTabStatus {
+  background: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(117, 203, 211, 0.12);
+}
+
+.sessionTabLabel {
+  min-width: 0;
+  max-width: 190px;
+  overflow: hidden;
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionTabsEmpty {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.55rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.toolbarControls {
+  min-width: max-content;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.page .toolbarIcon {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.page .newTerminalButton {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+  padding: 0.38rem 0.62rem;
+  border-color: rgba(121, 214, 154, 0.44);
+  background: #2d7650;
+  color: #f2fff7;
+  white-space: nowrap;
+}
+
+.page .newTerminalButton:hover:not(:disabled) {
+  border-color: rgba(121, 214, 154, 0.64);
+  background: #368b5e;
+}
+
+.page .copilotToggleButton {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+  padding: 0.38rem 0.62rem;
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.page .copilotToggleButtonActive {
+  border-color: rgba(117, 203, 211, 0.56);
+  background: rgba(117, 203, 211, 0.12);
+  color: var(--cyan);
+}
+
+.page .copilotToggleButton:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.toolbarDivider {
+  width: 1px;
+  height: 22px;
+  margin: 0 0.08rem;
+  background: var(--line);
+}
+
+.page .dangerAction {
+  border-color: rgba(240, 127, 120, 0.44);
+  background: transparent;
+  color: var(--red);
+}
+
+.page .dangerAction:hover:not(:disabled) {
+  border-color: rgba(240, 127, 120, 0.7);
+  background: rgba(240, 127, 120, 0.1);
+}
+
+.page :global(.inline-error) {
+  width: auto;
+  max-width: none;
+  align-self: stretch;
+  margin: 0;
+  padding: 0.55rem 1rem;
+  border: 0;
+  border-bottom: 1px solid rgba(240, 127, 120, 0.48);
+  border-radius: 0;
+  background: rgba(240, 127, 120, 0.12);
+  color: #ffc7c2;
+  font-size: 0.76rem;
+}
+
+.page :global(.terminal-stage) {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  padding: 0.5rem;
+  background: var(--terminal-bg);
+}
+
+.page :global(.terminal-workspace) {
+  grid-template-columns: minmax(0, 1fr) 14px minmax(320px, var(--agent-sidebar-width, 380px));
+}
+
+.page :global(.terminal-workspace.copilot-pane-compact) {
+  grid-template-columns: minmax(0, 1fr) 40px;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+}
+
+.page :global(.copilot-pane-rail) {
+  border-color: var(--line);
+  background: var(--surface-1);
+  color: var(--muted);
+}
+
+.page :global(.copilot-pane-rail button) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.page :global(.copilot-pane-rail button:hover:not(:disabled)) {
+  border-color: var(--line-strong);
+  background: var(--surface-3);
+  color: var(--cyan);
+}
+
+.page :global(.terminal-pane-resizer) {
+  color: var(--muted);
+}
+
+.page :global(.terminal-pane-resizer)::before {
+  background: var(--line);
+}
+
+.page :global(.terminal-pane-resizer):hover::before,
+.page :global(.terminal-pane-resizer):focus-visible::before,
+.page :global(.terminal-workspace.resizing-agent-sidebar) :global(.terminal-pane-resizer)::before {
+  background: var(--cyan);
+}
+
+.page :global(.terminal-pane-resizer):focus-visible {
+  outline-color: var(--cyan);
+}
+
+.page :global(.terminal-split) {
+  gap: 0;
+}
+
+.page :global(.terminal-split-resizer) {
+  flex-basis: 0.45rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.page :global(.terminal-split-resizer-vertical) {
+  width: 0.45rem;
+  min-width: 0.45rem;
+}
+
+.page :global(.terminal-split-resizer-horizontal) {
+  height: 0.45rem;
+  min-height: 0.45rem;
+}
+
+.page :global(button.terminal-split-resizer:hover:not(:disabled)),
+.page :global(button.terminal-split-resizer:focus-visible),
+.page :global(button.terminal-split-resizer-active) {
+  border: 0;
+  background: transparent;
+  color: var(--cyan);
+}
+
+.page :global(button.terminal-split-resizer:focus-visible) {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+}
+
+.page :global(.terminal-pane) {
+  border-radius: 8px;
+}
+
+.page :global(.terminal-pane)::after {
+  inset: -1px;
+  border-width: 1px;
+  border-radius: 8px;
+}
+
+.page :global(.terminal-pane-active)::after {
+  border-color: rgba(117, 203, 211, 0.78);
+  box-shadow: 0 0 0 1px rgba(117, 203, 211, 0.08);
+}
+
+.page :global(.terminal-shell) {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-1);
+  box-shadow: none;
+  color: var(--text);
+}
+
+.page :global(.terminal-header) {
+  min-height: 51px;
+  padding: 0.5rem 0.68rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.page :global(.terminal-title h2) {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 720;
+  line-height: 1.2;
+}
+
+.page :global(.terminal-subtitle) {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.page :global(.renderer-badge) {
+  margin-left: 0.42rem;
+  padding: 0.1rem 0.36rem;
+  border: 1px solid rgba(117, 203, 211, 0.35);
+  border-radius: 999px;
+  background: rgba(117, 203, 211, 0.08);
+  color: var(--cyan);
+  font-size: 0.58rem;
+  font-weight: 750;
+}
+
+.page :global(.status-line) {
+  margin-top: 0.16rem;
+  gap: 0.38rem;
+}
+
+.page :global(.status),
+.page :global(.status-note),
+.page :global(.terminal-dimensions) {
+  font-size: 0.6rem;
+}
+
+.page :global(.status-connected) {
+  color: var(--green);
+}
+
+.page :global(.status-connecting),
+.page :global(.status-reconnecting),
+.page :global(.status-waiting) {
+  color: var(--amber);
+}
+
+.page :global(.status-error),
+.page :global(.status-closed) {
+  color: var(--red);
+}
+
+.page :global(.status-note),
+.page :global(.terminal-meta),
+.page :global(.hint) {
+  color: var(--muted);
+}
+
+.page :global(.terminal-reconnect) {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-color: var(--line);
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.page :global(.terminal-output) {
+  background: var(--terminal-bg);
+}
+
+.page :global(.terminal-output):focus {
+  box-shadow: inset 0 0 0 1px rgba(117, 203, 211, 0.62);
+}
+
+.page :global(.terminal-footer) {
+  min-height: 39px;
+  padding: 0.38rem 0.65rem;
+  border-top: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.page :global(.terminal-footer .hint) {
+  font-size: 0.62rem;
+}
+
+.page :global(.terminal-footer) button {
+  padding: 0.3rem 0.52rem;
+  border-color: rgba(240, 127, 120, 0.4);
+  background: transparent;
+  color: var(--red);
+}
+
+.page :global(.terminal-footer) button:hover:not(:disabled) {
+  border-color: rgba(240, 127, 120, 0.62);
+  background: rgba(240, 127, 120, 0.09);
+}
+
+.page :global(.terminal-placeholder) {
+  color: var(--muted);
+}
+
+.page :global(.terminal-placeholder) h2 {
+  margin: 0 0 0.4rem;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.page :global(.terminal-placeholder) p {
+  margin: 0 0 0.85rem;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.page :global(.terminal-placeholder) button {
+  border-color: rgba(121, 214, 154, 0.44);
+  background: #2d7650;
+}
+
+.page :global(.agent-sidebar) {
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-1);
+  box-shadow: none;
+}
+
+.page :global(.agent-sidebar-header) {
+  min-height: 51px;
+  align-items: center;
+  padding: 0.55rem 0.68rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.page :global(.agent-sidebar-header h2) {
+  margin: 0 0 0.12rem;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 720;
+}
+
+.page :global(.agent-sidebar-header span) {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.page :global(.agent-sidebar-header button) {
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
+}
+
+.page :global(.agent-list) {
+  gap: 0.35rem;
+  padding: 0.5rem;
+}
+
+.page :global(.agent-toggle) {
+  gap: 0.52rem;
+  padding: 0.52rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-0);
+  color: var(--text);
+}
+
+.page :global(.agent-toggle:hover) {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+
+.page :global(.agent-toggle input) {
+  width: 14px;
+  height: 14px;
+  margin: 0.08rem 0 0;
+  padding: 0;
+  accent-color: #368b5e;
+}
+
+.page :global(.agent-toggle input):focus-visible {
+  outline: 2px solid rgba(117, 203, 211, 0.72);
+  outline-offset: 2px;
+}
+
+.page :global(.agent-toggle-title) {
+  color: var(--text);
+  font-size: 0.74rem;
+}
+
+.page :global(.agent-toggle-meta) {
+  color: var(--muted);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.61rem;
+}
+
+.page :global(.agent-status) {
+  padding: 0.1rem 0.36rem;
+  border-color: var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.58rem;
+}
+
+.page :global(.agent-status-running) {
+  border-color: rgba(229, 189, 104, 0.38);
+  background: rgba(229, 189, 104, 0.08);
+  color: var(--amber);
+}
+
+.page :global(.agent-status-complete) {
+  border-color: rgba(121, 214, 154, 0.38);
+  background: rgba(121, 214, 154, 0.08);
+  color: var(--green);
+}
+
+.page :global(.agent-status-error) {
+  border-color: rgba(240, 127, 120, 0.42);
+  background: rgba(240, 127, 120, 0.1);
+  color: var(--red);
+}
+
+.page :global(.agent-ask) {
+  gap: 0.48rem;
+  padding: 0.62rem;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-0);
+}
+
+.page :global(.agent-ask-row) {
+  gap: 0.45rem;
+}
+
+.page :global(.agent-ask label) {
+  gap: 0.22rem;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.page :global(.agent-ask select),
+.page :global(.agent-ask textarea) {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  outline: none;
+  background: var(--field-bg);
+  color: var(--text);
+  font-size: 0.7rem;
+}
+
+.page :global(.agent-ask select):focus,
+.page :global(.agent-ask textarea):focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 2px rgba(117, 203, 211, 0.16);
+}
+
+.page :global(.agent-ask textarea) {
+  min-height: 4.6rem;
+  padding: 0.5rem 0.58rem;
+  line-height: 1.45;
+}
+
+.page :global(.agent-ask textarea)::placeholder {
+  color: var(--muted);
+}
+
+.page :global(.agent-ask-row) > button {
+  min-height: 32px;
+  border-color: rgba(121, 214, 154, 0.44);
+  background: #2d7650;
+  color: #f2fff7;
+}
+
+.page :global(.agent-error) {
+  margin: 0.5rem;
+  padding: 0.55rem 0.62rem;
+  border-color: rgba(240, 127, 120, 0.44);
+  border-radius: 5px;
+  background: rgba(240, 127, 120, 0.1);
+  color: #ffc7c2;
+  font-size: 0.7rem;
+}
+
+.page :global(.agent-messages) {
+  gap: 0.42rem;
+  padding: 0.5rem;
+}
+
+.page :global(.agent-message) {
+  gap: 0.36rem;
+  padding: 0.58rem;
+  border-color: var(--line);
+  border-radius: 5px;
+  background: var(--surface-0);
+}
+
+.page :global(.agent-message-user) {
+  border-color: rgba(117, 203, 211, 0.34);
+  background: rgba(117, 203, 211, 0.07);
+}
+
+.page :global(.agent-message-error) {
+  border-color: rgba(240, 127, 120, 0.4);
+  background: rgba(240, 127, 120, 0.08);
+}
+
+.page :global(.agent-message strong) {
+  color: var(--text);
+  font-size: 0.69rem;
+}
+
+.page :global(.agent-message header span) {
+  color: var(--muted);
+  font-size: 0.58rem;
+}
+
+.page :global(.agent-message pre) {
+  color: #d7ddd5;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.page :global(.agent-suggestions button) {
+  padding: 0.32rem 0.48rem;
+}
+
+.page :global(.agent-suggestions code) {
+  color: var(--cyan);
+  font-size: 0.64rem;
+}
+
+.page :global(.agent-empty) {
+  padding: 0.7rem;
+  border-color: var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.page :global(.agent-channel-list) {
+  padding: 0.45rem 0.58rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.6rem;
+}
+
+.page :global(.copilot-controls),
+.page :global(.copilot-ask),
+.page :global(.copilot-feed),
+.page :global(.copilot-viewer) {
+  border-color: var(--line);
+  border-radius: 5px;
+  background: var(--surface-0);
+}
+
+.page :global(.copilot-field-grid label),
+.page :global(.copilot-section-heading),
+.page :global(.copilot-selection-placeholder) {
+  color: var(--muted);
+}
+
+.page :global(.copilot-field-grid select),
+.page :global(.copilot-field-grid input),
+.page :global(.copilot-question-row textarea) {
+  border-color: var(--line);
+  border-radius: 5px;
+  background: var(--field-bg);
+  color: var(--text);
+}
+
+.page :global(.copilot-field-grid select:focus),
+.page :global(.copilot-field-grid input:focus),
+.page :global(.copilot-question-row textarea:focus) {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 2px rgba(117, 203, 211, 0.16);
+}
+
+.page :global(button.copilot-primary-button) {
+  border-color: rgba(121, 214, 154, 0.44);
+  background: #2d7650;
+  color: #f2fff7;
+}
+
+.page :global(button.copilot-primary-button:hover:not(:disabled)) {
+  border-color: rgba(121, 214, 154, 0.64);
+  background: #368b5e;
+}
+
+.page :global(button.copilot-relaunch-button) {
+  border-color: rgba(229, 189, 104, 0.44);
+  background: rgba(229, 189, 104, 0.1);
+  color: var(--amber);
+}
+
+.page :global(.copilot-selection) {
+  border-color: rgba(117, 203, 211, 0.3);
+  background: rgba(117, 203, 211, 0.07);
+}
+
+.page :global(.copilot-selection pre),
+.page :global(.copilot-feed-item pre) {
+  color: #d7ddd5;
+}
+
+.page :global(.copilot-viewer-terminal > .terminal-shell) {
+  border-radius: 5px;
+}
+
+.page :global(.terminal-collapse-button) {
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 36px;
+  height: 36px;
+  border-color: var(--line);
+  border-radius: 5px;
+  background: rgba(32, 36, 31, 0.88);
+  color: var(--text);
+  backdrop-filter: blur(8px);
+}
+
+.page :global(.control-overlay) {
+  padding: 1.2rem;
+  background: rgba(8, 10, 8, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.page :global(.control-panel) {
+  width: min(940px, 100%);
+  max-height: min(92vh, 820px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--text);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.48);
+}
+
+.page :global(.control-panel-header) {
+  min-height: 54px;
+  padding: 0.65rem 0.8rem 0.65rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.page :global(.control-panel-header h2) {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 720;
+}
+
+.page :global(.control-panel) :global(.icon-button) {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-color: var(--line);
+  border-radius: 5px;
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.page :global(.control-panel-body) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  padding: 0.75rem;
+  background: var(--surface-0);
+}
+
+.page :global(.control-panel) :global(.card) {
+  gap: 0.68rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.page :global(.control-panel) :global(.card):last-child {
+  grid-column: 1 / -1;
+}
+
+.page :global(.control-panel) :global(.card-header) {
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+
+.page :global(.control-panel) :global(.card-header h3) {
+  color: var(--text);
+  font-size: 0.79rem;
+  font-weight: 720;
+}
+
+.page :global(.control-panel) :global(.card-header p),
+.page :global(.control-panel) :global(.hint),
+.page :global(.control-panel) :global(.status-note) {
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.45;
+}
+
+.page :global(.control-panel) label {
+  gap: 0.24rem;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.page :global(.control-panel) input,
+.page :global(.control-panel) select,
+.page :global(.control-panel) textarea {
+  width: 100%;
+  padding: 0.45rem 0.58rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  outline: none;
+  background: var(--field-bg);
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
+.page :global(.control-panel) input:focus,
+.page :global(.control-panel) select:focus,
+.page :global(.control-panel) textarea:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 2px rgba(117, 203, 211, 0.16);
+}
+
+.page :global(.control-panel) input:disabled,
+.page :global(.control-panel) select:disabled {
+  color: #747d72;
+  opacity: 0.7;
+}
+
+.page :global(.control-panel) :global(.row) {
+  gap: 0.55rem;
+}
+
+.page :global(.control-panel) :global(.row) > label {
+  flex: 1;
+}
+
+.page :global(.control-panel) :global(.card) > button[type='submit'] {
+  border-color: rgba(121, 214, 154, 0.44);
+  background: #2d7650;
+  color: #f2fff7;
+}
+
+.page :global(.session-list) {
+  gap: 0.35rem;
+}
+
+.page :global(.session-list li button) {
+  padding: 0.5rem 0.58rem;
+  border-color: var(--line);
+  border-radius: 5px;
+  background: var(--surface-0);
+  color: var(--text);
+}
+
+.page :global(.session-list li button.selected) {
+  border-color: rgba(117, 203, 211, 0.5);
+  background: rgba(117, 203, 211, 0.09);
+  color: var(--text);
+}
+
+.page :global(.session-title) {
+  font-size: 0.7rem;
+}
+
+.page :global(.session-meta),
+.page :global(.session-list .empty) {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.page :global(.shortcut-list) {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.page :global(.shortcut-key) {
+  border-color: var(--line);
+  border-radius: 4px;
+  background: var(--surface-0);
+  color: var(--cyan);
+  font-size: 0.61rem;
+}
+
+.page :global(.otp-summary),
+.page :global(.otp-create-form) {
+  gap: 0.55rem;
+}
+
+.page :global(.otp-create-form) button[type='submit'] {
+  border-color: rgba(121, 214, 154, 0.44);
+  background: #2d7650;
+  color: #f2fff7;
+}
+
+.page :global(.otp-pill),
+.page :global(.otp-status) {
+  padding: 0.14rem 0.44rem;
+  border: 1px solid var(--line);
+  background: transparent;
+  font-size: 0.57rem;
+}
+
+.page :global(.otp-pill-active),
+.page :global(.otp-status-available) {
+  border-color: rgba(121, 214, 154, 0.4);
+  background: rgba(121, 214, 154, 0.08);
+  color: var(--green);
+}
+
+.page :global(.otp-pill-idle),
+.page :global(.otp-status-expired) {
+  border-color: rgba(229, 189, 104, 0.4);
+  background: rgba(229, 189, 104, 0.08);
+  color: var(--amber);
+}
+
+.page :global(.otp-status-used) {
+  border-color: rgba(117, 203, 211, 0.4);
+  background: rgba(117, 203, 211, 0.08);
+  color: var(--cyan);
+}
+
+.page :global(.otp-section) {
+  gap: 0.55rem;
+}
+
+.page :global(.otp-section-header h4) {
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
+.page :global(.otp-section-header span) {
+  color: var(--muted);
+  font-size: 0.58rem;
+}
+
+.page :global(.otp-entry-list) {
+  gap: 0.5rem;
+}
+
+.page :global(.otp-entry) {
+  gap: 0.62rem;
+  padding: 0.65rem;
+  border-color: var(--line);
+  border-radius: 5px;
+  background: var(--surface-0);
+}
+
+.page :global(.otp-entry-available) {
+  border-color: rgba(121, 214, 154, 0.34);
+}
+
+.page :global(.otp-entry-used) {
+  border-color: rgba(117, 203, 211, 0.3);
+}
+
+.page :global(.otp-entry-expired) {
+  border-color: rgba(229, 189, 104, 0.32);
+}
+
+.page :global(.otp-entry-label),
+.page :global(.otp-entry-grid dt) {
+  color: var(--muted);
+  font-size: 0.58rem;
+}
+
+.page :global(.otp-entry-value) {
+  padding: 0.52rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--field-bg);
+  color: var(--cyan);
+  font-size: 0.68rem;
+}
+
+.page :global(.otp-entry-grid dd) {
+  color: var(--text);
+  font-size: 0.67rem;
+}
+
+.page :global(.control-panel) :global(.error) {
+  margin-bottom: 0;
+  padding: 0.55rem 0.62rem;
+  border-color: rgba(240, 127, 120, 0.44);
+  border-radius: 5px;
+  background: rgba(240, 127, 120, 0.1);
+  color: #ffc7c2;
+  font-size: 0.68rem;
+}
+
+.page:global(.console-expanded) .appHeader,
+.page:global(.console-expanded) .workspaceToolbar {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.page:global(.console-expanded) :global(.terminal-shell) {
+  height: 100%;
+  min-height: 100dvh;
+}
+
+.page:global(.copilot-popout-page) {
+  padding: 0.5rem;
+}
+
+.page:global(.copilot-popout-page) :global(.copilot-pane) {
+  border-radius: 7px;
+}
+
+@media (max-width: 1120px) {
+  .sessionTabLabel {
+    max-width: 145px;
+  }
+}
+
+@media (max-width: 980px) {
+  .page :global(.terminal-workspace) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(240px, 35vh);
+    gap: 0.45rem;
+  }
+
+  .page :global(.agent-sidebar) {
+    min-height: 240px;
+  }
+}
+
+@media (max-width: 980px) and (max-height: 560px) {
+  .page :global(.terminal-workspace) {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 34vw);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0.45rem;
+  }
+
+  .page :global(.agent-sidebar) {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 780px) {
+  .appHeader {
+    height: 58px;
+    flex-basis: 58px;
+    padding-inline: 0.7rem;
+  }
+
+  .workspacePath {
+    max-width: 54vw;
+  }
+
+  .workspaceToolbar {
+    overflow-x: auto;
+    padding-inline: 0.5rem;
+  }
+
+  .sessionTabs {
+    min-width: 150px;
+  }
+
+  .page :global(.control-overlay) {
+    padding: 0.55rem;
+  }
+
+  .page :global(.control-panel) {
+    max-height: calc(100dvh - 1.1rem);
+  }
+
+  .page :global(.control-panel-body) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page :global(.control-panel) :global(.card):last-child {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .brandLine h1 {
+    font-size: 0.88rem;
+  }
+
+  .workspacePath {
+    max-width: 48vw;
+  }
+
+  .serviceState {
+    display: none;
+  }
+
+  .primaryNav a {
+    padding-inline: 0.45rem;
+    font-size: 0.68rem;
+  }
+
+  .toolbarDivider {
+    display: none;
+  }
+
+  .page .newTerminalButton span {
+    display: none;
+  }
+
+  .page .copilotToggleButton span {
+    display: none;
+  }
+
+  .page .newTerminalButton,
+  .page .copilotToggleButton {
+    width: 32px;
+    min-width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .page :global(.terminal-stage) {
+    padding: 0.35rem;
+  }
+
+  .page :global(.terminal-split) {
+    gap: 0;
+  }
+
+  .page :global(.terminal-split-vertical) {
+    flex-direction: column;
+  }
+
+  .page :global(.terminal-split-vertical > .terminal-split-resizer) {
+    width: auto;
+    min-width: 0;
+    height: 0.35rem;
+    min-height: 0.35rem;
+    cursor: row-resize;
+  }
+
+  .page :global(.terminal-split-vertical > .terminal-split-resizer)::before {
+    width: 100%;
+    height: 1px;
+  }
+
+  .page :global(.terminal-split-vertical > .terminal-split-resizer)::after {
+    width: 48px;
+    height: 4px;
+  }
+
+  .page :global(.terminal-footer .hint) {
+    display: none;
+  }
+
+  .page :global(.control-panel-header) {
+    padding-left: 0.75rem;
+  }
+
+  .page :global(.control-panel-body) {
+    padding: 0.5rem;
+  }
+
+  .page :global(.otp-entry-header) {
+    flex-direction: column;
+  }
+
+  .page :global(.otp-entry-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page button {
+    transition: none;
+  }
+}

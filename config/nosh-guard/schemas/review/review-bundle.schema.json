@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/review-bundle.schema.json",
+  "title": "Hash-addressed Nosh semantic review bundle manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion", "kind", "schemaVersion", "bundleId", "createdAt", "scope",
+    "sources", "baseline", "streams", "graphDigest", "proposalSetDigest", "basePolicyDigest",
+    "privacyProfile", "bundleDigest"
+  ],
+  "properties": {
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshReviewBundle" },
+    "schemaVersion": { "const": 1 },
+    "bundleId": { "$ref": "common.schema.json#/$defs/stableId" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "sources": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "baseline": { "$ref": "#/$defs/baseline" },
+    "streams": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/stream" }
+    },
+    "graphDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "proposalSetDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "basePolicyDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "privacyProfile": { "enum": ["private-review", "portable-sensitive"] },
+    "bundleDigest": { "$ref": "common.schema.json#/$defs/hash" }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "artifactKind", "artifactDigest", "coverage"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/stableId" },
+        "artifactKind": { "$ref": "common.schema.json#/$defs/safeToken" },
+        "artifactDigest": { "$ref": "common.schema.json#/$defs/hash" },
+        "sourceType": { "$ref": "common.schema.json#/$defs/safeToken" },
+        "runId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$" },
+        "sourceName": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$" },
+        "sourceDigest": { "$ref": "common.schema.json#/$defs/hash" },
+        "observedFrom": { "type": "string", "format": "date-time" },
+        "observedTo": { "type": "string", "format": "date-time" },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "lostEvents", "parseErrors", "gaps"],
+          "properties": {
+            "status": { "enum": ["complete", "incomplete", "unavailable", "degraded"] },
+            "lostEvents": { "$ref": "common.schema.json#/$defs/decimal" },
+            "parseErrors": { "$ref": "common.schema.json#/$defs/decimal" },
+            "gaps": {
+              "type": "array", "maxItems": 256, "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 8192 }
+            }
+          }
+        }
+      },
+      "dependentRequired": {
+        "observedFrom": ["observedTo"],
+        "observedTo": ["observedFrom"]
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selection", "bundleDigest", "reason"],
+      "properties": {
+        "selection": { "enum": ["automatic", "override", "none"] },
+        "bundleDigest": {
+          "oneOf": [{ "$ref": "common.schema.json#/$defs/hash" }, { "type": "null" }]
+        },
+        "reason": { "type": ["string", "null"], "maxLength": 8192 }
+      }
+    },
+    "stream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "path", "schema", "sha256", "bytes", "records"],
+      "properties": {
+        "role": { "enum": ["nodes", "observations", "coverage", "findings", "proposals", "diff"] },
+        "path": {
+          "type": "string",
+          "pattern": "^streams/[a-z]+[.][a-f0-9]{64}[.]ndjson$"
+        },
+        "schema": {
+          "enum": [
+            "notty.dev/graph/node/v1", "notty.dev/graph/observation/v1",
+            "notty.dev/graph/coverage/v1", "notty.dev/graph/finding/v1",
+            "notty.dev/graph/proposal/v1", "notty.dev/graph/diff/v1"
+          ]
+        },
+        "sha256": { "$ref": "common.schema.json#/$defs/hash" },
+        "bytes": { "$ref": "common.schema.json#/$defs/decimal" },
+        "records": { "$ref": "common.schema.json#/$defs/decimal" }
+      }
+    }
+  }
+}

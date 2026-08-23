@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/raw-fixture.schema.json",
+  "title": "Nosh Guard raw evidence fixture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "source",
+    "producerVersion",
+    "records"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "source": {
+      "enum": [
+        "tetragon-events",
+        "ig-dns",
+        "ig-syscalls",
+        "nosh-l4",
+        "managed_dns",
+        "managed_gateway"
+      ]
+    },
+    "producerVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "expectedEvents": {
+      "type": "array",
+      "items": {
+        "$ref": "evidence-event.schema.json"
+      }
+    }
+  }
+}

@@ -1,0 +1,344 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.invalid/schema/nosh-build-event-v2.json",
+  "title": "Nosh build metadata event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordKind",
+    "metadataOnly",
+    "eventKind",
+    "timestampNs",
+    "targetCgroupId",
+    "observedCgroupId",
+    "process"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "recordKind": { "const": "event" },
+    "metadataOnly": { "const": true },
+    "eventKind": {
+      "enum": ["process-exec", "process-exit", "dns-query", "dns-response"]
+    },
+    "timestampNs": { "$ref": "#/$defs/uint64" },
+    "targetCgroupId": { "$ref": "#/$defs/uint64" },
+    "observedCgroupId": { "$ref": "#/$defs/uint64" },
+    "process": {
+      "oneOf": [
+        { "$ref": "#/$defs/process" },
+        { "type": "null" }
+      ]
+    },
+    "executable": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "rawExitCode": {
+      "oneOf": [
+        { "type": "integer" },
+        { "type": "null" }
+      ]
+    },
+    "network": { "$ref": "#/$defs/network" },
+    "dns": {
+      "oneOf": [
+        { "$ref": "#/$defs/dnsQuery" },
+        { "$ref": "#/$defs/dnsResponse" }
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "required": ["executable", "rawExitCode"],
+      "properties": {
+        "eventKind": { "const": "process-exec" },
+        "rawExitCode": { "type": "null" },
+        "network": false,
+        "dns": false,
+        "process": {
+          "allOf": [
+            { "$ref": "#/$defs/process" },
+            { "required": ["ppid"] }
+          ]
+        }
+      }
+    },
+    {
+      "required": ["executable", "rawExitCode"],
+      "properties": {
+        "eventKind": { "const": "process-exit" },
+        "executable": { "type": "null" },
+        "rawExitCode": { "type": "integer" },
+        "network": false,
+        "dns": false,
+        "process": {
+          "allOf": [
+            { "$ref": "#/$defs/process" },
+            { "required": ["ppid"] }
+          ]
+        }
+      }
+    },
+    {
+      "required": ["network", "dns"],
+      "properties": {
+        "eventKind": { "const": "dns-query" },
+        "process": { "type": "null" },
+        "executable": false,
+        "rawExitCode": false,
+        "network": {
+          "allOf": [
+            { "$ref": "#/$defs/network" },
+            { "properties": { "direction": { "const": "query" } } }
+          ]
+        },
+        "dns": { "$ref": "#/$defs/dnsQuery" }
+      }
+    },
+    {
+      "required": ["network", "dns"],
+      "properties": {
+        "eventKind": { "const": "dns-response" },
+        "process": { "type": "null" },
+        "executable": false,
+        "rawExitCode": false,
+        "network": {
+          "allOf": [
+            { "$ref": "#/$defs/network" },
+            { "properties": { "direction": { "const": "response" } } }
+          ]
+        },
+        "dns": { "$ref": "#/$defs/dnsResponse" }
+      }
+    }
+  ],
+  "$defs": {
+    "uint64": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "uint32": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "uint16": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pid", "tid", "uid", "gid", "comm"],
+      "properties": {
+        "pid": { "$ref": "#/$defs/uint32" },
+        "tid": { "$ref": "#/$defs/uint32" },
+        "ppid": { "$ref": "#/$defs/uint32" },
+        "uid": { "$ref": "#/$defs/uint32" },
+        "gid": { "$ref": "#/$defs/uint32" },
+        "comm": { "type": "string" }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "protocol",
+        "direction",
+        "serverAddress",
+        "serverPort",
+        "clientPort"
+      ],
+      "properties": {
+        "family": { "enum": ["ipv4", "ipv6"] },
+        "protocol": { "const": "udp" },
+        "direction": { "enum": ["query", "response"] },
+        "serverAddress": { "type": "string" },
+        "serverPort": { "const": 53 },
+        "clientPort": { "$ref": "#/$defs/port" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "family": { "const": "ipv4" },
+            "serverAddress": {
+              "type": "string",
+              "format": "ipv4",
+              "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})\\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})$"
+            }
+          }
+        },
+        {
+          "properties": {
+            "family": { "const": "ipv6" },
+            "serverAddress": {
+              "type": "string",
+              "format": "ipv6",
+              "pattern": ":"
+            }
+          }
+        }
+      ]
+    },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keyVersion",
+        "id",
+        "complete",
+        "socketCookie",
+        "transactionId",
+        "clientPort",
+        "serverAddress",
+        "serverPort"
+      ],
+      "properties": {
+        "keyVersion": { "const": 1 },
+        "id": {
+          "type": "string",
+          "pattern": "^udp53:(0|[1-9][0-9]*):[0-9]{1,5}:[0-9]{1,5}:[0-9A-Fa-f:.]+:53$"
+        },
+        "complete": { "type": "boolean" },
+        "socketCookie": { "$ref": "#/$defs/uint64" },
+        "transactionId": { "$ref": "#/$defs/uint16" },
+        "clientPort": { "$ref": "#/$defs/port" },
+        "serverAddress": { "type": "string", "minLength": 2 },
+        "serverPort": { "const": 53 }
+      }
+    },
+    "dnsQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "qname", "queryType", "queryClass", "correlation"],
+      "properties": {
+        "transport": { "const": "udp" },
+        "qname": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "queryType": { "$ref": "#/$defs/uint16" },
+        "queryClass": { "$ref": "#/$defs/uint16" },
+        "correlation": { "$ref": "#/$defs/correlation" }
+      }
+    },
+    "dnsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "qname", "queryType", "queryClass", "correlation", "response"],
+      "properties": {
+        "transport": { "const": "udp" },
+        "qname": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "queryType": { "$ref": "#/$defs/uint16" },
+        "queryClass": { "$ref": "#/$defs/uint16" },
+        "correlation": { "$ref": "#/$defs/correlation" },
+        "response": { "$ref": "#/$defs/response" }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "flags",
+        "responseCode",
+        "truncated",
+        "questionCount",
+        "answersDeclared",
+        "answersVisited",
+        "answersCaptured",
+        "parseComplete",
+        "answerLimitReached",
+        "answers"
+      ],
+      "properties": {
+        "flags": { "$ref": "#/$defs/uint16" },
+        "responseCode": { "type": "integer", "minimum": 0, "maximum": 15 },
+        "truncated": { "type": "boolean" },
+        "questionCount": { "const": 1 },
+        "answersDeclared": { "$ref": "#/$defs/uint16" },
+        "answersVisited": { "type": "integer", "minimum": 0, "maximum": 16 },
+        "answersCaptured": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "parseComplete": { "type": "boolean" },
+        "answerLimitReached": { "type": "boolean" },
+        "answers": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/answer" }
+        }
+      }
+    },
+    "answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "ownerName", "type", "class", "ttl", "data"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0, "maximum": 7 },
+        "ownerName": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "type": { "enum": [1, 5, 28] },
+        "class": { "const": 1 },
+        "ttl": { "$ref": "#/$defs/uint32" },
+        "data": {
+          "oneOf": [
+            { "$ref": "#/$defs/ipv4Answer" },
+            { "$ref": "#/$defs/ipv6Answer" },
+            { "$ref": "#/$defs/cnameAnswer" }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "type": { "const": 1 },
+            "data": { "$ref": "#/$defs/ipv4Answer" }
+          }
+        },
+        {
+          "properties": {
+            "type": { "const": 28 },
+            "data": { "$ref": "#/$defs/ipv6Answer" }
+          }
+        },
+        {
+          "properties": {
+            "type": { "const": 5 },
+            "data": { "$ref": "#/$defs/cnameAnswer" }
+          }
+        }
+      ]
+    },
+    "ipv4Answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "address"],
+      "properties": {
+        "kind": { "const": "ipv4" },
+        "address": { "type": "string", "format": "ipv4" }
+      }
+    },
+    "ipv6Answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "address"],
+      "properties": {
+        "kind": { "const": "ipv6" },
+        "address": { "type": "string", "format": "ipv6", "pattern": ":" }
+      }
+    },
+    "cnameAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "const": "cname" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 255 }
+      }
+    }
+  }
+}

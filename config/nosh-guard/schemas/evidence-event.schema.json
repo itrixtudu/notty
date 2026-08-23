@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/evidence-event.schema.json",
+  "title": "Canonical Nosh Guard evidence event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "source",
+    "runId",
+    "observedAt",
+    "container",
+    "event"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "tetragon",
+            "ig",
+            "nosh_l4",
+            "nosh_egress",
+            "managed_dns",
+            "managed_gateway"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "container": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "imageDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "event": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/processExec"
+        },
+        {
+          "$ref": "#/$defs/syscall"
+        },
+        {
+          "$ref": "#/$defs/file"
+        },
+        {
+          "$ref": "#/$defs/network"
+        },
+        {
+          "$ref": "#/$defs/capability"
+        },
+        {
+          "$ref": "#/$defs/mount"
+        },
+        {
+          "$ref": "#/$defs/recommendation"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "processExec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "executable"
+      ],
+      "properties": {
+        "type": {
+          "const": "process.exec"
+        },
+        "executable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parentExecutable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arguments": {
+          "type": "string"
+        }
+      }
+    },
+    "syscall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "name"
+      ],
+      "properties": {
+        "type": {
+          "const": "syscall"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+$"
+        },
+        "architecture": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "path",
+        "operation"
+      ],
+      "properties": {
+        "type": {
+          "const": "file"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "operation": {
+          "enum": [
+            "read",
+            "write",
+            "execute",
+            "create",
+            "delete",
+            "rename"
+          ]
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "direction",
+        "protocol"
+      ],
+      "properties": {
+        "type": {
+          "const": "network"
+        },
+        "direction": {
+          "enum": [
+            "ingress",
+            "egress"
+          ]
+        },
+        "protocol": {
+          "enum": [
+            "tcp",
+            "udp",
+            "icmp",
+            "icmpv6",
+            "any"
+          ]
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cidr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dnsName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "unresolvedReason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "address": {}
+          },
+          "required": [
+            "address"
+          ]
+        },
+        {
+          "properties": {
+            "cidr": {}
+          },
+          "required": [
+            "cidr"
+          ]
+        },
+        {
+          "properties": {
+            "dnsName": {}
+          },
+          "required": [
+            "dnsName"
+          ]
+        }
+      ]
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "name"
+      ],
+      "properties": {
+        "type": {
+          "const": "capability"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^CAP_[A-Z0-9_]+$"
+        }
+      }
+    },
+    "mount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "path"
+      ],
+      "properties": {
+        "type": {
+          "const": "mount"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "operation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "domain",
+        "action",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "const": "recommendation"
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {},
+        "generator": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

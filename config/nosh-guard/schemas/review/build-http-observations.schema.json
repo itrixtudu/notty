@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/build-http-observations.schema.json",
+  "title": "Normalized HTTP observations admitted to a build review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion", "provider", "captureMode", "required", "complete",
+    "gaps", "contentAssuranceGaps", "exchanges"
+  ],
+  "properties": {
+    "contractVersion": { "const": 2 },
+    "provider": { "enum": ["mitmproxy", "burp"] },
+    "captureMode": { "enum": ["managed", "manual-import"] },
+    "required": { "type": "boolean" },
+    "complete": { "type": "boolean" },
+    "gaps": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 8192 }
+    },
+    "contentAssuranceGaps": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 8192 }
+    },
+    "exchanges": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/exchange" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "complete": { "const": true } }, "required": ["complete"] },
+      "then": { "properties": { "gaps": { "maxItems": 0 } } },
+      "else": { "properties": { "gaps": { "minItems": 1 } } }
+    },
+    {
+      "if": { "properties": { "captureMode": { "const": "managed" } }, "required": ["captureMode"] },
+      "then": { "properties": { "provider": { "const": "mitmproxy" } } }
+    },
+    {
+      "if": { "properties": { "captureMode": { "const": "manual-import" } }, "required": ["captureMode"] },
+      "then": { "properties": { "complete": { "const": false } } }
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ip", "protocol", "port"],
+      "properties": {
+        "ip": { "type": "string", "minLength": 2, "maxLength": 45 },
+        "protocol": { "const": "tcp" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "complete"],
+      "properties": {
+        "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "complete": { "type": "boolean" },
+        "contentSha256": { "$ref": "#/$defs/digest" },
+        "decodedContentSha256": { "$ref": "#/$defs/digest" },
+        "length": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+        "redirectLocationSha256": { "$ref": "#/$defs/digest" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "complete": { "const": true } }, "required": ["complete"] },
+          "then": { "required": ["contentSha256"] }
+        }
+      ]
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "contentSha256", "verificationEvidenceSha256", "verified"],
+      "properties": {
+        "kind": {
+          "enum": ["npm-sri", "apt-signed-metadata", "publisher-signature", "reviewed-digest"]
+        },
+        "contentSha256": { "$ref": "#/$defs/digest" },
+        "verificationEvidenceSha256": { "$ref": "#/$defs/digest" },
+        "verified": { "const": true }
+      }
+    },
+    "cas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objectSha256", "manifestSha256", "available"],
+      "properties": {
+        "objectSha256": { "$ref": "#/$defs/digest" },
+        "manifestSha256": { "$ref": "#/$defs/digest" },
+        "available": { "const": true }
+      }
+    },
+    "exchange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "pass", "timestampUnixNs", "method", "scheme", "host", "port",
+        "displayUrl", "requestTargetSha256", "representationHeadersSha256",
+        "destination", "destinationRole", "response"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "pass": { "enum": ["cold", "warm"] },
+        "timestampUnixNs": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+        "method": {
+          "type": "string",
+          "pattern": "^(?!CONNECT$)[A-Z][A-Z0-9-]{0,31}$"
+        },
+        "scheme": { "enum": ["http", "https"] },
+        "host": { "type": "string", "minLength": 1, "maxLength": 253 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "displayUrl": { "type": "string", "format": "uri", "minLength": 1, "maxLength": 8192 },
+        "requestTargetSha256": { "$ref": "#/$defs/digest" },
+        "requestBodySha256": { "$ref": "#/$defs/digest" },
+        "representationHeadersSha256": { "$ref": "#/$defs/digest" },
+        "destination": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/destination" }
+          ]
+        },
+        "destinationRole": {
+          "type": ["string", "null"],
+          "enum": ["workload-to-origin", "workload-to-proxy", null]
+        },
+        "upstreamDestination": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/destination" }
+          ]
+        },
+        "response": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/response" }
+          ]
+        },
+        "integrity": { "$ref": "#/$defs/integrity" },
+        "cas": { "$ref": "#/$defs/cas" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "destination": { "type": "null" } }, "required": ["destination"] },
+          "then": { "properties": { "destinationRole": { "type": "null" } } },
+          "else": {
+            "properties": {
+              "destinationRole": { "enum": ["workload-to-origin", "workload-to-proxy"] }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": "notty.dev/v1alpha1",
+  "kind": "NoshBuildProfileContract",
+  "storage": {
+    "profile": "~/.nosh/build-profiles/<project-key>/<run-id>",
+    "network": "~/.nosh/build-net-profiles/<project-key>/<run-id>",
+    "runtimeProfileStateShared": false,
+    "runtimeNetworkStateShared": false
+  },
+  "candidateAdvancement": {
+    "requiresSuccessfulBuild": true,
+    "requiresCompleteEvidence": true,
+    "requiresStableBuilderIdentity": true,
+    "requiresExclusiveBuilderLease": true,
+    "requiresCleanCollectorAndBuilderCleanup": true,
+    "warmOnlyEligible": false,
+    "automaticApproval": false
+  },
+  "portableArtifacts": {
+    "redacted": true,
+    "excludeRawLogs": true,
+    "excludeCommands": true,
+    "excludePaths": true,
+    "excludeRawEvents": true,
+    "attested": false,
+    "integrityHashesOnly": true
+  }
+}

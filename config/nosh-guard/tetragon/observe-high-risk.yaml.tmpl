@@ -1,0 +1,104 @@
+# Render both placeholders before loading:
+#   __RUN_ID__                     lowercase letters, digits, and hyphens;
+#                                  keep the final metadata.name at <=63 bytes
+#   __CGROUP_NAMESPACE_INODE__     target /proc/PID/ns/cgroup inode
+#
+# This is an operator-authored observation sensor. It has no enforcement
+# actions and Tetragon will report it as monitor_only.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: nosh-guard-observe-__RUN_ID__
+spec:
+  options:
+    - name: policy-mode
+      value: monitor
+  kprobes:
+    - call: sys_setns
+      syscall: true
+      args:
+        - index: 0
+          type: int
+        - index: 1
+          type: int
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+    - call: sys_unshare
+      syscall: true
+      args:
+        - index: 0
+          type: int
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+    - call: sys_mount
+      syscall: true
+      args:
+        - index: 0
+          type: string
+        - index: 1
+          type: string
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+    - call: sys_pivot_root
+      syscall: true
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+    - call: sys_ptrace
+      syscall: true
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+    - call: sys_bpf
+      syscall: true
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+    - call: sys_perf_event_open
+      syscall: true
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+    - call: security_socket_connect
+      syscall: false
+      args:
+        - index: 1
+          type: sockaddr
+        - index: 2
+          type: int
+      selectors:
+        - matchNamespaces:
+            - namespace: Cgroup
+              operator: In
+              values:
+                - "__CGROUP_NAMESPACE_INODE__"
+          matchArgs:
+            - index: 1
+              operator: Family
+              values:
+                - AF_INET
+                - AF_INET6

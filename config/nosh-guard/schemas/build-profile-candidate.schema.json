@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/build-profile-candidate.schema.json",
+  "title": "Nosh build profile candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "apiVersion", "kind", "generatedAt", "runId", "approved", "authoritative", "attested", "project", "evidence", "spec", "contentHash"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshBuildProfileCandidate" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "runId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+    "approved": { "const": false },
+    "authoritative": { "const": false },
+    "attested": { "const": false },
+    "project": { "$ref": "build-evidence-manifest.schema.json#/$defs/project" },
+    "evidence": { "$ref": "#/$defs/evidence" },
+    "spec": { "$ref": "#/$defs/spec" },
+    "contentHash": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "manifestHash", "complete"],
+      "properties": {
+        "runId": { "type": "string", "minLength": 1 },
+        "manifestHash": { "$ref": "#/$defs/hash" },
+        "complete": { "const": true }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "cacheMode", "depth", "outputImageDigest", "outputImageDigestUse", "passes", "metrics", "observations", "limitations"],
+      "properties": {
+        "platform": { "type": "string", "minLength": 1 },
+        "cacheMode": { "enum": ["compare", "cold"] },
+        "depth": { "enum": ["balanced", "policy", "deep"] },
+        "outputImageDigest": { "type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$" },
+        "outputImageDigestUse": { "const": "informational-only" },
+        "passes": { "type": "array" },
+        "metrics": { "type": "object" },
+        "observations": { "type": "object" },
+        "limitations": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

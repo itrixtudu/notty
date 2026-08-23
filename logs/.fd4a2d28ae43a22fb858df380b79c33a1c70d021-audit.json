@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "/home/xpatchdev/notty/logs/.fd4a2d28ae43a22fb858df380b79c33a1c70d021-audit.json",
+    "files": [
+        {
+            "date": 1783969951362,
+            "name": "/home/xpatchdev/notty/logs/mcp-puppeteer-2026-07-13.log",
+            "hash": "724c580af9f83c889d921ac0a073ad5b814fa758669cda3d6533391c372bdbe7"
+        }
+    ],
+    "hashType": "sha256"
+}

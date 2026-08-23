@@ -1,0 +1,24 @@
+{
+  "name": "nosh-policy-review",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev": "NODE_ENV=development next dev",
+    "build": "NODE_ENV=production next build",
+    "start": "NODE_ENV=production next start",
+    "test": "vitest modules/__tests__/*.spec.js",
+    "test:run": "vitest run modules/__tests__/*.spec.js && node --test tests/*.test.cjs"
+  },
+  "dependencies": {
+    "next": "16.3.1",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "reactflow": "11.11.4"
+  },
+  "devDependencies": {
+    "vitest": "4.0.6"
+  }
+}

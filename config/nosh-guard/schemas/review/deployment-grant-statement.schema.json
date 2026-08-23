@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/deployment-grant-statement.schema.json",
+  "title": "Nosh short-lived enforcement deployment grant",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion", "kind", "schemaVersion", "issuedAt", "notBefore", "expiresAt",
+    "nonce", "audience", "target", "leafBundleDigest", "approvalEnvelopeDigest",
+    "targetBindingDigest", "subjectBindingDigest", "backendAbi", "capabilityDigest",
+    "activeGrantSetDigest", "renderedArtifactsDigest"
+  ],
+  "properties": {
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshDeploymentGrantStatement" },
+    "schemaVersion": { "const": 1 },
+    "issuedAt": { "type": "string", "format": "date-time" },
+    "notBefore": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "nonce": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "audience": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "target": { "const": "guard-ebpf" },
+    "leafBundleDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "approvalEnvelopeDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "targetBindingDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "subjectBindingDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "backendAbi": { "const": "nosh-egress-v2" },
+    "capabilityDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "activeGrantSetDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "renderedArtifactsDigest": { "$ref": "common.schema.json#/$defs/hash" }
+  }
+}

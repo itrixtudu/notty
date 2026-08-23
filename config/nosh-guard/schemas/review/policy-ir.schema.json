@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/policy-ir.schema.json",
+  "title": "Target-neutral reviewed Nosh policy IR",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion", "kind", "schemaVersion", "policyIrId", "createdAt", "graphDigest", "graphContentDigest",
+    "proposalSetDigest", "decisionSetDigest", "basePolicyDigest", "scope", "defaults",
+    "rules", "contentDigest"
+  ],
+  "properties": {
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshPolicyIR" },
+    "schemaVersion": { "const": 1 },
+    "policyIrId": { "$ref": "common.schema.json#/$defs/stableId" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "graphDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "graphContentDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "proposalSetDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "decisionSetDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "basePolicyDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ingress", "egress"],
+      "properties": {
+        "ingress": { "const": "deny" },
+        "egress": { "const": "deny" }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/rule" }
+    },
+    "contentDigest": { "$ref": "common.schema.json#/$defs/hash" }
+  },
+  "$defs": {
+    "rule": {
+      "type": "object",
+      "required": ["id", "proposalId", "scopeClass", "domain", "subjectId", "effect", "evidenceRefs", "decisionRefs"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/stableId" },
+        "proposalId": { "$ref": "common.schema.json#/$defs/stableId" },
+        "scopeClass": { "enum": ["build", "runtime"] },
+        "domain": { "enum": ["network", "http", "process", "filesystem", "syscall"] },
+        "subjectId": { "$ref": "common.schema.json#/$defs/stableId" },
+        "effect": { "enum": ["allow", "deny", "monitor"] },
+        "direction": { "enum": ["ingress", "egress"] },
+        "peer": { "$ref": "common.schema.json#/$defs/peer" },
+        "transport": { "$ref": "common.schema.json#/$defs/transport" },
+        "operation": { "$ref": "common.schema.json#/$defs/safeToken" },
+        "constraints": { "$ref": "common.schema.json#/$defs/jsonObject" },
+        "http": { "$ref": "common.schema.json#/$defs/httpIntent" },
+        "authorityGroupId": { "$ref": "common.schema.json#/$defs/stableId" },
+        "assurance": { "$ref": "graph-record.schema.json#/$defs/httpAssurance" },
+        "evidenceRefs": {
+          "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/stableId" }
+        },
+        "decisionRefs": {
+          "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/stableId" }
+        }
+      },
+      "unevaluatedProperties": false
+    }
+  }
+}

@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+
+import { main } from '../scripts/nosh-guard-tetragon-verify.mjs';
+
+process.exitCode = await main(process.argv.slice(2));

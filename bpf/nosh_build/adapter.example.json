@@ -1,0 +1,77 @@
+{
+  "name": "nosh-build",
+  "requiredModes": [
+    "build-profile",
+    "build-net-learn"
+  ],
+  "supportedDepths": [
+    "balanced",
+    "policy"
+  ],
+  "health": {
+    "command": "/usr/local/libexec/nosh-build/nosh-build-loader",
+    "args": [
+      "health",
+      "--depth",
+      "{depth}"
+    ]
+  },
+  "attach": {
+    "command": "/usr/local/libexec/nosh-build/nosh-build-loader",
+    "args": [
+      "run",
+      "--cgroup",
+      "{cgroupPath}",
+      "--cgroup-id",
+      "{cgroupId}",
+      "--depth",
+      "{depth}"
+    ]
+  },
+  "detach": {
+    "command": "true",
+    "args": []
+  },
+  "readiness": {
+    "stream": "stderr",
+    "match": {
+      "recordKind": "status",
+      "status": "ready"
+    },
+    "timeoutMs": 10000
+  },
+  "completion": {
+    "stream": "stdout",
+    "match": {
+      "recordKind": "stats",
+      "final": true
+    },
+    "requireZero": [
+      "decoderErrors",
+      "counters.ringbufDrops",
+      "counters.syscallMapFull",
+      "counters.inflightMapFull",
+      "counters.configMissing",
+      "counters.cgroupFilterErrors",
+      "counters.dnsAnswerLimitReached",
+      "counters.dnsCorrelationMissing",
+      "counters.fileMapFull",
+      "counters.filePathErrors"
+    ],
+    "diagnosticOnly": [
+      "inflightSyscalls",
+      "counters.dnsParseErrors",
+      "counters.dnsCompressedNames",
+      "counters.dnsTruncatedNames",
+      "counters.dnsTruncatedResponses",
+      "counters.dnsUnsupportedAnswers",
+      "counters.dnsNamePointers"
+    ]
+  },
+  "outputFile": "nosh-build.jsonl",
+  "stderrFile": "nosh-build.status.jsonl",
+  "detachSignal": "SIGTERM",
+  "detachTimeoutMs": 10000,
+  "cleanupCritical": true,
+  "longRunning": true
+}

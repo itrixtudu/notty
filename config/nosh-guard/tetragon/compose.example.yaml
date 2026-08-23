@@ -1,0 +1,28 @@
+name: nosh-guard-sensors
+
+services:
+  tetragon:
+    image: quay.io/cilium/tetragon:v1.7.0
+    container_name: nosh-guard-tetragon
+    privileged: true
+    pid: host
+    cgroup: host
+    network_mode: none
+    restart: unless-stopped
+    command:
+      - --server-address=unix:///var/run/tetragon/tetragon.sock
+    volumes:
+      - /sys/kernel/btf/vmlinux:/var/lib/tetragon/btf:ro
+      - /run/nosh-guard/tetragon:/var/run/tetragon
+    healthcheck:
+      test:
+        - CMD
+        - tetra
+        - --server-address
+        - unix:///var/run/tetragon/tetragon.sock
+        - tracingpolicy
+        - list
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s

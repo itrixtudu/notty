@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/network-contract.schema.json",
+  "title": "Nosh managed DNS and egress contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "apiVersion": {
+      "const": "notty.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "NoshNetworkContract"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "revision"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "networkName",
+        "subnet",
+        "gatewayAddress",
+        "enforcementOwner",
+        "defaultAction",
+        "failMode",
+        "dns",
+        "egress",
+        "evidence"
+      ],
+      "properties": {
+        "networkName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subnet": {
+          "type": "string",
+          "minLength": 3
+        },
+        "gatewayAddress": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enforcementOwner": {
+          "enum": [
+            "external-gateway",
+            "cilium"
+          ]
+        },
+        "defaultAction": {
+          "const": "deny"
+        },
+        "failMode": {
+          "const": "closed"
+        },
+        "dns": {
+          "$ref": "#/$defs/dns"
+        },
+        "egress": {
+          "$ref": "#/$defs/egress"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "domain": {
+      "type": "string",
+      "pattern": "^(\\*\\.)?([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}\\.?$"
+    },
+    "dns": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "listenAddress",
+        "listenPort",
+        "allowedTransports",
+        "denyDirectResolvers",
+        "denyEncryptedDnsBypass",
+        "minimumTtlSeconds",
+        "maximumTtlSeconds",
+        "negativeTtlSeconds",
+        "allowedNames",
+        "upstreams"
+      ],
+      "properties": {
+        "listenAddress": {
+          "type": "string",
+          "minLength": 1
+        },
+        "listenPort": {
+          "const": 53
+        },
+        "allowedTransports": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "udp",
+              "tcp"
+            ]
+          }
+        },
+        "denyDirectResolvers": {
+          "const": true
+        },
+        "denyEncryptedDnsBypass": {
+          "const": true
+        },
+        "minimumTtlSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300
+        },
+        "maximumTtlSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "negativeTtlSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300
+        },
+        "allowedNames": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/domain"
+          }
+        },
+        "upstreams": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "address",
+              "port",
+              "transport"
+            ],
+            "properties": {
+              "address": {
+                "type": "string",
+                "minLength": 1
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "transport": {
+                "enum": [
+                  "udp",
+                  "tcp",
+                  "tls"
+                ]
+              },
+              "serverName": {
+                "$ref": "#/$defs/domain"
+              }
+            }
+          }
+        }
+      }
+    },
+    "egress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invariantDeniedCidrs",
+        "allow"
+      ],
+      "properties": {
+        "invariantDeniedCidrs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 3
+          }
+        },
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "purpose",
+              "protocols",
+              "ports",
+              "domains"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              },
+              "purpose": {
+                "type": "string",
+                "minLength": 1
+              },
+              "protocols": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "tcp",
+                    "udp"
+                  ]
+                }
+              },
+              "ports": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              },
+              "domains": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/domain"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requiredSources",
+        "correlationWindowMs",
+        "logAllowed",
+        "logDenied"
+      ],
+      "properties": {
+        "requiredSources": {
+          "type": "array",
+          "minItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "nosh-l4",
+              "managed_dns",
+              "managed_gateway"
+            ]
+          }
+        },
+        "correlationWindowMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60000
+        },
+        "logAllowed": {
+          "type": "boolean"
+        },
+        "logDenied": {
+          "const": true
+        }
+      }
+    }
+  }
+}

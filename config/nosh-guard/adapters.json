@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "adapters": [
+    {
+      "name": "tetragon-events",
+      "requiredModes": [
+        "learn",
+        "audit",
+        "enforce"
+      ],
+      "health": {
+        "command": "tetra",
+        "args": [
+          "--server-address",
+          "unix:///run/nosh-guard/tetragon/tetragon.sock",
+          "version",
+          "--server"
+        ]
+      },
+      "attach": {
+        "command": "tetra",
+        "args": [
+          "--server-address",
+          "unix:///run/nosh-guard/tetragon/tetragon.sock",
+          "getevents",
+          "--containers",
+          "{containerName}",
+          "--output",
+          "json"
+        ]
+      },
+      "detach": {
+        "command": "true",
+        "args": []
+      },
+      "outputFile": "tetragon-events.jsonl",
+      "cleanupCritical": true,
+      "longRunning": true
+    },
+    {
+      "name": "nosh-egress",
+      "requiredModes": [
+        "egress-learn",
+        "egress-audit",
+        "egress-enforce"
+      ],
+      "health": {
+        "command": "/usr/local/libexec/nosh-guard/nosh-egress-loader",
+        "args": ["health"]
+      },
+      "attach": {
+        "command": "/usr/local/libexec/nosh-guard/nosh-egress-loader",
+        "args": [
+          "run", "--cgroup", "{cgroupPath}", "--cgroup-id", "{cgroupId}",
+          "--mode", "{egressBackendMode}",
+          "--policy", "{egressPolicyPath}",
+          "--policy-digest", "{egressPolicyDigest}",
+          "--pin-root", "{egressPinRoot}",
+          "--run-id", "{runId}",
+          "--image-digest", "{imageDigest}",
+          "--workspace-key", "{workspaceKey}"
+        ]
+      },
+      "detach": { "command": "true", "args": [] },
+      "readiness": {
+        "stream": "stderr",
+        "match": { "recordKind": "status", "status": "ready" },
+        "timeoutMs": 10000
+      },
+      "outputFile": "nosh-egress.jsonl",
+      "stderrFile": "nosh-egress.status.jsonl",
+      "cleanupCritical": true,
+      "requireCleanExit": true,
+      "longRunning": true
+    },
+    {
+      "name": "nosh-l4",
+      "requiredModes": [
+        "learn",
+        "audit",
+        "enforce"
+      ],
+      "health": {
+        "command": "/usr/local/libexec/nosh-guard/nosh-l4-loader",
+        "args": [
+          "health"
+        ]
+      },
+      "attach": {
+        "command": "/usr/local/libexec/nosh-guard/nosh-l4-loader",
+        "args": [
+          "run",
+          "--cgroup",
+          "{cgroupPath}",
+          "--cgroup-id",
+          "{cgroupId}"
+        ]
+      },
+      "detach": {
+        "command": "true",
+        "args": []
+      },
+      "readiness": {
+        "stream": "stderr",
+        "match": {
+          "recordKind": "status",
+          "status": "ready"
+        },
+        "timeoutMs": 10000
+      },
+      "outputFile": "nosh-l4.jsonl",
+      "stderrFile": "nosh-l4.status.jsonl",
+      "cleanupCritical": true,
+      "requireCleanExit": true,
+      "longRunning": true
+    },
+    {
+      "name": "tetragon-enforce-policy",
+      "requiredModes": [
+        "enforce"
+      ],
+      "health": {
+        "command": "tetra",
+        "args": [
+          "--server-address",
+          "unix:///run/nosh-guard/tetragon/tetragon.sock",
+          "tracingpolicy",
+          "list"
+        ]
+      },
+      "attach": {
+        "command": "tetra",
+        "args": [
+          "--server-address",
+          "unix:///run/nosh-guard/tetragon/tetragon.sock",
+          "tracingpolicy",
+          "add",
+          "--mode",
+          "enforce",
+          "{tetragonPolicy}"
+        ]
+      },
+      "verify": {
+        "command": "nosh-guard-tetragon-verify",
+        "args": [
+          "--server-address",
+          "unix:///run/nosh-guard/tetragon/tetragon.sock",
+          "--policy-name",
+          "{tetragonPolicyName}",
+          "--expected-mode",
+          "enforce",
+          "--timeout-ms",
+          "5000"
+        ]
+      },
+      "detach": {
+        "command": "tetra",
+        "args": [
+          "--server-address",
+          "unix:///run/nosh-guard/tetragon/tetragon.sock",
+          "tracingpolicy",
+          "delete",
+          "{tetragonPolicyName}"
+        ]
+      },
+      "outputFile": "tetragon-enforce-policy.log",
+      "evidence": false,
+      "cleanupCritical": true,
+      "longRunning": false
+    },
+    {
+      "name": "ig-dns",
+      "requiredModes": [
+        "learn",
+        "audit"
+      ],
+      "health": {
+        "command": "ig",
+        "args": [
+          "version"
+        ]
+      },
+      "attach": {
+        "command": "ig",
+        "args": [
+          "run",
+          "ghcr.io/inspektor-gadget/gadget/trace_dns:v0.54.1",
+          "--runtimes",
+          "docker",
+          "--containername",
+          "{containerName}",
+          "--output",
+          "json"
+        ]
+      },
+      "detach": {
+        "command": "true",
+        "args": []
+      },
+      "outputFile": "ig-dns.jsonl",
+      "cleanupCritical": true,
+      "longRunning": true
+    },
+    {
+      "name": "ig-syscalls",
+      "requiredModes": [
+        "learn",
+        "audit"
+      ],
+      "health": {
+        "command": "ig",
+        "args": [
+          "version"
+        ]
+      },
+      "attach": {
+        "command": "ig",
+        "args": [
+          "run",
+          "ghcr.io/inspektor-gadget/gadget/advise_seccomp:v0.54.1",
+          "--runtimes",
+          "docker",
+          "--containername",
+          "{containerName}"
+        ]
+      },
+      "detach": {
+        "command": "true",
+        "args": []
+      },
+      "outputFile": "ig-syscalls.jsonl",
+      "cleanupCritical": true,
+      "longRunning": true
+    }
+  ]
+}

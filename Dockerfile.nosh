@@ -1,0 +1,354 @@
+ARG NODE_IMAGE=node:24.18.0-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
+ARG OLLAMA_VERSION=0.31.2
+ARG OLLAMA_SHA256_AMD64=2c88f0f31a959bac5a3cad4cc5296ec568551d4aa79f548f554adb2b575b3133
+ARG OLLAMA_SHA256_ARM64=07a0adfcf3ed48ff110e2a3bcec897ca4d3f77d6f817d6ff63e83debfd102a31
+
+# nosh-http-capture-ca-secret=v1
+# BUILD LEARN may mount the public, per-run interception CA as the BuildKit
+# secret `nosh-http-ca`. The private key never enters the build context/image.
+
+FROM ${NODE_IMAGE} AS base
+
+LABEL io.notty.guard.runner-abi="1"
+LABEL io.notty.guard.policy-tooling-abi="1"
+LABEL io.notty.feature.ollama="false"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    DOCKER_CONTAINER=1 \
+    NEXT_TELEMETRY_DISABLED=1 \
+    NPM_CONFIG_AUDIT=false \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
+    NODE_ENV=production
+
+ARG USERNAME=notty
+ARG USER_UID=1000
+ARG USER_GID=1000
+ARG NOSH_HTTP_CAPTURE=0
+ARG NOSH_HTTP_CAPTURE_CA_FILE=
+
+RUN --mount=type=secret,id=nosh-http-ca \
+    set -eu; \
+    if [ "$NOSH_HTTP_CAPTURE" = 1 ]; then \
+      test -s /run/secrets/nosh-http-ca; \
+      test "$NOSH_HTTP_CAPTURE_CA_FILE" = /usr/local/share/ca-certificates/nosh-http-capture.crt; \
+      install -D -o root -g root -m 0444 \
+        /run/secrets/nosh-http-ca "$NOSH_HTTP_CAPTURE_CA_FILE"; \
+      update-ca-certificates; \
+    fi; \
+    apt-get update && apt-get install -y --no-install-recommends \
+    autoconf \
+    bash \
+    bison \
+    bubblewrap \
+    ca-certificates \
+    cmake \
+    curl \
+    flex \
+    gawk \
+    g++ \
+    git \
+    lftp \
+    libnspr4 \
+    libnss3 \
+    libsecret-1-0 \
+    libvte-2.91-common \
+    libsdl1.2-dev \
+    libsdl2-dev \
+    net-tools \
+    make \
+    ncat \
+    pkgconf \
+    procps \
+    python3 \
+    ripgrep \
+    tmux \
+    tree \
+    vim \
+    vlock \
+    ; command -v passwd >/dev/null \
+    && command -v vlock >/dev/null \
+    && rm -rf /var/lib/apt/lists/* \
+    && if [ -r /etc/profile.d/vte-2.91.sh ] && [ ! -e /etc/profile.d/vte.sh ]; then \
+        ln -s /etc/profile.d/vte-2.91.sh /etc/profile.d/vte.sh; \
+      fi
+
+RUN EXISTING_GROUP=$(getent group "$USER_GID" | cut -d: -f1); \
+    if [ -n "$EXISTING_GROUP" ] && [ "$EXISTING_GROUP" != "$USERNAME" ]; then \
+        groupmod -n "$USERNAME" "$EXISTING_GROUP"; \
+    fi; \
+    if ! getent group "$USERNAME" >/dev/null; then \
+        groupadd -g "$USER_GID" "$USERNAME"; \
+    fi; \
+    EXISTING_USER=$(getent passwd "$USER_UID" | cut -d: -f1); \
+    if [ -n "$EXISTING_USER" ] && [ "$EXISTING_USER" != "$USERNAME" ]; then \
+        usermod -l "$USERNAME" "$EXISTING_USER" && usermod -d "/home/$USERNAME" -m "$USERNAME"; \
+    fi; \
+    if ! id -u "$USERNAME" >/dev/null 2>&1; then \
+        useradd --uid "$USER_UID" --gid "$USER_GID" -m -s /bin/bash "$USERNAME"; \
+    else \
+        usermod -u "$USER_UID" -g "$USER_GID" "$USERNAME"; \
+    fi
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN NODE_EXTRA_CA_CERTS="$NOSH_HTTP_CAPTURE_CA_FILE" \
+    npm ci --ignore-scripts --legacy-peer-deps \
+    && npm rebuild node-pty --unsafe-perm \
+    && npm cache clean --force
+
+RUN NODE_EXTRA_CA_CERTS="$NOSH_HTTP_CAPTURE_CA_FILE" npm install -g \
+    @anthropic-ai/claude-code@2.1.197 \
+    @openai/codex@0.144.1
+#   @google/gemini-cli@0.50.0
+#   Replaced by anti gravity
+
+ENV HOME=/home/${USERNAME}
+USER $USERNAME
+RUN curl -fsSL https://antigravity.google/cli/install.sh | bash
+USER root
+
+RUN set -eu; \
+    if [ "$NOSH_HTTP_CAPTURE" = 1 ]; then \
+      test -f "$NOSH_HTTP_CAPTURE_CA_FILE"; \
+      rm -f -- "$NOSH_HTTP_CAPTURE_CA_FILE"; \
+      update-ca-certificates; \
+    fi; \
+    test ! -e /usr/local/share/ca-certificates/nosh-http-capture.crt
+
+COPY *.js /app/
+COPY *.cjs /app/
+COPY *.mjs /app/
+COPY collab /app/collab/
+COPY components /app/components/
+COPY config /app/config/
+COPY docs /app/docs/
+COPY hooks /app/hooks/
+COPY lib /app/lib/
+COPY pages /app/pages/
+COPY public /app/public/
+COPY scripts /app/scripts/
+COPY styles /app/styles/
+COPY agents/bin /app/agents/bin/
+COPY ansi/dd /opt/durdraw/
+COPY entrypoint.sh /app/
+COPY --chown=${USERNAME}:${USERNAME} tmux.conf /home/${USERNAME}/.tmux.conf
+
+RUN ln -s /opt/durdraw/start-durdraw /usr/local/bin/durdraw \
+    && ln -s /opt/durdraw/durview /usr/local/bin/durview \
+    && ln -s /opt/durdraw/durfetch /usr/local/bin/durfetch \
+    && cd /tmp \
+    && test "$(durdraw --version)" = "0.29.0" \
+    && test "$(durview --version)" = "0.29.0"
+
+RUN echo "alias ls='ls --color=yes'" >> "/home/$USERNAME/.bashrc" \
+    && echo "alias run='npm run start'" >> "/home/$USERNAME/.bashrc" \
+    && echo "alias tmux='tmux -u'" >> "/home/$USERNAME/.bashrc" \
+    && echo "alias tmuxa='tmux -u a -t '" >> "/home/$USERNAME/.bashrc" \
+    && echo 'export PATH="$HOME/.local/bin:$HOME/node_modules/.bin:$PATH:$PWD/node_modules/.bin:$HOME/zig-x86_64"' >> "/home/$USERNAME/.bashrc" \
+    && echo "export LANG=C.UTF-8" >> "/home/$USERNAME/.bashrc" \
+    && echo "export LC_ALL=C.UTF-8" >> "/home/$USERNAME/.bashrc" \
+    && echo "export LC_CTYPE=C.UTF-8" >> "/home/$USERNAME/.bashrc" \
+    && echo "export TERM=screen-256color" >> "/home/$USERNAME/.bashrc" \
+    && echo "export COLORTERM=truecolor" >> "/home/$USERNAME/.bashrc" \
+    && { \
+        printf '%s\n' ''; \
+        printf '%s\n' '# Keep Tilix/VTE shell integration active for docker exec shells.'; \
+        printf '%s\n' 'if [[ -n "${TILIX_ID:-}" || -n "${VTE_VERSION:-}" ]]; then'; \
+        printf '%s\n' '  if [[ -r /etc/profile.d/vte.sh ]]; then'; \
+        printf '%s\n' '    source /etc/profile.d/vte.sh'; \
+        printf '%s\n' '  elif [[ -r /etc/profile.d/vte-2.91.sh ]]; then'; \
+        printf '%s\n' '    source /etc/profile.d/vte-2.91.sh'; \
+        printf '%s\n' '  fi'; \
+        printf '%s\n' 'fi'; \
+      } >> "/home/$USERNAME/.bashrc" \
+    && { \
+        printf '%s\n' '_nosh_source_completion() {'; \
+        printf '%s\n' '  local cli="$1"'; \
+        printf '%s\n' '  local completion_file'; \
+        printf '%s\n' '  command -v "$cli" >/dev/null 2>&1 || return 0'; \
+        printf '%s\n' '  completion_file="$(mktemp)" || return 0'; \
+        printf '%s\n' '  if "$cli" completion bash >"$completion_file" 2>/dev/null; then'; \
+        printf '%s\n' '    if grep -Eq "(^|[[:space:]])complete[[:space:]]|_.*completion|compdef" "$completion_file"; then'; \
+        printf '%s\n' '      source "$completion_file"'; \
+        printf '%s\n' '    fi'; \
+        printf '%s\n' '  fi'; \
+        printf '%s\n' '  rm -f "$completion_file"'; \
+        printf '%s\n' '}'; \
+        printf '%s\n' '# Only Codex exposes a non-interactive `completion bash` command.'; \
+        printf '%s\n' '# Unsupported agent CLIs enter their TUI here and prevent Bash from reaching PS1.'; \
+        printf '%s\n' '_nosh_source_completion codex'; \
+        printf '%s\n' 'unset -f _nosh_source_completion'; \
+      } >> "/home/$USERNAME/.bashrc"
+
+RUN npx next build
+
+# Preserve the small runtime state roots that intentionally live under /app
+# without walking dependencies, sources, or Next.js build output.
+RUN install -d -o "$USERNAME" -g "$USERNAME" -m 0755 \
+      /app/agents/runs \
+      /app/collab/intragent/channels \
+    && install -d -o "$USERNAME" -g "$USERNAME" -m 0700 \
+      /app/.notty-art-runs
+
+# Keep the password helper and its target identity outside the bundled
+# application tree. Runtime profile environment values cannot change either.
+RUN set -eux; \
+    install -D -o root -g root -m 0555 \
+      /app/scripts/set-vlock-password.sh \
+      /usr/local/libexec/notty-set-vlock-password; \
+    install -d -o root -g root -m 0755 /etc/notty; \
+    printf '%s\n' "$USERNAME" > /etc/notty/container-user; \
+    chown root:root /etc/notty/container-user; \
+    chmod 0444 /etc/notty/container-user; \
+    test "$(stat -c '%u:%g:%a' /usr/local/libexec/notty-set-vlock-password)" = "0:0:555"; \
+    test "$(stat -c '%u:%g:%a' /etc/notty/container-user)" = "0:0:444"
+
+USER $USERNAME
+WORKDIR /app
+
+CMD ["npm", "run", "start:next:sse"]
+
+FROM base AS local
+
+ARG USERNAME=notty
+
+USER $USERNAME
+WORKDIR /app
+
+FROM base AS agent
+
+ARG USERNAME=notty
+
+USER $USERNAME
+WORKDIR /app
+
+# Keep the large Ollama distribution independent of the application image.
+# BuildKit evaluates this branch only when the public `ollama` target needs it.
+FROM ${NODE_IMAGE} AS ollama-dist
+
+ARG TARGETARCH
+ARG OLLAMA_VERSION
+ARG OLLAMA_SHA256_AMD64
+ARG OLLAMA_SHA256_ARM64
+ARG NOSH_HTTP_CAPTURE=0
+ARG NOSH_HTTP_CAPTURE_CA_FILE=
+
+RUN --mount=type=secret,id=nosh-http-ca \
+    set -eu; \
+    if [ "$NOSH_HTTP_CAPTURE" = 1 ]; then \
+      test -s /run/secrets/nosh-http-ca; \
+      test "$NOSH_HTTP_CAPTURE_CA_FILE" = /usr/local/share/ca-certificates/nosh-http-capture.crt; \
+      install -D -o root -g root -m 0444 \
+        /run/secrets/nosh-http-ca "$NOSH_HTTP_CAPTURE_CA_FILE"; \
+      update-ca-certificates; \
+    fi; \
+    apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    zstd \
+    ; rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "$arch" in \
+      amd64) ollamaSha256="$OLLAMA_SHA256_AMD64" ;; \
+      arm64) ollamaSha256="$OLLAMA_SHA256_ARM64" ;; \
+      *) echo "Unsupported Ollama architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    archive="/tmp/ollama-linux-${arch}.tar.zst"; \
+    curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+      --fail --show-error --location --retry 5 --retry-all-errors \
+      "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/ollama-linux-${arch}.tar.zst" \
+      --output "$archive"; \
+    echo "${ollamaSha256}  ${archive}" | sha256sum --check --strict -; \
+    tar --use-compress-program=unzstd --extract --file "$archive" --directory /usr/local; \
+    rm -f "$archive"; \
+    ollama --version; \
+    if [ "$NOSH_HTTP_CAPTURE" = 1 ]; then \
+      rm -f -- "$NOSH_HTTP_CAPTURE_CA_FILE"; \
+      update-ca-certificates; \
+    fi; \
+    test ! -e /usr/local/share/ca-certificates/nosh-http-capture.crt
+
+FROM agent AS ollama
+
+ARG USERNAME=notty
+ARG OLLAMA_VERSION
+
+USER root
+
+COPY --from=ollama-dist /usr/local/bin/ollama /usr/local/bin/ollama
+COPY --from=ollama-dist /usr/local/lib/ollama /usr/local/lib/ollama
+
+RUN test -x /usr/local/bin/ollama \
+    && test -d /usr/local/lib/ollama \
+    && ollama --version
+
+LABEL io.notty.feature.ollama="true" \
+      io.notty.feature.ollama.version="${OLLAMA_VERSION}"
+
+USER $USERNAME
+WORKDIR /app
+
+FROM base AS ansi-dos
+
+USER root
+ARG USERNAME=notty
+
+RUN --mount=type=secret,id=nosh-http-ca \
+    set -eu; \
+    if [ "$NOSH_HTTP_CAPTURE" = 1 ]; then \
+      test -s /run/secrets/nosh-http-ca; \
+      install -D -o root -g root -m 0444 \
+        /run/secrets/nosh-http-ca "$NOSH_HTTP_CAPTURE_CA_FILE"; \
+      update-ca-certificates; \
+    fi; \
+    apt-get update && apt-get install -y --no-install-recommends \
+    dosbox \
+    figlet \
+    fortunes-bofh-excuses \
+    putty \
+    python3-venv \
+    ttysnoop \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY ansi /app/ansi/
+
+RUN mkdir -p "/home/$USERNAME/.dosbox" \
+    && usermod -aG dialout "$USERNAME" \
+    && cp -a /app/ansi/dd "/home/$USERNAME/dd" \
+    && python3 -m venv "/home/$USERNAME/venv" \
+    && bash -c 'source "/home/$USERNAME/venv/bin/activate" && PIP_CERT=/etc/ssl/certs/ca-certificates.crt pip install --no-cache-dir pyfiglet==1.0.4' \
+    && echo "source ~/venv/bin/activate" >> "/home/$USERNAME/.bashrc" \
+    && chown -R "$USERNAME:$USERNAME" /app/ansi "/home/$USERNAME/.dosbox" "/home/$USERNAME/dd" "/home/$USERNAME/venv" "/home/$USERNAME/.bashrc" \
+    && if [ "$NOSH_HTTP_CAPTURE" = 1 ]; then \
+         rm -f -- "$NOSH_HTTP_CAPTURE_CA_FILE"; \
+         update-ca-certificates; \
+       fi \
+    && test ! -e /usr/local/share/ca-certificates/nosh-http-capture.crt
+
+USER $USERNAME
+WORKDIR /app
+
+FROM ansi-dos AS hardware
+
+ARG USERNAME=notty
+
+USER $USERNAME
+WORKDIR /app
+
+FROM ansi-dos AS cdev
+
+ARG USERNAME=notty
+
+USER $USERNAME
+WORKDIR /app
+
+FROM cdev AS full
+
+ARG USERNAME=notty
+
+USER $USERNAME
+WORKDIR /app

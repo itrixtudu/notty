@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+
+import { main } from '../scripts/nosh-guard.mjs';
+
+main(['daemon', ...process.argv.slice(2)])
+  .then((status) => {
+    process.exitCode = status;
+  })
+  .catch((error) => {
+    process.stderr.write(`nosh-guardd: ${error.message}\n`);
+    if (process.env.NOSH_GUARD_DEBUG === '1') {
+      process.stderr.write(`${error.stack}\n`);
+    }
+    process.exitCode = 1;
+  });

@@ -1,0 +1,40 @@
+{
+  "name": "nosh-l4",
+  "requiredModes": [
+    "learn",
+    "audit",
+    "enforce"
+  ],
+  "health": {
+    "command": "/usr/local/libexec/nosh-guard/nosh-l4-loader",
+    "args": [
+      "health"
+    ]
+  },
+  "attach": {
+    "command": "/usr/local/libexec/nosh-guard/nosh-l4-loader",
+    "args": [
+      "run",
+      "--cgroup",
+      "{cgroupPath}",
+      "--cgroup-id",
+      "{cgroupId}"
+    ]
+  },
+  "detach": {
+    "command": "true",
+    "args": []
+  },
+  "readiness": {
+    "stream": "stderr",
+    "match": {
+      "recordKind": "status",
+      "status": "ready"
+    },
+    "timeoutMs": 10000
+  },
+  "outputFile": "nosh-l4.jsonl",
+  "stderrFile": "nosh-l4.status.jsonl",
+  "detachTimeoutMs": 10000,
+  "longRunning": true
+}

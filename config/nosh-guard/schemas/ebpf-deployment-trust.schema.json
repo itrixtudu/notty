@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/ebpf-deployment-trust.schema.json",
+  "title": "Nosh Guard eBPF deployment trust",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "backendAbi",
+    "reviewPublicKey",
+    "deploymentPublicKey",
+    "reviewAudience",
+    "deploymentAudience"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "NoshGuardEbpfDeploymentTrust" },
+    "backendAbi": { "const": "nosh-egress-v2" },
+    "reviewPublicKey": { "type": "string", "pattern": "^/" },
+    "deploymentPublicKey": { "type": "string", "pattern": "^/" },
+    "reviewAudience": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "deploymentAudience": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    }
+  }
+}

@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/adapters.schema.json",
+  "title": "Nosh Guard adapter configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "adapters"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "kind": {
+      "const": "NoshBuildCollectorSet"
+    },
+    "adapters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/adapter"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    }
+  },
+  "$defs": {
+    "mode": {
+      "enum": [
+        "build-profile",
+        "build-net-learn",
+        "learn",
+        "audit",
+        "enforce",
+        "egress-learn",
+        "egress-audit",
+        "egress-enforce"
+      ]
+    },
+    "depth": {
+      "enum": [
+        "balanced",
+        "policy",
+        "deep"
+      ]
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "args"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "requiredModes",
+        "health",
+        "attach",
+        "detach",
+        "longRunning"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "requiredModes": {
+          "type": "array",
+          "uniqueItems": true,
+          "$comment": "Every required mode is active even when it is absent from modes.",
+          "items": {
+            "$ref": "#/$defs/mode"
+          }
+        },
+        "modes": {
+          "type": "array",
+          "uniqueItems": true,
+          "$comment": "Optional activations added to requiredModes; this array never narrows requiredModes.",
+          "items": {
+            "$ref": "#/$defs/mode"
+          }
+        },
+        "supportedDepths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/depth"
+          }
+        },
+        "health": {
+          "$ref": "#/$defs/command"
+        },
+        "attach": {
+          "$ref": "#/$defs/command"
+        },
+        "detach": {
+          "$ref": "#/$defs/command"
+        },
+        "verify": {
+          "$ref": "#/$defs/command"
+        },
+        "readiness": {
+          "$ref": "#/$defs/readiness"
+        },
+        "completion": {
+          "$ref": "#/$defs/completion"
+        },
+        "outputFile": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "stderrFile": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "maxOutputBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 134217728
+        },
+        "maxDiagnosticsBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "startupGraceMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "detachTimeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60000
+        },
+        "detachSignal": {
+          "const": "SIGTERM"
+        },
+        "evidence": {
+          "type": "boolean"
+        },
+        "evidenceRequired": {
+          "type": "boolean"
+        },
+        "cleanupCritical": {
+          "type": "boolean"
+        },
+        "requireCleanExit": {
+          "type": "boolean"
+        },
+        "longRunning": {
+          "type": "boolean"
+        }
+      }
+    },
+    "match": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stream",
+        "match",
+        "timeoutMs"
+      ],
+      "properties": {
+        "stream": {
+          "enum": [
+            "stdout",
+            "stderr"
+          ]
+        },
+        "match": {
+          "$ref": "#/$defs/match"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      }
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stream",
+        "match",
+        "requireZero",
+        "diagnosticOnly"
+      ],
+      "properties": {
+        "stream": {
+          "enum": [
+            "stdout",
+            "stderr"
+          ]
+        },
+        "match": {
+          "$ref": "#/$defs/match"
+        },
+        "requireZero": {
+          "$ref": "#/$defs/counterPaths"
+        },
+        "diagnosticOnly": {
+          "$ref": "#/$defs/counterPaths"
+        }
+      }
+    },
+    "counterPaths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9]*(\\.[A-Za-z][A-Za-z0-9]*)*$"
+      }
+    }
+  }
+}

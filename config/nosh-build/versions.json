@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "kind": "NoshBuildCollectorVersions",
+  "buildkit": {
+    "version": "v0.30.0",
+    "image": "moby/buildkit:v0.30.0@sha256:0168606be2315b7c807a03b3d8aa79beefdb31c98740cebdffdfeebf31190c9f",
+    "digest": "sha256:0168606be2315b7c807a03b3d8aa79beefdb31c98740cebdffdfeebf31190c9f",
+    "requireDeploymentDigest": true,
+    "mutableReferenceAllowedForDryRunOnly": true
+  },
+  "noshBuild": {
+    "loaderVersion": "4",
+    "evidenceSchemaVersion": 2,
+    "loaderPath": "/usr/local/libexec/nosh-build/nosh-build-loader",
+    "source": "bpf/nosh_build"
+  },
+  "noshUrl": {
+    "loaderVersion": "1",
+    "evidenceSchemaVersion": 1,
+    "loaderPath": "/usr/local/libexec/nosh-build/nosh-url-loader",
+    "source": "bpf/nosh_url",
+    "optional": true,
+    "observationOnly": true
+  },
+  "noshL4": {
+    "loaderVersion": "1",
+    "evidenceSchemaVersion": 1,
+    "loaderPath": "/usr/local/libexec/nosh-guard/nosh-l4-loader",
+    "source": "bpf/nosh_l4"
+  },
+  "supplyChain": {
+    "requireImmutableBuildkitDigestForLiveRuns": true,
+    "allowMutableBuildkitTagForDryRun": true,
+    "allowLatestTags": false
+  }
+}

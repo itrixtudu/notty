@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://notty.dev/schemas/nosh-guard/review/target-review-set.schema.json",
+  "title": "Nosh target compiler projection review set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion", "kind", "schemaVersion", "targetReviewSetId", "createdAt",
+    "graphDigest", "proposalSetDigest", "decisionSetDigest", "basePolicyDigest",
+    "policyIrDigest", "scopeDigest", "projections", "contentDigest"
+  ],
+  "properties": {
+    "apiVersion": { "const": "notty.dev/v1alpha1" },
+    "kind": { "const": "NoshTargetReviewSet" },
+    "schemaVersion": { "const": 1 },
+    "targetReviewSetId": { "$ref": "common.schema.json#/$defs/stableId" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "graphDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "proposalSetDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "decisionSetDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "basePolicyDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "policyIrDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "scopeDigest": { "$ref": "common.schema.json#/$defs/hash" },
+    "projections": {
+      "type": "array",
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/projection" }
+    },
+    "contentDigest": { "$ref": "common.schema.json#/$defs/hash" }
+  },
+  "$defs": {
+    "parity": {
+      "enum": ["exact", "restrictive", "conditional", "permissive", "unsupported", "outsideScope"]
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target", "targetContextDigest", "compiler", "status", "activationEligible",
+        "requiresAcknowledgement", "artifacts", "ruleMappings", "diagnostics"
+      ],
+      "properties": {
+        "target": { "enum": ["cilium", "guard-ebpf", "guard-nftables", "gateway-iptables", "gateway-pf", "gateway-ipfw", "gateway-ipfilter", "gateway-l7-proxy"] },
+        "targetContextDigest": { "$ref": "common.schema.json#/$defs/hash" },
+        "compiler": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "version", "digest"],
+          "properties": {
+            "id": { "$ref": "common.schema.json#/$defs/safeToken" },
+            "version": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "digest": { "$ref": "common.schema.json#/$defs/hash" }
+          }
+        },
+        "status": { "$ref": "#/$defs/parity" },
+        "activationEligible": { "type": "boolean" },
+        "requiresAcknowledgement": { "type": "boolean" },
+        "artifacts": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "mediaType", "sha256", "bytes"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$" },
+              "mediaType": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "sha256": { "$ref": "common.schema.json#/$defs/hash" },
+              "bytes": { "$ref": "common.schema.json#/$defs/decimal" }
+            }
+          }
+        },
+        "ruleMappings": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ruleId", "proposalId", "pointer", "parity", "reasons"],
+            "properties": {
+              "ruleId": { "$ref": "common.schema.json#/$defs/stableId" },
+              "proposalId": { "$ref": "common.schema.json#/$defs/stableId" },
+              "pointer": { "type": "string", "maxLength": 2048 },
+              "parity": { "$ref": "#/$defs/parity" },
+              "reasons": {
+                "type": "array", "maxItems": 64, "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1, "maxLength": 8192 }
+              }
+            }
+          }
+        },
+        "diagnostics": {
+          "type": "array", "maxItems": 256, "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 8192 }
+        }
+      }
+    }
+  }
+}

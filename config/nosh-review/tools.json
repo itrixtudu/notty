@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "syft": {
+    "version": "1.50.0",
+    "image": "anchore/syft:v1.50.0@sha256:1288ea4c8b38767b4e620c1e312c8cb26b6e887a99b4f07ab6cd19fc6f225026",
+    "format": "spdx-json",
+    "network": "none"
+  }
+}
