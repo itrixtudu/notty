@@ -108,7 +108,7 @@ async function httpPolicyFixture(
             credentialed: false,
           },
           response: {
-            status: 200,
+            status: manifestEvidence.location ? 302 : 200,
             bodyDigest: manifestEvidence.bodyDigest || contentSha256,
             bodyBytes: 23,
             contentType: 'application/octet-stream',

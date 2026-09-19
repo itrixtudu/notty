@@ -112,7 +112,7 @@ bytes to evidence or diagnostics.
 
 The userspace decoder emits one dotted, root-terminated QNAME and reports the
 valid root QNAME as `.`. Response names may use bounded backward DNS
-compression pointers. Up to eight relevant IN-class A, AAAA, or CNAME answers
+compression pointers. Up to sixteen relevant IN-class A, AAAA, or CNAME answers
 are retained after visiting at most sixteen declared answers. This is
 sufficient to materialize a conservative QNAME -> CNAME -> A/AAAA chain
 without putting branch-heavy protocol normalization in the kernel verifier.

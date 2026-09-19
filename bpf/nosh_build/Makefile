@@ -96,6 +96,13 @@ test:
 	$(NODE) --test tests/*.test.cjs
 
 clean:
-	rm -f $(BPF_OBJECT) $(SKELETON) $(LOADER_BINARY) $(VMLINUX) \
+	rm -f $(BUILD_DIR)/dns-response-test $(BPF_OBJECT) $(SKELETON) $(LOADER_BINARY) $(VMLINUX) \
 		$(VMLINUX).tmp $(SKELETON).tmp
 	rmdir $(BUILD_DIR) 2>/dev/null || true
+
+.PHONY: test-dns
+test-dns: $(BUILD_DIR)/dns-response-test
+	./$(BUILD_DIR)/dns-response-test
+
+$(BUILD_DIR)/dns-response-test: tests/dns-response.test.c $(LOADER_SOURCE) include/nosh_build.h $(SKELETON)
+	$(CC) $(LOADER_CFLAGS) $(LIBBPF_CFLAGS) -Iinclude -I$(BUILD_DIR) $< -o $@ $(LIBBPF_LIBS)

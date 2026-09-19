@@ -65,6 +65,6 @@ export default function handler(req, res) {
       res.status(200).json({ bytesWritten });
     });
   } catch (err) {
-    res.status(404).json({ error: err.message });
+    res.status(err.statusCode || 404).json({ error: err.message, code: err.code });
   }
 }

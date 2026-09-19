@@ -1,6 +1,6 @@
 ---
 name: nottyx-mcp-tools
-description: Use when working in the NottyX repo to expose, extend, or call the MCP terminal toolset implemented in `lib/mcpTools.js` (spawn_terminal/write_terminal/read_terminal/open_reader/read_delta/close_reader/resize_terminal/kill_terminal/list_terminals/set_terminal_type), including spawn-OTP mode (`NOTTY_MCP_SPAWN_OTP`) and terminal_uuid handling, and when automating TUI apps like Durdraw using these tools (see `references/durdraw-notes.md` for the observed keymap).
+description: Use when working in the NottyX repo to expose, extend, or call the MCP terminal toolset implemented in `lib/mcpTools.js` (spawn_terminal/write_terminal/read_terminal/open_reader/read_delta/close_reader/resize_terminal/kill_terminal/list_terminals/set_terminal_type), including one-time terminal spawn OTPs and terminal_uuid handling, and when automating TUI apps like Durdraw using these tools (see `references/durdraw-notes.md` for the observed keymap).
 ---
 
 # NottyX MCP Tools (Full Toolset)
@@ -23,11 +23,12 @@ Use NottyX’s “full” MCP toolset to spawn/manage terminal sessions, write i
 
 ## OTP-protected spawn mode
 
-When `NOTTY_MCP_SPAWN_OTP` is set:
+Terminal spawning requires a one-time OTP by default; only an explicit `--no-otp`
+launch disables this check.
 
-- Pass `otp` to `spawn_terminal`.
+- Pass a fresh launcher/operator OTP as the `otp` argument to `spawn_terminal`.
 - Use `terminal_uuid` for every other tool call (`terminal_id` is rejected in this mode).
-- Expect `list_terminals` to be disabled.
+- Non-spawn tools, including `list_terminals`, do not consume an OTP.
 
 ## Durdraw via terminal tools
 

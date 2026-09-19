@@ -1711,10 +1711,215 @@ textarea {
   box-shadow: 0 15px 40px rgba(15, 23, 42, 0.1);
 }
 
+.terminal-spawn-otp-overlay {
+  z-index: 1000;
+}
+
+.terminal-spawn-otp-dialog {
+  width: min(460px, 100%);
+}
+
+.terminal-spawn-otp-dialog .control-panel-header {
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.terminal-spawn-otp-dialog .control-panel-header p {
+  margin: 0.35rem 0 0;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.terminal-spawn-otp-dialog.terminal-spawn-otp-dialog .control-panel-body {
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: none;
+}
+
+.terminal-spawn-otp-dialog .hint {
+  margin: 0;
+}
+
 .otp-create-form {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+}
+
+.otp-copy-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.otp-copy-row .otp-entry-value {
+  flex: 1;
+  min-width: 0;
+  user-select: all;
+}
+
+.otp-copy-row button {
+  flex: 0 0 auto;
+}
+
+.otp-live-bar {
+  min-height: 38px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.28rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.otp-live-bar-label {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.otp-live-timers {
+  min-width: 0;
+  display: flex;
+  gap: 0.3rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+button.otp-live-timer {
+  position: relative;
+  overflow: hidden;
+  min-height: 28px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.28rem 0.55rem;
+  border-color: rgba(117, 203, 211, 0.38);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(117, 203, 211, 0.2) 0 var(--otp-progress),
+      transparent var(--otp-progress) 100%
+    ),
+    var(--surface-2);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+button.otp-live-timer::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: var(--otp-progress);
+  height: 3px;
+  background: var(--cyan);
+  pointer-events: none;
+}
+
+button.otp-live-timer:hover:not(:disabled),
+button.otp-live-timer:focus-visible {
+  border-color: var(--cyan);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(117, 203, 211, 0.3) 0 var(--otp-progress),
+      transparent var(--otp-progress) 100%
+    ),
+    var(--surface-3);
+}
+
+.otp-live-timer code {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.otp-live-timer strong {
+  color: var(--cyan);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.68rem;
+}
+
+button.otp-live-timer-expired {
+  border-color: rgba(240, 127, 120, 0.5);
+}
+
+.otp-manager-overlay {
+  z-index: 900;
+}
+
+.otp-manager-panel {
+  width: min(1240px, 100%);
+}
+
+.otp-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+}
+
+.otp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  text-align: left;
+}
+
+.otp-table th,
+.otp-table td {
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid #dbe4f0;
+  white-space: nowrap;
+}
+
+.otp-table thead th {
+  background: #e2e8f0;
+  color: #334155;
+  font-weight: 700;
+}
+
+.otp-table tbody th {
+  font-weight: 400;
+}
+
+.otp-table tbody tr:nth-child(even) {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.otp-table tbody tr:hover {
+  background: rgba(117, 203, 211, 0.12);
+}
+
+.otp-table-countdown {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.otp-lifecycle-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.otp-table .otp-lifecycle-table td:last-child {
+  white-space: normal;
+  min-width: 260px;
+}
+.otp-history-row > td { background: rgba(117, 203, 211, 0.06); }
+
+.otp-manager-panel .control-panel-header {
+  align-items: flex-start;
+}
+
+.otp-manager-panel .control-panel-header p {
+  margin: 0.3rem 0 0;
+  color: #64748b;
+  font-size: 0.8rem;
 }
 
 .otp-summary {
@@ -2098,6 +2303,15 @@ textarea {
   background: transparent;
   color: rgba(148, 163, 184, 0.7);
   touch-action: none;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.terminal-split-resizer:hover:not(:disabled),
+.terminal-split-resizer:focus-visible,
+.terminal-split-resizer-active {
+  background: transparent;
+  color: rgba(117, 203, 211, 0.9);
 }
 
 .terminal-split-resizer-vertical {
@@ -2118,7 +2332,7 @@ textarea {
   position: absolute;
   border-radius: 999px;
   background: currentColor;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity 0.15s ease;
 }
 
 .terminal-split-resizer-vertical::before {
@@ -2132,13 +2346,13 @@ textarea {
 }
 
 .terminal-split-resizer-vertical::after {
-  width: 4px;
+  width: 2px;
   height: 48px;
 }
 
 .terminal-split-resizer-horizontal::after {
   width: 48px;
-  height: 4px;
+  height: 2px;
 }
 
 .terminal-split-resizer::after {
@@ -2154,7 +2368,7 @@ textarea {
 .terminal-split-resizer:hover::before,
 .terminal-split-resizer:focus-visible::before,
 .terminal-split-resizer-active::before {
-  transform: scale(2);
+  transform: none;
 }
 
 .terminal-split-resizer:focus-visible {
@@ -2183,4 +2397,28 @@ textarea {
 
 .terminal-pane > .terminal-shell {
   width: 100%;
+}
+/* Selection stays above the live terminal without changing its dimensions. */
+.terminal-shell { position: relative; }
+.terminal-selection {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #101820;
+  color: #e5edf2;
+}
+.terminal-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.terminal-selection textarea {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  white-space: pre;
+  background: #080e14;
+  color: inherit;
+  user-select: text;
 }

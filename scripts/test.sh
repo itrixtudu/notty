@@ -7,8 +7,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-source "$ROOT/start_oauth.sh" 2>/dev/null || true
-
 NAME="${NAME:-ntty}"
 IMAGE="${IMAGE:-ntty}"
 BASE_URL="${BASE_URL:-http://127.0.0.1:3000}"
@@ -17,7 +15,6 @@ SSE_TARGET="${SSE_TARGET:-$BASE_URL/mcp/sse}"
 OTP="${NOTTY_MCP_SPAWN_OTP:-otptest}"
 OTP_TTL="${NOTTY_MCP_SPAWN_OTP_TTL_SECONDS:-3600}"
 
-TOKEN=""
 TERMINAL_UUID=""
 
 say() {
@@ -40,15 +37,17 @@ list_tools() {
 start_container() {
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   CID=$(
-    docker run --name "$NAME" --hostname "$NAME" --rm -d -p 3000:3000 \
+    docker run --name "$NAME" --hostname "$NAME" --rm -d -p 127.0.0.1:3000:3000 \
       -e NOTTY_MCP_SPAWN_OTP="$OTP" \
       -e NOTTY_MCP_SPAWN_OTP_TTL_SECONDS="$OTP_TTL" \
-      -e NOTTY_OAUTH_ENABLED \
-      -e NOTTY_OAUTH_CLIENT_ID \
-      -e NOTTY_OAUTH_CLIENT_SECRET \
-      -e NOTTY_OAUTH_BOOT_TOKEN \
-      -e NOTTY_OAUTH_TTL_SECONDS \
-      -e NOTTY_OAUTH_TOKEN_PATH \
+      -e NOTTY_NO_OTP_AUTH=true \
+      -e NOTTY_NOAUTH=true \
+      -e NOTTY_NO_OAUTH=true \
+      -e NOTTY_OAUTH_ENABLED=false \
+      -e NOTTY_BASIC_AUTH_ENABLED=false \
+      -e NOTTY_MCP_SPAWN_OTP_ENABLED=true \
+      -e NOTTY_LOOPBACK_PUBLICATION=true \
+      -e NOTTY_PUBLIC_ORIGIN="$BASE_URL" \
       "$IMAGE"
   )
   echo "container_id=$CID"
@@ -65,36 +64,9 @@ wait_for_ready() {
   echo "server not ready on $BASE_URL"
 }
 
-maybe_fetch_token() {
-  if [ "${NOTTY_OAUTH_ENABLED:-}" != "true" ]; then
-    echo "OAuth not enabled; running without bearer token."
-    return
-  fi
-  TOKEN=$(
-    curl -sf -u "$NOTTY_OAUTH_CLIENT_ID:$NOTTY_OAUTH_CLIENT_SECRET" \
-      -d 'grant_type=client_credentials' \
-      "$BASE_URL/oauth/token" \
-    | jq -r '.access_token // empty'
-  )
-  if [ -z "$TOKEN" ]; then
-    echo "OAuth enabled but token missing; continuing without Authorization header."
-  else
-    echo "bearer_token_acquired"
-  fi
-}
-
-token_args() {
-  if [ -n "$TOKEN" ]; then
-    echo "--token $TOKEN"
-  fi
-}
-
 run_basic_flow() {
   local extra_args
   extra_args=()
-  if [ -n "$TOKEN" ]; then
-    extra_args+=(--token "$TOKEN")
-  fi
 
   say "list tools"
   list_tools "$HTTP_TARGET" "${extra_args[@]}" || true
@@ -126,7 +98,6 @@ run_basic_flow() {
 main() {
   start_container
   wait_for_ready
-  maybe_fetch_token
   run_basic_flow
 }
 

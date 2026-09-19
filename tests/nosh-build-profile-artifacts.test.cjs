@@ -1044,7 +1044,7 @@ test('URL correlations require compatible resource, DNS, and destination records
     mutate(input.observations.network);
     assert.throws(
       () => module.createBuildEvidenceManifest(input),
-      /duplicate nosh-url event ID|resource-(?:dns-query|destination|direct-destination) correlation/,
+      /duplicate nosh-url event ID|resource-(?:dns-query|destination|direct-destination) correlation|network destination FQDN is not backed/,
       label,
     );
   }

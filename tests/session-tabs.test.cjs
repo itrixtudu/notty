@@ -28,3 +28,13 @@ test('session tab navigation supports boundary keys and empty lists', async () =
   assert.equal(getNextSessionTabIndex(-1, 4, 'ArrowRight'), 1);
   assert.equal(getNextSessionTabIndex(0, 0, 'ArrowRight'), -1);
 });
+
+test('closing a session preserves inactive selection and chooses a predictable active neighbor', async () => {
+  const { getSessionIdAfterClose } = await import('../components/sessionTabsModel.js');
+  const sessions = [{ id: 12 }, { id: 24 }, { id: 36 }];
+
+  assert.equal(getSessionIdAfterClose(sessions, 12, 24), 24);
+  assert.equal(getSessionIdAfterClose(sessions, 24, 24), 36);
+  assert.equal(getSessionIdAfterClose(sessions, 36, 36), 24);
+  assert.equal(getSessionIdAfterClose([{ id: 12 }], 12, 12), null);
+});

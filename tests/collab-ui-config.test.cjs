@@ -3,6 +3,50 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
+test('chat pane resizing snaps to cells and stays within the selected columns', async () => {
+  const { clampChatPaneSpan } = await import('../components/collab/configModel.js');
+  assert.deepEqual(clampChatPaneSpan(3, 2, 2), { columns: 2, rows: 2 });
+  assert.deepEqual(clampChatPaneSpan(4, 8, 4), { columns: 4, rows: 3 });
+  assert.deepEqual(clampChatPaneSpan(-1, -1, 1), { columns: 1, rows: 1 });
+  assert.deepEqual(clampChatPaneSpan(1.6, 1.2, 3), { columns: 2, rows: 1 });
+});
+
+test('bulk launch defaults change targets without altering roles or input rows', async () => {
+  const { applyLaunchDefaults } = await import('../components/collab/configModel.js');
+  const agents = [
+    { identity: 'coder', prompt: 'coder', harness: 'agy', backend: 'default', model: 'old', think: 'low' },
+    { identity: 'coder-2', prompt: 'coder', harness: 'claude', backend: 'default', model: 'old', think: 'high' },
+  ];
+  const before = structuredClone(agents);
+  const selection = { harness: 'codex', backend: 'ollama', model: 'qwen3:4b', think: 'medium' };
+  const choices = applyLaunchDefaults(agents, selection);
+  assert.deepEqual(Object.keys(choices), ['coder', 'coder-2']);
+  assert.deepEqual(choices.coder, { prompt: 'coder', ...selection });
+  assert.deepEqual(choices['coder-2'], choices.coder);
+  assert.deepEqual(agents, before);
+  assert.deepEqual(applyLaunchDefaults([], selection), {});
+  for (const invalid of [{ ...selection, model: '' }, { ...selection, harness: 'agy' }, { ...selection, think: 'ultra' }]) {
+    assert.throws(() => applyLaunchDefaults(agents, invalid), /compatible/);
+  }
+});
+
+test('chat popout URL binds the exact session without inheriting document credentials', async () => {
+  const { collabChatsPath } = await import('../components/collab/configModel.js');
+  const url = new URL(collabChatsPath('session /?&1'), 'https://notty.example');
+  assert.equal(url.pathname, '/collab');
+  assert.equal(url.searchParams.get('chats'), '1');
+  assert.equal(url.searchParams.get('session'), 'session /?&1');
+  assert.deepEqual([...url.searchParams.keys()], ['chats', 'session']);
+});
+
+test('Think heading reports profile defaults without inventing an agent default', async () => {
+  const { launchThinkDefaultLabel } = await import('../components/collab/configModel.js');
+  assert.equal(launchThinkDefaultLabel([{ think: 'medium' }, { think: 'medium' }]), 'Medium');
+  assert.equal(launchThinkDefaultLabel([{ think: 'medium' }, { think: 'high' }]), 'Mixed');
+  assert.equal(launchThinkDefaultLabel([{ think: '' }]), 'Agent default');
+  assert.equal(launchThinkDefaultLabel([]), 'Agent default');
+});
+
 test('UI template serialization preserves compact specs and omits an empty coordinator spec', async () => {
   const { createTemplateDocument } = await import('../components/collab/configModel.js');
   const document = createTemplateDocument({

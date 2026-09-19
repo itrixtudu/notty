@@ -4,8 +4,10 @@ import { createXRStore } from '@react-three/xr';
 import { useStore as useZustandStore } from 'zustand';
 import useXrSessionQuery from '../../hooks/useXrSessionQuery.js';
 import useXrSessions from '../../hooks/useXrSessions.js';
+import useTerminalSpawnDialog from '../../hooks/useTerminalSpawnDialog.js';
 import useXrSupport from '../../hooks/useXrSupport.js';
 import useSpatialStore from '../../lib/stores/spatialStore.js';
+import SpawnTerminalDialog from '../SpawnTerminalDialog.js';
 import styles from './XRWorkspace.module.css';
 
 const BaseXRCanvas = dynamic(() => import('./core/BaseXRCanvas'), {
@@ -290,6 +292,7 @@ class XRPageErrorBoundary extends Component {
 export default function XRWorkspace() {
   const xrSupport = useXrSupport();
   const [mode, setMode] = useState('vr');
+  const { requestTerminalSpawn, spawnDialogProps } = useTerminalSpawnDialog();
   const {
     sessions,
     loading: sessionsLoading,
@@ -297,7 +300,7 @@ export default function XRWorkspace() {
     refresh: loadSessions,
     create: createSession,
     creating: creatingSession
-  } = useXrSessions();
+  } = useXrSessions({ spawnTerminal: requestTerminalSpawn });
   const { activeSessionId, setActiveSessionId } = useXrSessionQuery({ sessions });
   const xrStore = useMemo(
     () =>
@@ -419,6 +422,7 @@ export default function XRWorkspace() {
           </section>
         ) : null}
       </main>
+      <SpawnTerminalDialog {...spawnDialogProps} />
     </>
   );
 }

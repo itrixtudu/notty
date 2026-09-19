@@ -1,6 +1,6 @@
 {
   "name": "notty",
-  "version": "0.1.0-rc.1",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Node-pty MCP server",
@@ -36,6 +36,7 @@
   "dependencies": {
     "@bufbuild/protobuf": "^2.10.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@openai/codex": "^0.153.4",
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.4.0",
     "@react-three/uikit": "^1.0.56",
@@ -63,9 +64,10 @@
   },
   "overrides": {
     "@hono/node-server": "2.0.12",
-    "fast-uri": "3.1.5",
+    "fast-uri": "3.1.6",
     "hono": "4.12.34",
     "postcss": "8.5.25",
+    "qs": "6.16.0",
     "sharp": "0.35.3"
   }
 }

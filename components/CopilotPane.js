@@ -409,7 +409,9 @@ export default function CopilotPane({
   }, []);
 
   const catalogSignature = runtimeOptions.map((entry) => (
-    `${entry.id}:${entry.available !== false}:${entry.defaultModel || ''}`
+    `${entry.id}:${entry.available !== false}:${entry.defaultModel || ''}:${(
+      Array.isArray(entry.models) ? entry.models : []
+    ).join(',')}`
   )).join('|');
 
   useEffect(() => {
@@ -471,6 +473,10 @@ export default function CopilotPane({
   ]);
 
   const selectedRuntime = runtimeOptions.find((entry) => entry.id === runtime) || null;
+  const modelOptions = Array.isArray(selectedRuntime?.models)
+    ? selectedRuntime.models.filter((entry) => typeof entry === 'string' && entry.trim())
+    : [];
+  const selectedModelIsAvailable = modelOptions.includes(model);
   const runtimeChanged = Boolean(binding && (
     runtime !== binding.runtime || String(model).trim() !== String(binding.model || '').trim()
   ));
@@ -853,16 +859,34 @@ export default function CopilotPane({
               </label>
               <label>
                 <span>Model</span>
-                <input
-                  value={model}
-                  onChange={(event) => {
-                    setModel(event.target.value);
-                    rememberModel(runtime, event.target.value);
-                  }}
-                  placeholder={selectedRuntime?.defaultModel || 'model name'}
-                  disabled={Boolean(busyAction)}
-                  spellCheck="false"
-                />
+                {runtime === 'ollama' && modelOptions.length ? (
+                  <select
+                    value={model}
+                    onChange={(event) => {
+                      setModel(event.target.value);
+                      rememberModel(runtime, event.target.value);
+                    }}
+                    disabled={Boolean(busyAction)}
+                  >
+                    {model && !selectedModelIsAvailable && (
+                      <option value={model}>{model} · unavailable</option>
+                    )}
+                    {modelOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={model}
+                    onChange={(event) => {
+                      setModel(event.target.value);
+                      rememberModel(runtime, event.target.value);
+                    }}
+                    placeholder={selectedRuntime?.defaultModel || 'model name'}
+                    disabled={Boolean(busyAction)}
+                    spellCheck="false"
+                  />
+                )}
               </label>
             </div>
 

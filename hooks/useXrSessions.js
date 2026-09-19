@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { browserFetch } from '../lib/browserRequest.js';
+import { spawnBrowserTerminal } from '../lib/browserTerminalSpawn.js';
 
 const DEFAULT_SESSIONS = [];
 
@@ -7,28 +8,17 @@ async function fetchSessions({ signal } = {}) {
   const response = await browserFetch('/api/terminals', { signal });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error || response.statusText);
+    throw new Error(payload.error?.message || payload.error || response.statusText);
   }
 
   const data = await response.json();
   return Array.isArray(data.sessions) ? data.sessions : [];
 }
 
-async function createSession() {
-  const response = await browserFetch('/api/terminals', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({})
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.error || response.statusText);
-  }
-
-  return payload?.session?.id ?? null;
-}
-
-export default function useXrSessions({ autoLoad = true } = {}) {
+export default function useXrSessions({
+  autoLoad = true,
+  spawnTerminal = spawnBrowserTerminal
+} = {}) {
   const [sessions, setSessions] = useState(DEFAULT_SESSIONS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -67,7 +57,11 @@ export default function useXrSessions({ autoLoad = true } = {}) {
     setCreating(true);
     setError(null);
     try {
-      const sessionId = await createSession();
+      const payload = await spawnTerminal({});
+      const sessionId = payload?.session?.id ?? null;
+      if (sessionId === null) {
+        return null;
+      }
       await refresh();
       return sessionId;
     } catch (createError) {
@@ -77,7 +71,7 @@ export default function useXrSessions({ autoLoad = true } = {}) {
     } finally {
       setCreating(false);
     }
-  }, [refresh]);
+  }, [refresh, spawnTerminal]);
 
   useEffect(() => {
     if (!autoLoad) {

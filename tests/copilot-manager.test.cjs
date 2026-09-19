@@ -260,6 +260,13 @@ function createHarness(PurposeScopedAccessRegistry) {
       removeAgyWorkspace: (workspace) => removedAgyWorkspaces.push(workspace),
       environment: {
         ...process.env,
+        NOTTY_BASIC_AUTH_PASSWORD: 'copilot-basic-secret-must-not-leak',
+        NOTTY_GUARD_MTLS: 'true',
+        NOTTY_LOOPBACK_PUBLICATION: 'true',
+        NOTTY_MCP_SPAWN_OTP: 'copilot-launcher-otp-must-not-leak',
+        NOTTY_MCP_SPAWN_OTP_ENABLED: 'true',
+        NOTTY_MCP_SPAWN_OTP_TTL_SECONDS: '3600',
+        NOTTY_OAUTH_CLIENT_SECRET: 'copilot-oauth-secret-must-not-leak',
         OLLAMA_BIN: '/definitely/not-used/ollama',
         OLLAMA_HOST: 'http://ollama.test:11434'
       },
@@ -411,6 +418,18 @@ test('copilots are isolated one-per-source bindings with runtime-specific launch
   );
 
   const launches = Array.from(harness.tmuxSessions.values()).map((entry) => entry.launch);
+  const launchText = JSON.stringify(launches);
+  for (const secret of [
+    'copilot-basic-secret-must-not-leak',
+    'copilot-launcher-otp-must-not-leak',
+    'copilot-oauth-secret-must-not-leak',
+  ]) {
+    assert.equal(launchText.includes(secret), false);
+  }
+  assert.doesNotMatch(
+    launchText,
+    /NOTTY_(?:BASIC_AUTH_PASSWORD|GUARD_MTLS|LOOPBACK_PUBLICATION|MCP_SPAWN_OTP(?:_ENABLED|_TTL_SECONDS)?|OAUTH_CLIENT_SECRET)=/,
+  );
   const localProviderIds = launches
     .filter((args) => args.some((arg) => arg.startsWith('model_provider=')))
     .map(ollamaProviderIdFromArgs);
@@ -434,17 +453,19 @@ test('copilots are isolated one-per-source bindings with runtime-specific launch
     'mcp_servers.notty_copilot.bearer_token_env_var="NOTTY_COPILOT_ACCESS_TOKEN"'
   ));
   const codexPaneCommand = codexLaunch.slice(codexLaunch.indexOf('--') + 1);
-  assert.equal(codexPaneCommand[0], 'codex');
-  assert.equal(codexLaunch.includes('env'), false);
-  assert.equal(codexPaneCommand.some((value) => value.startsWith('NOTTY_COPILOT_')), false);
+  assert.deepEqual(codexPaneCommand.slice(0, 2), ['env', '-i']);
+  assert.notEqual(codexPaneCommand.indexOf('codex'), -1);
+  assert.equal(codexPaneCommand.some((value) => value.startsWith('NOTTY_COPILOT_')), true);
   assert.equal(
-    codexLaunch.slice(0, codexLaunch.indexOf('--')).includes(
+    codexPaneCommand.includes(
       `NOTTY_COPILOT_ACCESS_TOKEN=${harness.brokerTokens.get(`${first.id}:visible`)}`
     ),
     true
   );
   const ollamaPaneCommand = ollamaLaunch.slice(ollamaLaunch.indexOf('--') + 1);
-  const ollamaCodexCommand = ollamaCodexChildFromRelay(ollamaPaneCommand);
+  const ollamaCodexCommand = ollamaCodexChildFromRelay(
+    ollamaPaneCommand.slice(ollamaPaneCommand.indexOf(process.execPath))
+  );
   assert.deepEqual(ollamaCodexCommand.slice(1, 3), ['-m', 'qwen3:4b']);
   const ollamaProviderId = ollamaProviderIdFromArgs(ollamaCodexCommand);
   assert.ok(ollamaCodexCommand.includes(
@@ -1279,6 +1300,7 @@ test('runtime availability probes are cached for catalog polling and default lau
   assert.equal(initialCatalog.defaults.runtime, 'ollama');
   const initialOllama = initialCatalog.runtimes.find((runtime) => runtime.id === 'ollama');
   assert.equal(initialOllama.available, true);
+  assert.deepEqual(initialOllama.models, ['qwen3:4b']);
   assert.equal(initialOllama.defaultModelAvailable, true);
   assert.equal(initialOllama.defaultModelError, '');
   manager.catalog();
@@ -1299,11 +1321,11 @@ test('runtime availability probes are cached for catalog polling and default lau
   assert.equal(probeCount(), 7);
 });
 
-test('reachable Ollama stays selectable with only a custom model and diagnoses its missing default', async (t) => {
+test('reachable Ollama lists every installed model and diagnoses its missing default', async (t) => {
   const { createCopilotManager } = await import('../lib/copilotManager.js');
   const { PurposeScopedAccessRegistry } = await import('../lib/copilotAccessRegistry.js');
   const harness = createHarness(PurposeScopedAccessRegistry);
-  harness.setOllamaModels(['custom-local:latest']);
+  harness.setOllamaModels(['custom-local:latest', 'deepseek-r1:8b', 'CUSTOM-LOCAL:LATEST']);
   const manager = createCopilotManager(harness.options);
   t.after(() => manager.dispose());
 
@@ -1311,6 +1333,7 @@ test('reachable Ollama stays selectable with only a custom model and diagnoses i
   const ollama = catalog.runtimes.find((runtime) => runtime.id === 'ollama');
   assert.equal(ollama.available, true, 'availability reflects the reachable daemon and Codex');
   assert.equal(ollama.error, '');
+  assert.deepEqual(ollama.models, ['custom-local:latest', 'deepseek-r1:8b']);
   assert.equal(ollama.defaultModelAvailable, false);
   assert.match(ollama.defaultModelError, /qwen3:4b is not installed/);
   assert.equal(catalog.defaults.runtime, 'codex', 'an unavailable default model is not auto-launched');
@@ -1324,7 +1347,9 @@ test('reachable Ollama stays selectable with only a custom model and diagnoses i
   assert.equal(copilot.model, 'custom-local:latest');
   const launch = [...harness.tmuxSessions.values()][0].launch;
   const paneCommand = launch.slice(launch.indexOf('--') + 1);
-  const codexCommand = ollamaCodexChildFromRelay(paneCommand);
+  const codexCommand = ollamaCodexChildFromRelay(
+    paneCommand.slice(paneCommand.indexOf(process.execPath))
+  );
   assert.deepEqual(codexCommand.slice(1, 3), ['-m', 'custom-local:latest']);
   const providerId = ollamaProviderIdFromArgs(codexCommand);
   assert.ok(codexCommand.includes(

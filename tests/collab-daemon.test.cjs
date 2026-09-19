@@ -148,7 +148,7 @@ function createFakeTmux(root) {
     "    process.stdout.write(`${JSON.stringify({ id: message.id, result: {} })}\\n`);",
     "    return;",
     "  }",
-    "  if (message.method !== 'thread/list') return;",
+    "  if (!['thread/list', 'thread/read'].includes(message.method)) return;",
     "  const launches = fs.readFileSync(process.env.TMUX_LOG, 'utf8')",
     "    .split('\\n')",
     "    .filter(Boolean)",
@@ -160,7 +160,11 @@ function createFakeTmux(root) {
     "    preview: args[args.length - 1],",
     "    updatedAt: index + 1,",
     "  }));",
-    "  process.stdout.write(`${JSON.stringify({ id: message.id, result: { data, nextCursor: null } })}\\n`);",
+    "  if (message.method === 'thread/read') {",
+    "    const thread = data.find((entry) => entry.id === message.params.threadId);",
+    "    if (thread) thread.turns = [{ items: [{ type: 'userMessage', content: [{ type: 'text', text: thread.preview }] }] }];",
+    "    process.stdout.write(`${JSON.stringify({ id: message.id, result: { thread } })}\\n`);",
+    "  } else process.stdout.write(`${JSON.stringify({ id: message.id, result: { data, nextCursor: null } })}\\n`);",
     "});",
     '',
   ].join('\n'), { mode: 0o755 });
@@ -770,7 +774,7 @@ test('HTTP session launches honor human and agent coordinator rosters', {
     const payload = await response.json();
     assert.equal(response.status, 201, JSON.stringify(payload));
     assert.deepEqual(payload.session.agents.map((agent) => agent.id), ['qa']);
-    assert.deepEqual(payload.session.templateSnapshot.agents, ['qa_codex_gpt-5.6-sol']);
+    assert.deepEqual(payload.session.templateSnapshot.agents, [{ prompt: 'qa', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' }]);
     assert.equal(payload.session.agents.some((agent) => agent.coordinatorCapable), false);
     assert.ok(payload.session.agents.every(
       (agent) => agent.permissionMode === 'danger-full-access',
@@ -896,7 +900,7 @@ test('HTTP session launches honor human and agent coordinator rosters', {
     assert.deepEqual(persistedPayload.session.agents.map((entry) => entry.id), ['qa']);
     assert.deepEqual(
       persistedPayload.session.templateSnapshot.agents,
-      ['qa_codex_gpt-5.6-sol'],
+      [{ prompt: 'qa', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' }],
     );
 
     const stopPair = await fetch(`${baseUrl}/admin/v1/session`, {
@@ -904,6 +908,11 @@ test('HTTP session launches honor human and agent coordinator rosters', {
       headers: { 'content-type': 'application/json' },
     });
     assert.equal(stopPair.status, 200, await stopPair.text());
+    const newTaskResponse = await fetch(`${baseUrl}/admin/v1/tasks`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Delivery roster test' }),
+    });
+    assert.equal(newTaskResponse.status, 201, await newTaskResponse.text());
     const deliveryLaunchBaseline = readJsonLines(fakeTmux.logPath)
       .filter((args) => args.includes('new-session')).length;
     const deliveryResponse = await fetch(`${baseUrl}/admin/v1/session`, {
@@ -921,9 +930,9 @@ test('HTTP session launches honor human and agent coordinator rosters', {
       ['dev', 'coder', 'qa'],
     );
     assert.deepEqual(deliveryPayload.session.templateSnapshot.agents, [
-      'dev_codex_gpt-5.6-sol',
-      'coder_codex_gpt-5.6-sol',
-      'qa_codex_gpt-5.6-sol',
+      { prompt: 'dev', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' },
+      { prompt: 'coder', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' },
+      { prompt: 'qa', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' },
     ]);
     assert.equal(
       deliveryPayload.session.agents.some((entry) => entry.coordinatorCapable),
@@ -942,6 +951,11 @@ test('HTTP session launches honor human and agent coordinator rosters', {
       headers: { 'content-type': 'application/json' },
     });
     assert.equal(stopDelivery.status, 200, await stopDelivery.text());
+    const coordinatorTaskResponse = await fetch(`${baseUrl}/admin/v1/tasks`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Agent coordinator roster test' }),
+    });
+    assert.equal(coordinatorTaskResponse.status, 201, await coordinatorTaskResponse.text());
     const agentLaunchBaseline = readJsonLines(fakeTmux.logPath)
       .filter((args) => args.includes('new-session')).length;
     const agentResponse = await fetch(`${baseUrl}/admin/v1/session`, {
@@ -963,8 +977,8 @@ test('HTTP session launches honor human and agent coordinator rosters', {
       1,
     );
     assert.deepEqual(agentPayload.session.templateSnapshot.agents, [
-      'coordinator_codex_gpt-5.6-sol',
-      'qa_codex_gpt-5.6-sol',
+      { prompt: 'coordinator', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' },
+      { prompt: 'qa', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' },
     ]);
     const agentLaunches = readJsonLines(fakeTmux.logPath)
       .filter((args) => args.includes('new-session'))

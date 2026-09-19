@@ -53,11 +53,11 @@ test('browser, HTTP, and MCP write boundaries attach trustworthy actors', async 
   const {
     killTerminal,
     onTerminalExit,
-    spawnTerminal,
+    spawnTrustedTerminal,
     subscribeToTerminalInput,
   } = await import('../lib/terminalManager.js');
 
-  const session = spawnTerminal({
+  const session = spawnTrustedTerminal({
     shell: 'bash',
     command: 'sleep 30',
     shellIntegration: false,

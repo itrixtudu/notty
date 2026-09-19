@@ -29,6 +29,10 @@ const {
 } = require('./lib/collab/index.cjs');
 const { createIrcTerminalUi } = require('./lib/collab/terminal-ui.cjs');
 const { createTelemetryStore } = require('./lib/collab/telemetry.cjs');
+const {
+    childEnvironmentAssignments,
+    sanitizeChildEnvironment,
+} = require('./lib/childEnvironment.cjs');
 
 function readEarlyCliOption(name) {
     const prefix = `--${name}=`;
@@ -56,7 +60,10 @@ const MANAGED_AGENTS_PATH = path.join(COLLAB_DIR, 'managed_agents.json');
 const MESSAGE_FEEDBACK_PATH = path.join(COLLAB_DIR, 'message_feedback.jsonl');
 const CONFIG_STORE = createConfigStore({ appRoot: APP_ROOT, workspaceRoot: WORKSPACE_ROOT });
 const EVENT_HUB = createEventHub();
-const LAUNCH_CATALOG = createLaunchCatalog({ appRoot: APP_ROOT });
+const LAUNCH_CATALOG = createLaunchCatalog({
+    appRoot: APP_ROOT,
+    environment: sanitizeChildEnvironment(process.env),
+});
 let SESSION_MANAGER = null;
 const TELEMETRY_STORE = createTelemetryStore({
     feedbackPath: MESSAGE_FEEDBACK_PATH,
@@ -270,13 +277,13 @@ function getManagedAgentNudge(row) {
 
         return {
             kind: 'claim',
-            body: 'Use the collab MCP tool claim_pending now. Follow any returned next steps, then report in lobby.',
+            body: 'Call the collab MCP tool claim_pending once. Read indicated messages and act only on explicit assignments. If there is no assignment, end your turn silently; do not report ready/idle or poll again.',
         };
     }
 
     return {
         kind: 'bootstrap',
-        body: `You have pending collab work. Use the configured collab MCP service, set your nickname to ${row.agent}, coordinate in lobby, set_status("idle"), call claim_pending(), follow the returned next steps, and report in lobby. Do not ask for permission for routine local commands like date.`,
+        body: `Use the configured collab MCP service, set your nickname to ${row.agent}, set_status("idle"), and call claim_pending() once. Read indicated messages and act only on explicit assignments. Otherwise end silently. If MCP is unavailable, report one failure and stop; do not explore or debug the service.`,
     };
 }
 
@@ -298,19 +305,19 @@ function appendManagedBootstrap(command, runtime, prompt) {
         : [...command, prompt];
 }
 
-function resolveAgentSpawnOtp(input = {}) {
+function rejectAgentSpawnOtp(input = {}) {
     const keys = ['spawnOtp', 'spawn_otp', 'spawn-otp', 'otp'];
     const key = keys.find((name) => Object.prototype.hasOwnProperty.call(input, name));
-    if (!key) {
-        return '';
+    if (
+        key
+        && input[key] !== undefined
+        && input[key] !== null
+        && input[key] !== ''
+    ) {
+        throw new Error(
+            'Agent OTP delivery is not supported; enter a spawn OTP directly in each terminal-spawn request.',
+        );
     }
-    if (input[key] === undefined || input[key] === null || input[key] === '') {
-        return '';
-    }
-    if (typeof input[key] !== 'string' || !input[key].trim()) {
-        throw new Error('--spawn-otp requires a value');
-    }
-    return input[key].trim();
 }
 
 function resolveLaunchTargetInput(input = {}, fallback = {}) {
@@ -347,9 +354,6 @@ function buildCreateAgentBootstrapPrompt(options) {
     return [
         `You are the ${role} agent for this tmux session.`,
         `Use the collab MCP service at ${mcpUrl}.`,
-        options.hasSpawnOtp
-            ? 'A single-use Notty terminal spawn OTP is available in MCP_SPAWN_OTP. Submit it only when spawn_terminal requests otp, and never print or report it.'
-            : '',
         `Your coordination channel is ${channel}. Use set_nickname() to set your nickname to ${agent}, then call set_status("idle") and wait for explicit instructions or a Notty pending-work nudge.`,
         'Do not call claim_pending(), read_messages(), or send_message() during startup. Do not poll, announce readiness, or invent work.',
     ].filter(Boolean).join(' ');
@@ -366,7 +370,7 @@ function createManagedAgent(options = {}) {
     const launchTarget = resolveLaunchTargetInput(options);
     const { harness, backend, runtime } = launchTarget;
     const think = normalizeAgentThink(options.think, launchTarget);
-    const spawnOtp = resolveAgentSpawnOtp(options);
+    rejectAgentSpawnOtp(options);
     if (runtime === 'ollama' && !String(options.model || '').trim()) {
         throw new Error('ollama agents require a model');
     }
@@ -376,6 +380,7 @@ function createManagedAgent(options = {}) {
     }, 'lobby');
     const mcpUrl = String(options.mcp_url || options.mcpUrl || 'http://127.0.0.1:1337/mcp').trim() || 'http://127.0.0.1:1337/mcp';
     const workdir = path.resolve(String(options.workdir || ROOT));
+    const childEnvironment = sanitizeChildEnvironment(process.env);
     if (getManagedAgentEntry(agent)) {
         throw new Error(`managed agent already exists: ${agent}`);
     }
@@ -387,7 +392,6 @@ function createManagedAgent(options = {}) {
         role,
         channel,
         mcpUrl,
-        hasSpawnOtp: Boolean(spawnOtp),
     });
     const explicitCommand = Array.isArray(options.command)
         ? options.command
@@ -398,7 +402,7 @@ function createManagedAgent(options = {}) {
         ? prepareOllamaCodexProvider({
             model: String(options.model || ''),
             endpoint: options.ollamaEndpoint || options.ollamaHost,
-            environment: process.env,
+            environment: childEnvironment,
             curlBin: options.curlBin || process.env.CURL_BIN,
             timeoutMs: options.ollamaTimeoutMs,
             runtimeDir: options.ollamaRuntimeDir,
@@ -414,7 +418,7 @@ function createManagedAgent(options = {}) {
         try {
             removeOllamaModelCatalog(ollamaProvider.catalogPath, {
                 runtimeDir: options.ollamaRuntimeDir,
-                environment: process.env,
+                environment: childEnvironment,
             });
         } catch (cleanupError) {
             error.ollamaCatalogPath = ollamaProvider.catalogPath;
@@ -444,11 +448,11 @@ function createManagedAgent(options = {}) {
                 codexBin: options.codexBin || process.env.CODEX_BIN || 'codex',
                 agyBin: options.agyBin || process.env.AGY_BIN || 'agy',
                 claudeBin: options.claudeBin || process.env.CLAUDE_BIN || 'claude',
-                codexArgs: defaultCodexSafetyArgs(process.env),
-                agyArgs: defaultAgySafetyArgs(process.env),
-                claudeArgs: defaultClaudeSafetyArgs(process.env),
+                codexArgs: defaultCodexSafetyArgs(childEnvironment),
+                agyArgs: defaultAgySafetyArgs(childEnvironment),
+                claudeArgs: defaultClaudeSafetyArgs(childEnvironment),
                 ollamaProviderArgs: ollamaProvider?.args,
-                environment: process.env,
+                environment: childEnvironment,
             });
     } catch (error) {
         cleanupPreparedCatalog(error);
@@ -466,13 +470,8 @@ function createManagedAgent(options = {}) {
             target,
             '--',
             'env',
-            '-u',
-            'NOTTY_MCP_SPAWN_OTP',
-            '-u',
-            'MCP_SPAWN_OTP',
-            '-u',
-            'COLLAB_AGENT_SPAWN_OTP',
-            ...(spawnOtp ? [`MCP_SPAWN_OTP=${spawnOtp}`] : []),
+            '-i',
+            ...childEnvironmentAssignments(childEnvironment),
             `MYID=${agent}`,
             `COLLAB_AGENT_ID=${agent}`,
             `COLLAB_CHANNEL=${channel}`,
@@ -487,6 +486,7 @@ function createManagedAgent(options = {}) {
         ],
         {
             encoding: 'utf8',
+            env: childEnvironment,
         },
     );
 
@@ -552,7 +552,6 @@ function createManagedAgent(options = {}) {
         runtime,
         model: String(options.model || ''),
         think,
-        spawn_otp_configured: Boolean(spawnOtp),
         channel,
         mcp_url: mcpUrl,
         workdir,
@@ -949,6 +948,7 @@ function claimPendingForAgent(agent) {
 }
 
 function shouldFanoutChannelPending(record) {
+    if (record?.author_type === 'human') return true;
     const sender = sanitize(record && record.agent_id, '');
     if (!sender) {
         return false;
@@ -962,7 +962,7 @@ function shouldFanoutChannelPending(record) {
         return true;
     }
 
-    return !getManagedAgentEntry(sender);
+    return session ? false : !getManagedAgentEntry(sender);
 }
 
 function markPendingForRecord(record) {
@@ -1435,7 +1435,7 @@ function parseIrcCreateAgentArgs(argv) {
     const { harness, backend, runtime } = launchTarget;
     const model = typeof input.model === 'string' ? input.model.trim() : '';
     const think = normalizeAgentThink(input.think, launchTarget);
-    const spawnOtp = resolveAgentSpawnOtp(input);
+    rejectAgentSpawnOtp(input);
     if (runtime === 'ollama' && !model) {
         throw new Error('/create_agent --runtime ollama requires --model');
     }
@@ -1448,7 +1448,6 @@ function parseIrcCreateAgentArgs(argv) {
         runtime,
         model,
         think,
-        spawnOtp,
     };
 }
 
@@ -1876,10 +1875,10 @@ function agentMcpUrlForRuntime(runtime, value = '') {
 
 function runAgentLauncherScript(scriptName, args, options = {}) {
     const scriptPath = path.join(APP_ROOT, 'agents', 'bin', scriptName);
-    const spawnOtp = resolveAgentSpawnOtp(options);
+    rejectAgentSpawnOtp(options);
     const launchTarget = resolveLaunchTargetInput(options);
     const env = {
-        ...process.env,
+        ...sanitizeChildEnvironment(process.env),
         NOTTY_COLLAB_STANDALONE: '1',
         COLLAB_CHANNEL: normalizeChannelName(options.channel, 'lobby'),
         COLLAB_MCP_URL: String(options.mcpUrl || options.mcp_url || defaultAgentMcpUrl()).trim() || defaultAgentMcpUrl(),
@@ -1889,12 +1888,6 @@ function runAgentLauncherScript(scriptName, args, options = {}) {
         COLLAB_MODEL: String(options.model || ''),
         COLLAB_THINK: String(options.think || ''),
     };
-    delete env.NOTTY_MCP_SPAWN_OTP;
-    delete env.MCP_SPAWN_OTP;
-    delete env.COLLAB_AGENT_SPAWN_OTP;
-    if (spawnOtp) {
-        env.COLLAB_AGENT_SPAWN_OTP = spawnOtp;
-    }
     const role = sanitize(options.role, '');
     if (role) {
         env.COLLAB_ROLE = role;
@@ -1931,7 +1924,7 @@ function createAgentScriptCommand(input) {
     const { harness, backend, runtime } = launchTarget;
     const model = typeof input.model === 'string' ? input.model.trim() : '';
     const think = normalizeAgentThink(input.think, launchTarget);
-    const spawnOtp = resolveAgentSpawnOtp(input);
+    rejectAgentSpawnOtp(input);
     if (runtime === 'ollama' && !model) {
         fail('create-agent --runtime ollama requires --model');
     }
@@ -1961,7 +1954,6 @@ function createAgentScriptCommand(input) {
         runtime,
         model,
         think,
-        spawnOtp,
     });
     process.stdout.write(`${output}\n`);
 }
@@ -2408,7 +2400,7 @@ async function startRemoteIrc(input) {
         }
         const sub = String(parts.shift() || '').toLowerCase();
         if (sub === 'help') {
-            writeLine('/create_agent <id> --role <role> [--harness codex|agy|claude] [--backend default|ollama] [--model "model"] [--think level] [--spawn-otp value]  launch agent\n/resume_agent <id> <session_id> [--harness codex|agy|claude] [--backend default|ollama] [--model "model"] [--think level]  resume agent\n/join <channel>  switch channel\n/to <agent|all>  set target\n/all  set target to all\n/nick <name>  change nickname\n/tail  replay recent messages\n/say <text>  send message\n/status  show daemon status\n/quit  exit');
+            writeLine('/create_agent <id> --role <role> [--harness codex|agy|claude] [--backend default|ollama] [--model "model"] [--think level]  launch agent\n/resume_agent <id> <session_id> [--harness codex|agy|claude] [--backend default|ollama] [--model "model"] [--think level]  resume agent\n/join <channel>  switch channel\n/to <agent|all>  set target\n/all  set target to all\n/nick <name>  change nickname\n/tail  replay recent messages\n/say <text>  send message\n/status  show daemon status\n/quit  exit');
             return;
         }
         if (sub === 'create_agent') {
@@ -2651,7 +2643,7 @@ async function startIrc(input) {
     const printIrcHelp = () => {
         writeIrcLine([
             '/help            show commands',
-            '/create_agent <id> [role] [--harness codex|agy|claude] [--backend default|ollama] [--model "model"] [--think level] [--spawn-otp value]  launch an agent',
+            '/create_agent <id> [role] [--harness codex|agy|claude] [--backend default|ollama] [--model "model"] [--think level]  launch an agent',
             '/create_agent --role <role> [--harness codex|agy|claude] [--backend default|ollama]  use the role as the agent id',
             '/resume_agent <id> <session_id> [--harness codex|agy|claude] [--backend default|ollama] [--model "model"] [--think level]  resume an agent',
             '/add_agent <id> [target]  register a tmux-managed agent for idle nudges',
@@ -2725,7 +2717,6 @@ async function startIrc(input) {
                         runtime,
                         model,
                         think,
-                        spawnOtp,
                     } = parseIrcCreateAgentArgs(rest);
                     const args = ['--agent', createdAgent, '--role', role, '--runtime', runtime];
                     if (model) {
@@ -2746,7 +2737,6 @@ async function startIrc(input) {
                         runtime,
                         model,
                         think,
-                        spawnOtp,
                         mcpUrl: agentMcpUrlForRuntime(runtime, configuredMcpUrl || listenerMcpUrl),
                     });
                     writeIrcLine(output);
@@ -3016,6 +3006,11 @@ function createMcpServer(sdk, options) {
         },
     );
     let mcpAgent = sanitize(getDefaultAgent(), 'agent');
+    const mcpTmuxTarget = (params) => require('./lib/collab/tmux-target.cjs').resolveCollabTmuxTarget(
+        params.target || params.session || mcpAgent,
+        SESSION_MANAGER ? SESSION_MANAGER.getSession() : null,
+        readManagedAgents(),
+    );
 
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
         tools: [
@@ -3149,7 +3144,7 @@ function createMcpServer(sdk, options) {
 
         if (name === 'tmux_send') {
             const target = tmuxSendKeys({
-                target: params.target || params.session || mcpAgent,
+                target: mcpTmuxTarget(params),
                 body: params.body,
                 enter: params.enter,
                 delay_ms: params.delay_ms,
@@ -3161,7 +3156,7 @@ function createMcpServer(sdk, options) {
 
         if (name === 'tmux_read') {
             const text = tmuxReadPane({
-                target: params.target || params.session || mcpAgent,
+                target: mcpTmuxTarget(params),
                 lines: params.lines,
                 quiet: true,
             });
@@ -3325,7 +3320,7 @@ function handleAdminCommand(commandName, rawInput, context) {
                 const { harness, backend, runtime } = launchTarget;
                 const model = String(input.model || '').trim();
                 const think = normalizeAgentThink(input.think, launchTarget);
-                const spawnOtp = resolveAgentSpawnOtp(input);
+                rejectAgentSpawnOtp(input);
                 if (runtime === 'ollama' && !model) {
                     fail('create-agent --runtime ollama requires --model');
                 }
@@ -3340,7 +3335,6 @@ function handleAdminCommand(commandName, rawInput, context) {
                     backend,
                     model,
                     think,
-                    spawnOtp,
                     runtimeSessionId: '',
                     permissionMode: harness === 'codex' ? defaultCodexPermissionMode(process.env) : '',
                     channel: input.channel,
@@ -3548,6 +3542,7 @@ async function handleAdminRequest(req, res, requestUrl, context) {
                 config: config.summary,
                 launchCatalog,
                 modelCatalog: LAUNCH_CATALOG.legacy(),
+                tasks: SESSION_MANAGER.tasks(),
                 session,
                 channels: listChannelNames(),
             });
@@ -3561,6 +3556,17 @@ async function handleAdminRequest(req, res, requestUrl, context) {
             const modelCatalog = LAUNCH_CATALOG.legacy();
             EVENT_HUB.emit('catalog.changed', { launchCatalog });
             writeJsonResponse(res, 200, { launchCatalog, modelCatalog });
+            return true;
+        }
+
+        if (pathname === '/admin/v1/tasks') {
+            if (req.method === 'GET') writeJsonResponse(res, 200, SESSION_MANAGER.tasks());
+            else if (req.method === 'POST') {
+                const body = requirePlainObject(await readJsonBody(req));
+                writeJsonResponse(res, 201, SESSION_MANAGER.createTask(body.name));
+            } else if (req.method === 'PATCH') {
+                writeJsonResponse(res, 200, SESSION_MANAGER.taskSettings(requirePlainObject(await readJsonBody(req))));
+            } else writeJsonResponse(res, 405, { error: 'Method not allowed' });
             return true;
         }
 
@@ -3601,7 +3607,7 @@ async function handleAdminRequest(req, res, requestUrl, context) {
             }
             if (req.method === 'POST') {
                 const body = requirePlainObject(await readJsonBody(req));
-                writeJsonResponse(res, 201, { session: SESSION_MANAGER.create(body) });
+                writeJsonResponse(res, 201, { session: await SESSION_MANAGER.launchTask(body) });
                 return true;
             }
             if (req.method === 'PATCH') {
@@ -3619,7 +3625,7 @@ async function handleAdminRequest(req, res, requestUrl, context) {
         const retryMatch = pathname.match(/^\/admin\/v1\/session\/agents\/([^/]+)\/retry$/);
         if (req.method === 'POST' && retryMatch) {
             const agentId = decodeURIComponent(retryMatch[1]);
-            writeJsonResponse(res, 200, { session: SESSION_MANAGER.retry(agentId) });
+            writeJsonResponse(res, 200, { session: await SESSION_MANAGER.retryTask(agentId) });
             return true;
         }
 
@@ -4727,7 +4733,7 @@ function printHelp() {
     process.stdout.write('collab.cjs - intragent bus + cross-channel watch/mirror\n\n');
     process.stdout.write('usage:\n');
     process.stdout.write('  node collab.cjs send --agent codex --channel lobby --to all --body "ready"\n');
-    process.stdout.write('  node collab.cjs create-agent --agent coder [--role planner] [--harness codex|agy|claude] [--backend default|ollama] [--model "model"] [--think level] [--spawn-otp value]\n');
+    process.stdout.write('  node collab.cjs create-agent --agent coder [--role planner] [--harness codex|agy|claude] [--backend default|ollama] [--model "model"] [--think level]\n');
     process.stdout.write('  node collab.cjs resume-agent --agent coder --session-id <id> [--harness codex|agy|claude] [--backend default|ollama] [--model "model"] [--think level]\n');
     process.stdout.write('  node collab.cjs add-agent --agent coder [--target coder]\n');
     process.stdout.write('  node collab.cjs remove-agent --agent coder\n');
@@ -4754,7 +4760,6 @@ function printHelp() {
     process.stdout.write('  Codex, Agy, and Claude are agent harnesses; default and Ollama are model backends; Ollama currently requires Codex\n');
     process.stdout.write('  create-agent launches Codex/default by default; legacy --runtime codex|agy|ollama|claude aliases remain accepted\n');
     process.stdout.write('  --think sets Codex reasoning effort or Agy/Claude --effort; bare --think selects high where supported\n');
-    process.stdout.write('  --spawn-otp gives one agent a single-use terminal OTP via MCP_SPAWN_OTP without storing it in managed metadata\n');
     process.stdout.write('  Codex and Claude use the /mcp Streamable HTTP endpoint; Agy uses /sse; Codex via Ollama also uses /mcp\n');
     process.stdout.write('  Nosh defaults Codex to full access; set NOTTY_COLLAB_UNSANDBOXED=false to force workspace-write\n');
     process.stdout.write('  Agy and Claude stay sandboxed by the Nosh default; explicit NOTTY_COLLAB_UNSANDBOXED=true unsandboxes all agents\n');

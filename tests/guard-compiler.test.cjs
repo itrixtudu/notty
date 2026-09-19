@@ -535,6 +535,50 @@ test('artifact validators operate independently and identify unsafe mutations', 
   assert.equal(validateNetworkArtifact(result.artifacts.network.content).valid, true);
 });
 
+test('Docker artifact declares only the workspace and auth-state writable mounts', async () => {
+  const {
+    compileDockerArtifact,
+    validateDockerArtifact,
+  } = await loadGuard();
+  const artifact = compileDockerArtifact(fixtureEvents());
+
+  assert.deepEqual(artifact.spec.writableMounts, [
+    {
+      source: '{workdir}',
+      target: '{workdir}',
+      mode: 'rw',
+      purpose: 'coding-agent-workspace',
+    },
+    {
+      source: '{auth_state}',
+      target: '/var/lib/notty-auth',
+      mode: 'rw',
+      purpose: 'notty-auth-state',
+    },
+  ]);
+  assert.equal(validateDockerArtifact(artifact).valid, true);
+
+  const mutations = [
+    (mounts) => mounts.push({
+      source: '/tmp/extra',
+      target: '/tmp/extra',
+      mode: 'rw',
+      purpose: 'arbitrary-extra',
+    }),
+    (mounts) => { mounts[0].source = '/tmp/not-the-workspace'; },
+    (mounts) => { mounts[0].target = '/tmp/not-the-workspace'; },
+    (mounts) => { mounts[1].source = '/tmp/not-auth-state'; },
+    (mounts) => { mounts[1].target = '/tmp/not-auth-state'; },
+  ];
+  for (const mutate of mutations) {
+    const candidate = structuredClone(artifact);
+    mutate(candidate.spec.writableMounts);
+    const validation = validateDockerArtifact(candidate);
+    assert.equal(validation.valid, false);
+    assert.match(validation.errors.join('\n'), /exact workspace and auth-state/);
+  }
+});
+
 test('network artifact uses the external egress manager rule contract', async () => {
   const { compileGuardProfile } = await loadGuard();
   const { normalizeEgressPolicy } = await import('../lib/guardd/egress-policy.js');

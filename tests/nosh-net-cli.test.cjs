@@ -890,7 +890,7 @@ test('non-interactive net enforce launches current settings while Guard supplies
       interactive: false,
       geteuid: () => 0,
     }),
-    /is not the current learned launch-settings revision/,
+    /is not the (?:current learned|applied) launch-settings revision/,
   );
   const status = await executeNetCommand('enforce', {
     workdir: current.workdir,
@@ -980,4 +980,27 @@ test('non-root net status reads only the user mirror', async (t) => {
   });
   assert.equal(status, 0);
   assert.equal(read, true);
+});
+
+test('an applied revision remains selected after a newer learning candidate', async t => {
+  const { executeNetCommand } = await cliModule();
+  const { workspaceKey } = await import('../lib/guardd/net-profile-store.js');
+  const current = fixture(t);
+  const launchConfig = { image: 'nosh', imageReference: `sha256:${'b'.repeat(64)}`,
+    imageDigest: `sha256:${'b'.repeat(64)}`, name: 'nosh-applied', agentId: 'nosh-applied',
+    roles: [], configPath: null, configHash: null, collab: false, startApp: false };
+  const applied = { revision: 'applied-run', runId: 'applied-run',
+    directory: path.join(current.root, 'applied-run'), imageDigest: launchConfig.imageDigest, launchConfig };
+  const registry = fakeRegistry({ canonicalPath: current.workdir, workspaceKey: await workspaceKey(current.workdir),
+    latestCandidate: { ...applied, revision: 'new-learning-run' }, approved: null, audits: [], lastLaunch: null });
+  let verified;
+  await executeNetCommand('enforce', { workdir: current.workdir, revision: 'applied-run' }, {
+    registry, interactive: false, geteuid: () => 0,
+    readActiveDeployment: async () => ({ workspaceKey: await workspaceKey(current.workdir), launchReference: applied }),
+    verifyCandidate: async directory => { verified = directory; return { ok: true }; },
+    client: { async startRun() { return { ...attachment('enforce-applied', current.workdir), profileRevision: 'signed' }; } },
+    mirrorWriter: () => current.root, print: () => {},
+  });
+  assert.equal(verified, applied.directory);
+  assert.equal(registry.state().lastLaunch.revision, 'applied-run');
 });

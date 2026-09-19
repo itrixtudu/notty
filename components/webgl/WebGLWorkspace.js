@@ -3,7 +3,9 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 import { Color, Euler, Quaternion, Vector3 } from 'three';
 import SpatialTerminal from '../xr/terminals/SpatialTerminal.js';
+import SpawnTerminalDialog from '../SpawnTerminalDialog.js';
 import useXRTerminal from '../../hooks/useXRTerminal.js';
+import useTerminalSpawnDialog from '../../hooks/useTerminalSpawnDialog.js';
 import { browserFetch } from '../../lib/browserRequest.js';
 
 const PLACEHOLDER_SESSION = {
@@ -1327,6 +1329,7 @@ function EnvironmentElements() {
 
 export default function WebGLWorkspace() {
   const jsonFetch = useJsonFetch();
+  const { requestTerminalSpawn, spawnDialogProps } = useTerminalSpawnDialog();
   const [debugWebgl] = useState(() => resolveWebglDebugFlag());
   const [scanlinesEnabled, setScanlinesEnabled] = useState(() => resolveWebglScanlinesFlag());
   const debugLog = useCallback((...args) => {
@@ -1792,10 +1795,10 @@ export default function WebGLWorkspace() {
     }
     setCreating(true);
     try {
-      const data = await jsonFetch('/api/terminals', {
-        method: 'POST',
-        body: JSON.stringify({})
-      });
+      const data = await requestTerminalSpawn({});
+      if (!data) {
+        return null;
+      }
       const list = await loadSessions();
       if (data?.session?.id && Array.isArray(list)) {
         let index = list.findIndex(session => session.id === data.session.id);
@@ -1821,7 +1824,7 @@ export default function WebGLWorkspace() {
     } finally {
       setCreating(false);
     }
-  }, [creating, jsonFetch, loadSessions, requestKeyboardCapture]);
+  }, [creating, loadSessions, requestKeyboardCapture, requestTerminalSpawn]);
 
   const resolveSplitTargetSessionId = useCallback(() => {
     if (focusedSessionId != null && sessions.some(session => session.id === focusedSessionId)) {
@@ -2332,6 +2335,7 @@ export default function WebGLWorkspace() {
           </div>
         </div>
       </div>
+      <SpawnTerminalDialog {...spawnDialogProps} />
     </div>
   );
 }

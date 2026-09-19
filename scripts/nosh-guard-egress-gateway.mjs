@@ -861,16 +861,24 @@ function proxyPolicy(request) {
 function proxyIdentityHeaders(headers) {
   const principal = headers['x-nosh-guard-principal'];
   const agent = headers['x-nosh-guard-agent'];
+  const runId = headers['x-nosh-guard-upstream-run'];
+  const gatewayToken = headers['x-nosh-guard-gateway-token'];
   if (
     typeof principal !== 'string' ||
     !/^[A-Za-z0-9_.-]+$/.test(principal) ||
-    (agent != null && typeof agent !== 'string')
+    (agent != null && typeof agent !== 'string') ||
+    typeof runId !== 'string' ||
+    !/^[A-Za-z0-9_.-]+$/.test(runId) ||
+    typeof gatewayToken !== 'string' ||
+    !/^[A-Za-z0-9_-]{43}$/.test(gatewayToken)
   ) {
     throw new TypeError('runner proxy identity headers are invalid');
   }
   return {
     'x-nosh-guard-principal': principal,
     'x-nosh-guard-agent': agent || '',
+    'x-nosh-guard-upstream-run': runId,
+    'x-nosh-guard-gateway-token': gatewayToken,
   };
 }
 

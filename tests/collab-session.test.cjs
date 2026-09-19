@@ -487,7 +487,6 @@ test('Ollama launch invokes Codex directly with its provider, reasoning, MCP, an
     '-c', `model_providers.${providerId}.requires_openai_auth=false`,
     '-c', 'model_catalog_json="/run/user/1000/notty-ollama/catalog.json"',
   ];
-  const spawnOtp = 'session-agent-single-use-otp';
   launchTmuxAgent({
     identity: 'ollama-coder',
     role: 'coder',
@@ -502,7 +501,6 @@ test('Ollama launch invokes Codex directly with its provider, reasoning, MCP, an
     environment: {},
     mcpUrl,
     ollamaProvider: { args: providerArgs },
-    spawnOtp,
     prompts: { coder: { instructions: 'Implement the task.' } },
     sessionId: 'session-test',
     workspaceRoot: '/workspace',
@@ -515,15 +513,12 @@ test('Ollama launch invokes Codex directly with its provider, reasoning, MCP, an
   assert.ok(launchArgs.includes(`COLLAB_MODEL=${model}`));
   assert.ok(launchArgs.includes('COLLAB_THINK=high'));
   assert.ok(launchArgs.includes(`COLLAB_MCP_URL=${mcpUrl}`));
-  assert.ok(launchArgs.includes('MCP_SPAWN_OTP=session-agent-single-use-otp'));
+  assert.equal(launchArgs.some((value) => value.startsWith('MCP_SPAWN_OTP=')), false);
   assert.deepEqual(
-    launchArgs.slice(launchArgs.indexOf('env') + 1, launchArgs.indexOf('MCP_SPAWN_OTP=session-agent-single-use-otp')),
-    [
-      '-u', 'NOTTY_MCP_SPAWN_OTP',
-      '-u', 'MCP_SPAWN_OTP',
-      '-u', 'COLLAB_AGENT_SPAWN_OTP',
-    ],
+    launchArgs.slice(launchArgs.indexOf('env') + 1, launchArgs.indexOf('MYID=ollama-coder')),
+    ['-i'],
   );
+  assert.doesNotMatch(launchArgs.at(-1), /spawn OTP|MCP_SPAWN_OTP/i);
 
   const codexIndex = launchArgs.indexOf(codexBin);
   assert.notEqual(codexIndex, -1);
@@ -546,8 +541,7 @@ test('Ollama launch invokes Codex directly with its provider, reasoning, MCP, an
   ]);
   assert.match(codexTail[8], /Implement the task\./);
   assert.match(codexTail[8], /http:\/\/127\.0\.0\.1:1337\/mcp/);
-  assert.match(codexTail[8], /single-use Notty terminal spawn OTP/i);
-  assert.equal(runtimeArgs.some((arg) => arg.includes(spawnOtp)), false);
+  assert.doesNotMatch(codexTail[8], /spawn OTP|MCP_SPAWN_OTP/i);
   assert.equal(codexTail.length, 9);
   assert.equal(calls[1].options.timeout, QUICK_COMMAND_TIMEOUT_MS);
   assert.equal(calls[2].options.timeout, QUICK_COMMAND_TIMEOUT_MS);
@@ -696,7 +690,7 @@ test('Ollama session preflight checks HTTP model availability and the Codex bina
     }
     if (command === '/opt/codex') {
       return codexAvailable
-        ? { status: 0, stdout: 'codex-cli 0.144.1\n', stderr: '' }
+        ? { status: 0, stdout: 'codex-cli 0.151.0\n', stderr: '' }
         : { status: 1, stdout: '', stderr: 'codex unavailable' };
     }
     return { status: 0, stdout: '', stderr: '' };
@@ -734,7 +728,14 @@ test('Ollama session preflight checks HTTP model availability and the Codex bina
   const createManager = () => createSessionManager({
     codexBin: '/opt/codex',
     curlBin: '/opt/curl',
-    environment: {},
+    environment: {
+      PATH: '/safe/bin',
+      SAFE_PREFLIGHT_VALUE: 'preserved',
+      NOTTY_MCP_SPAWN_OTP: 'spawn-canary',
+      NOTTY_BASIC_AUTH_PASSWORD: 'basic-canary',
+      NOTTY_OAUTH_ACCESS_TOKEN: 'oauth-canary',
+      AUTHORIZATION: 'Bearer header-canary',
+    },
     ollamaEndpoint: '127.0.0.1:11434',
     workspaceRoot,
     manifestPath,
@@ -763,6 +764,13 @@ test('Ollama session preflight checks HTTP model availability and the Codex bina
     call.command === '/opt/curl' && call.args.at(-1).endsWith('/api/show')
   )));
   assert.ok(calls.some((call) => call.command === '/opt/codex' && call.args[0] === '--version'));
+  const codexProbe = calls.find((call) => call.command === '/opt/codex');
+  assert.equal(codexProbe.options.env.PATH, '/safe/bin');
+  assert.equal(codexProbe.options.env.SAFE_PREFLIGHT_VALUE, 'preserved');
+  assert.equal(codexProbe.options.env.NOTTY_MCP_SPAWN_OTP, undefined);
+  assert.equal(codexProbe.options.env.NOTTY_BASIC_AUTH_PASSWORD, undefined);
+  assert.equal(codexProbe.options.env.NOTTY_OAUTH_ACCESS_TOKEN, undefined);
+  assert.equal(codexProbe.options.env.AUTHORIZATION, undefined);
   assert.equal(calls.some((call) => call.command.includes('ollama')), false);
   assert.equal(fs.existsSync(manifestPath), false);
 });
@@ -856,7 +864,7 @@ test('human launch rosters omit coordinator-capable agents from built-in teams',
     config.prompts,
     'human',
   );
-  assert.deepEqual(pair.specs, ['qa_codex_gpt-5.6-sol']);
+  assert.deepEqual(pair.specs, [{ prompt: 'qa', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' }]);
   assert.deepEqual(pair.agents.map((agent) => agent.identity), ['qa']);
   assert.equal(pair.agents.some((agent) => agent.coordinatorCapable), false);
 
@@ -866,9 +874,9 @@ test('human launch rosters omit coordinator-capable agents from built-in teams',
     'human',
   );
   assert.deepEqual(delivery.specs, [
-    'dev_codex_gpt-5.6-sol',
-    'coder_codex_gpt-5.6-sol',
-    'qa_codex_gpt-5.6-sol',
+    { prompt: 'dev', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' },
+    { prompt: 'coder', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' },
+    { prompt: 'qa', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' },
   ]);
   assert.deepEqual(
     delivery.agents.map((agent) => agent.identity),
@@ -1268,6 +1276,28 @@ test('reconcile persists and emits only when derived runtime state changes', (t)
   manager.reconcile();
   assert.equal(fs.readFileSync(manifestPath, 'utf8'), after);
   assert.deepEqual(events, []);
+});
+
+test('persisted agent deadlines enforce after manager recreation without a browser', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'notty-collab-expiry-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manifestPath = path.join(root, 'session.json');
+  writeManifest(manifestPath, { id: 'deadline-session', workspaceRoot: root,
+    status: 'running', recovered: false, agents: [runtimeAgent({
+      timeoutSeconds: 3600, terminateOnExpire: true, expiresAt: Date.now() - 1,
+    })] });
+  let alive = true;
+  let kills = 0;
+  const manager = createSessionManager({ workspaceRoot: root, manifestPath,
+    configStore: { load: () => { throw new Error('not used'); } },
+    tmuxSessionExists: () => alive, tmuxSessionOwnedBy: () => alive,
+    killTmuxSession: () => { alive = false; kills++; return { status: 0 }; },
+  });
+  assert.equal(manager.reconcile().agents[0].status, 'stopped');
+  assert.equal(kills, 1);
+  manager.reconcile();
+  assert.equal(kills, 1);
+  assert.equal(JSON.parse(fs.readFileSync(manifestPath)).agents[0].error, 'Terminated on expiry.');
 });
 
 test('layout patch refreshes the session layout snapshot', (t) => {

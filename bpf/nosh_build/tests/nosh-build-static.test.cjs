@@ -43,7 +43,7 @@ test('balanced BPF ABI is versioned and uses bounded maps', () => {
   assert.match(header, /NOSH_BUILD_EVENT_PROCESS_EXIT = 2/);
   assert.match(header, /NOSH_BUILD_EVENT_DNS_QUERY = 3/);
   assert.match(header, /NOSH_BUILD_EVENT_DNS_RESPONSE = 4/);
-  assert.match(header, /#define NOSH_BUILD_DNS_MAX_ANSWERS 8\b/);
+  assert.match(header, /#define NOSH_BUILD_DNS_MAX_ANSWERS 16\b/);
   assert.match(header, /#define NOSH_BUILD_DNS_MAX_VISITED_ANSWERS 16\b/);
   assert.match(loader, /#define NOSH_BUILD_LOADER_VERSION "4"/);
   assert.match(loader, /sizeof\(struct nosh_build_dns_wire_event\) <= UINT16_MAX/);
@@ -273,7 +273,7 @@ test('normalized schemas expose loss and contain no packet or command payload', 
   }
   assert.equal(queryVariant.properties.eventKind.const, 'dns-query');
   assert.equal(responseVariant.properties.eventKind.const, 'dns-response');
-  assert.equal(eventSchema.$defs.response.properties.answers.maxItems, 8);
+  assert.equal(eventSchema.$defs.response.properties.answers.maxItems, 16);
   assert.equal(eventSchema.$defs.response.properties.answersVisited.maximum, 16);
   assert.equal(eventSchema.$defs.correlation.properties.keyVersion.const, 1);
   assert.equal(eventSchema.$defs.answer.properties.class.const, 1);

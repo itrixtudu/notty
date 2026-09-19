@@ -131,7 +131,7 @@ test('policy reviewer has no dependency on the former example application', () =
   assert.match(page, /Blocking findings/);
   assert.match(page, /Activation/);
   assert.match(page, /signed-activation-handoff/);
-  assert.match(page, /nosh policy project .*--target/);
-  assert.match(page, /nosh-guard ebpf activate/);
+  assert.match(page, /<ReviewWorkflow decisionSet=/);
+  assert.match(page, /<EndpointTable/);
   assert.match(page, /fetchPolicyReviewRuntimeAttestation/);
 });

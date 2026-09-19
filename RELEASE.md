@@ -3,11 +3,11 @@
 **Status:** No-go until the applicable release gates and Definition of Done are
 complete.
 
-**Proposed first public version:** `0.1.0`
+**Proposed first public version:** `1.0.0`
 
-**Release candidate:** `0.1.0-rc.1`
+**Release candidate:** `1.0.0`
 
-**Last reviewed:** 2026-08-04
+**Last reviewed:** 2026-09-01
 
 This document is the sole release authority for Notty. It turns the current
 security, product, packaging, and documentation findings into an ordered path to
@@ -39,7 +39,7 @@ results. Docker is mandatory and the audit never falls back to host npm.
   `CHANGELOG.md`, and a checked-in CI workflow.
 - Version identity conflicts remain unresolved: the branch is named `v0.4`,
   package and lock metadata report `1.0.0`, no semantic release tag exists,
-  and this plan proposes `0.1.0`.
+  and the plan at that snapshot proposed `0.1.0`.
 - Authentication coverage, scoped principals, fail-closed human-approved spawn
   grants, terminal ownership/delegation, and child credential isolation do not
   yet satisfy the release gates. Legacy agent profiles can project shared
@@ -74,9 +74,9 @@ results. Docker is mandatory and the audit never falls back to host npm.
   or host security boundary. The existing lockdown view uses a separate
   read-only first-party status process, but its current guards do not disable
   MCP or terminal WebSocket input and remain an incomplete security boundary.
-- Package and root lockfile metadata now match the declared
-  `0.1.0-rc.1` candidate. Remaining server/CLI metadata and the exact release
-  tag still have to be aligned before the candidate identity gate can pass.
+- At that update, package and root lockfile metadata matched the then-declared
+  pre-1.0 candidate. The current release identity is declared at the top of
+  this document.
 - Release status remains **no-go** until the remaining security, dependency,
   artifact, CI, and clean-machine gates pass.
 
@@ -91,7 +91,7 @@ work from the public release.
 - **Release-candidate gate:** complete every P0 item, establish minimal CI, add
   the root license and notices, and prove that candidate source/image/package
   contents contain no runtime or private data.
-- **Public `v0.1.0` gate:** satisfy the complete Definition of Done, including
+- **Public `v1.0.0` gate:** satisfy the complete Definition of Done, including
   the required P1, P2, documentation, dependency, and clean-machine checks.
 
 Only the owner can explicitly defer an item, and a deferred item must move to a
@@ -161,60 +161,34 @@ authentication, authorization, isolation, and resource boundary.
 Agy remains Preview only if preflight, launch, one prompt/response, and clean
 shutdown pass three consecutive real-runtime smokes on each supported host
 class before the release candidate. Otherwise it moves to Labs. Collab is part
-of the Preview scope for `v0.1.0` and is not an optional release-candidate test.
+of the Preview scope for `v1.0.0` and is not an optional release-candidate test.
 
 ## Security Model
 
-Basic Auth and spawn OTPs serve different purposes:
+The supported HTTP service separates three kinds of authority:
 
-- **Basic Auth authenticates a principal.** It establishes who is the human
-  administrator or MCP client.
-- **A spawn OTP authorizes one action.** It grants one matching MCP client one
-  attempt to create one terminal.
-- **A server-side terminal ACL authorizes later access.** A terminal UUID is
-  only a locator. Reading, writing, resizing, attaching to, or killing it
-  requires ownership or an explicit delegation.
-- **Process isolation limits impact.** A spawned shell must not inherit or be
-  able to recover control-plane credentials.
+- **OAuth 2.1 Bearer authenticates MCP clients.** Public clients register with
+  DCR and use authorization code plus PKCE S256. Access and rotating refresh
+  tokens are scoped to `mcp:tools` and one exact RFC 8707 resource.
+- **Basic Auth protects human consent and browser/admin routes.** It is never
+  stacked with Bearer on an MCP request's `Authorization` header.
+- **A spawn OTP authorizes one terminal creation.** Validation happens first;
+  the accepted OTP is then atomically consumed immediately before PTY spawn.
+  A subsequent spawn failure does not restore it.
+- **Guard mTLS authenticates Guard operators.** Guard does not embed the OAuth
+  service; its runners remain OTP-locked behind the mTLS gateway.
+- **Process isolation limits impact.** Spawned PTYs and agents do not inherit
+  Basic credentials, OAuth headers/tokens, launcher OTPs, or registry state.
 
-The human administrator and MCP clients must not share one unrestricted Basic
-Auth identity. Each MCP client receives a unique, revocable Basic Auth
-principal. The administration credential can manage grants and terminals. An
-MCP client credential can access only the MCP plane and cannot administer OTPs
-or bypass them through REST endpoints.
+OAuth clients, grants, hashed tokens, refresh families, OTP hashes, consumed
+tombstones, and revocations persist in a private per-workspace SQLite database.
+MCP HTTP and SSE sessions are bound to OAuth client, subject, scope, and
+resource. OAuth tokens and spawn OTPs never appear in URLs or dashboard history.
 
-Terminal ownership is a server-side ACL keyed to the authenticated principal,
-not another bearer secret placed in a URL or child environment. Ownership
-survives a transport reconnect by the same principal. Reader cursors and
-temporary delegations remain session-scoped and expire independently.
-
-Proposed control flow:
-
-```text
-Human browser
-  +-- Basic Auth (administrator)
-      +-- issue, inspect, approve, and revoke spawn grants
-
-MCP client
-  +-- Basic Auth (non-administrator)
-      +-- one matching OTP
-          +-- spawn exactly one terminal
-              +-- owner-bound server-side terminal ACL
-```
-
-Proposed grant lifecycle:
-
-```text
-LOCKED
-  +-- explicit authenticated user approval
-      +-- ARMED (one request, short finite TTL)
-          |-- matching spawn -> CONSUMED -> LOCKED
-          |-- user revoke    -> REVOKED  -> LOCKED
-          +-- timeout        -> EXPIRED  -> LOCKED
-```
-
-Refreshing status is safe. Refreshing authority is not. There must be no
-automatic OTP renewal, replenishment, or silent replacement.
+The explicit loopback-only `--no-otp-auth` mode removes Bearer and Basic
+authentication while retaining fail-closed OTP checks for every external
+spawn. Non-spawn MCP tools are intentionally anonymous in that mode. Only
+`--no-otp` disables spawn enforcement.
 
 ## P0: Public Release Blockers
 
@@ -228,7 +202,7 @@ Definition of Done still apply.
 - [ ] In Nosh, publish the container port on host `127.0.0.1` by default even
       when the process must listen on the container interface.
 - [ ] Do not support a directly exposed non-loopback Notty listener in
-      `v0.1.0`. Refuse it unless an explicit Labs-only unsafe override is used.
+      `v1.0.0`. Refuse it unless an explicit Labs-only unsafe override is used.
 - [ ] Document one supported remote topology: TLS terminates at a configured
       reverse proxy and its Notty upstream is loopback, a Unix socket, or a
       private container network inaccessible to clients.
@@ -252,8 +226,8 @@ Definition of Done still apply.
       authorization, Origin/CSRF, body-size, and rate-limit policy, or exclude
       it from the supported artifact.
 - [ ] Leave only a minimal health/version endpoint unauthenticated.
-- [ ] Provision one administrator and unique per-client MCP Basic Auth
-      principals with separate scopes.
+- [ ] Provision Basic consent/admin access and persistent, revocable per-client
+      OAuth DCR registrations scoped to exact MCP resources.
 - [ ] Ensure MCP-client credentials cannot call administrator REST routes.
 - [ ] Start in a locked state until credentials are initialized from a local
       controlling TTY or a pre-created `0600` secret file.
@@ -265,71 +239,57 @@ Definition of Done still apply.
       or administrator route, not only OTP routes.
 - [ ] Validate WebSocket Origin before upgrade to prevent cross-site WebSocket
       hijacking.
-- [ ] Make `--noauth` a loopback-only development mode that disables network
-      terminal MCP and OTP administration.
+- [ ] Enforce the documented loopback-only policy for `--noauth`,
+      `--no-oauth`, `--no-otp-auth`, and `--no-otp`; disable HTTP OTP minting
+      specifically in OTP-only mode.
 - [ ] Rate-limit failed authentication attempts.
-- [ ] Use Basic Auth as the only supported `v0.1.0` authentication mechanism.
-      Remove or disable legacy OAuth/bearer endpoints and query-string tokens;
-      any retained Labs path must sit behind the same Basic Auth boundary.
+- [ ] Support MCP OAuth 2.1 authorization code, DCR, PKCE S256, exact resource
+      audiences, refresh rotation/replay revocation, and Bearer-only MCP
+      requests. Keep legacy `/oauth/token` as unauthenticated `410 Gone` for
+      one release and reject all query-string tokens.
 
 Acceptance criteria:
 
-- An unauthenticated caller cannot create, enumerate, attach to, read, write,
+- Outside explicit loopback OTP-only mode, an unauthenticated caller cannot
+  create, enumerate, attach to, read, write,
   resize, kill, launch an agent/Copilot, approve a command, or manage Collab
   through any HTTP, MCP, SSE, broker, or WebSocket alias.
 - A fresh install refuses privileged service until the administrator and at
   least one unique MCP principal have been deliberately provisioned.
 - A direct remote bind fails clearly. The documented proxy topology rejects
   plain HTTP at its public edge and ignores spoofed forwarded headers.
-- An MCP identity cannot access the OTP administration API or REST terminal
-  creation API.
+- An OAuth MCP identity cannot access Basic-protected OTP administration or
+  bypass the same spawn gateway through REST terminal creation.
 
 ### 2. Strict User-Controlled Spawn Grants
 
 - [ ] Change the OTP registry from fail-open to fail-closed whenever terminal
       MCP is enabled.
-- [ ] Let an authenticated MCP client submit a pending spawn proposal that
-      authorizes nothing and returns only a request UUID.
-- [ ] Canonicalize and hash every security-relevant proposal field, including
-      principal, session, executable, arguments, command, real workspace path,
-      dimensions, environment profile, requested terminal type, and purpose.
-- [ ] Resolve workspaces with realpath/symlink-safe containment beneath an
-      administrator-approved root before showing or authorizing the request.
-- [ ] Show the pending request, canonical fields, requesting principal, and
-      digest in the administrator UI for explicit human review.
-- [ ] Generate OTPs exclusively on the server with a cryptographically secure
-      generator only after the administrator approves the pending request.
-- [ ] Remove caller-supplied OTP values.
-- [ ] Require a finite TTL and enforce a hard maximum.
-- [ ] Choose a short default TTL; proposed range is 60 to 120 seconds.
-- [ ] Bind each grant to:
-  - authenticated MCP principal;
-  - MCP session or managed-agent identity;
-  - `spawn_terminal` purpose;
-  - allowed workspace root;
-  - the canonical digest of the reviewed spawn request or profile.
-- [ ] Allow at most one active grant per MCP client by default.
-- [ ] Enforce global and per-principal active-grant limits.
-- [ ] Return the raw OTP only once in the administrator's approval response.
-- [ ] For `v0.1.0`, require the human to copy that OTP to the requesting client;
-      the unprivileged client cannot poll or recover the value. Any later
-      protected local handoff still requires a separate explicit user action.
+- [ ] Route every MCP, REST, browser, WebGL, XR, and other external creation
+      path through one fail-closed spawn gateway.
+- [ ] Accept OTPs only in MCP arguments or JSON bodies; never accept them in
+      authentication headers, URLs, cookies, browser storage, or logs.
+- [ ] Return plaintext only on initial generation; dashboard reads expose only
+      status, UUID, source, and timestamps.
+- [ ] Support an operator-configured finite TTL and record expiry tombstones.
+- [ ] Generate high-entropy values at launch or through an authenticated local
+      operator action; allow an explicit launcher `--otp VALUE` override.
 - [ ] Add `Cache-Control: no-store` and prevent browser/proxy caching.
-- [ ] Store only a verifier or HMAC, never the raw OTP.
-- [ ] List only UUID, fingerprint, scope, status, and timestamps.
-- [ ] Add explicit revoke and replace operations.
-- [ ] Replacing a grant must revoke the prior grant before issuing another.
+- [ ] Persist only a verifier or hash, never the raw OTP.
+- [ ] List only UUID, source, status, and timestamps.
 - [ ] Require an authenticated, same-origin, CSRF-protected user action to
-      issue, approve, replace, or revoke a grant.
+      issue an OTP through HTTP. Disable this mutation entirely in OTP-only
+      mode; Guard requires an mTLS-authenticated operator.
 - [ ] Accept only the documented JSON content type on mutation routes.
 - [ ] Consume the grant atomically before attempting the spawn.
 - [ ] Keep a consumed grant consumed if process creation fails.
-- [ ] Reject any spawn whose canonical fields differ from the approved digest.
 - [ ] Rate-limit invalid OTP guesses independently from Basic Auth failures.
-- [ ] Invalidate all outstanding grants on restart.
+- [ ] Preserve OTPs and consumption tombstones across service/container
+      restarts; only `nosh auth reset` invalidates the workspace registry.
 - [ ] Record issue, consume, expire, revoke, and failure events without logging
       the OTP.
-- [ ] Store audit files with private directory and file modes.
+- [ ] Store auth state in owned, non-symlink 0700 directories and a 0600
+      integrity-checked SQLite database.
 - [ ] Garbage-collect expired secret material and bound audit history.
 - [ ] Do not add an automatic refresh or renewal endpoint.
 
@@ -337,21 +297,17 @@ Acceptance criteria:
 
 - No active grant means `spawn_terminal` is denied.
 - A concurrent replay race produces exactly one authorized attempt.
-- An expired, revoked, replaced, wrong-principal, wrong-session,
-  wrong-workspace, or wrong-purpose token is rejected.
-- Argument substitution, environment-profile substitution, and symlink escape
-  after approval are rejected.
+- An invalid, expired, consumed, or revoked value is rejected.
 - A dashboard reload cannot recover an issued token value.
-- Issuing a replacement always requires a new authenticated user action.
+- A restart cannot make a consumed launcher OTP usable again.
 
-The required `v0.1.0` handshake is:
+The required `v1.0.0` handshake is:
 
 ```text
-MCP client --Basic Auth--> submit proposal --> pending request UUID
-Human admin --Basic Auth + CSRF--> review canonical request --> approve
-Server --> reveal OTP once to human
-Human --> explicitly copy OTP to client
-MCP client --> retry exact request with UUID + OTP --> atomic consume + spawn
+Launcher or authenticated operator --> generate OTP --> reveal once
+MCP/REST/browser caller --> validate spawn request + submit OTP in body/argument
+Server --> atomic consume --> PTY spawn attempt
+Server --> retain consumed tombstone whether spawn succeeds or fails
 ```
 
 ### 3. Terminal Ownership and Delegation
@@ -750,7 +706,7 @@ Use a two-pass candidate workflow. First run the audit on the reviewed, clean,
 committed dependency update while the candidate tag is absent. Resolve every
 other automated failure and complete the applicable manual gates. Only when
 the missing tag is the sole automated failure should the owner create the
-immutable `v0.1.0-rc.1` tag on that exact commit. Rerun the audit without
+immutable `v1.0.0` tag on that exact commit. Rerun the audit without
 moving or reusing the tag.
 
 Manual release validation:
@@ -816,14 +772,14 @@ Recommended implementation order:
 9. **Documentation and full release CI**
    - finish the public quick start, security/contribution/retention documents,
      supported container build, scans, and release automation.
-10. **Release candidate**
-    - tag `v0.1.0-rc.1`, build immutable draft artifacts once, record their
-      commit/checksums/digests, clean-room test those exact artifacts, and
-      dogfood them.
+10. **Release validation**
+    - while `v1.0.0` remains absent, build immutable draft artifacts once,
+      record their commit/checksums/digests, clean-room test those exact
+      artifacts, and dogfood them.
 11. **First public release**
-    - close the Definition of Done, promote the tested artifacts without a
-      rebuild, tag `v0.1.0`, and publish notes, checksums, image digests, and
-      known limitations.
+    - close the Definition of Done, tag the exact tested commit as `v1.0.0`,
+      rerun the audit, promote the tested artifacts without a rebuild, and
+      publish notes, checksums, image digests, and known limitations.
 
 ## Decisions Requiring Owner Review
 
@@ -833,19 +789,19 @@ These choices should be explicit before implementation begins:
 | --- | --- |
 | Project license | 0BSD for Notty; preserve all third-party licenses |
 | eBPF license | `0BSD OR GPL-2.0-only`; `Dual BSD/GPL` kernel loader designation |
-| First version | `0.1.0` |
+| First version | `1.0.0` |
 | Supported hosts | Linux and WSL first |
 | Default bind | `127.0.0.1` |
 | Remote access | TLS reverse proxy to a local/private upstream; no direct remote listener |
 | Administrator authentication | Dedicated Basic Auth principal, initialized locally |
-| MCP authentication | Unique restricted Basic Auth principal per client |
-| Legacy OAuth/bearer auth | Excluded from the supported `v0.1.0` surface |
-| Credential storage | Password KDF verifiers in a `0600` file; plaintext shown once |
+| MCP authentication | OAuth 2.1 authorization code + DCR + PKCE S256; OTP-only is loopback-only |
+| Legacy OAuth/bearer auth | Singleton/client-credentials flow removed; `/oauth/token` returns 410 for one release |
+| Credential storage | Hashed tokens/OTPs and grants in per-workspace `auth.sqlite3` mode 0600 |
 | Terminal authorization | Server-side ACL keyed to principal; UUID is only a locator |
 | Reconnect behavior | Owner survives reconnect; readers and temporary leases do not |
-| OTP default TTL | 90 seconds |
-| OTP maximum TTL | 300 seconds |
-| Active OTPs | One per MCP principal by default |
+| OTP default TTL | Launcher-configured; currently 3600 seconds |
+| OTP maximum TTL | Operator policy; positive finite values only when configured |
+| Active OTPs | Persistent registry; each value remains single-use |
 | OTP renewal | Never automatic; explicit user replacement only |
 | Terminal sharing | Denied by default; explicit delegation only |
 | Public distribution | GitHub release plus GHCR image |
@@ -860,7 +816,7 @@ These choices should be explicit before implementation begins:
 
 ## Definition of Done
 
-Notty is ready for `v0.1.0` only when all of the following are true:
+Notty is ready for `v1.0.0` only when all of the following are true:
 
 - [ ] Every required P0, P1, P2, and release-automation item is complete.
 - [ ] Every P0 security property is covered by deterministic tests.
@@ -894,7 +850,7 @@ Notty is ready for `v0.1.0` only when all of the following are true:
 ## Post-Release Defense-in-Depth Roadmap
 
 These are concrete follow-up designs, not current command-line options and not
-substitutes for the P0 controls. In particular, `v0.1.0` must already prevent
+substitutes for the P0 controls. In particular, `v1.0.0` must already prevent
 one agent from reading or using another agent's credentials. The first item
 describes a preferred additional OS boundary, not permission to defer that
 security outcome.
@@ -972,7 +928,7 @@ includes a privileged host writer. Until then, documentation must continue to
 state that append-only file descriptors and truncation detection are not WORM
 storage and do not protect against host root.
 
-## Deliberate Non-Goals Before `v0.1.0`
+## Deliberate Non-Goals Before `v1.0.0`
 
 Do not delay the release for:
 
@@ -984,10 +940,10 @@ Do not delay the release for:
 - delivery of the dedicated clean-room network observation mode described in
   the post-release roadmap;
 - separate Unix users and homes for every agent, provided the release still
-  enforces equivalent per-agent credential isolation before `v0.1.0`;
+  enforces equivalent per-agent credential isolation before `v1.0.0`;
 - WORM, externally checkpointed, or cryptographically authenticated Guard
   evidence beyond the accurate append-only and tamper-detection claims required
-  for `v0.1.0`;
+  for `v1.0.0`;
 - automatic OTP refresh for convenience.
 
 The release should earn trust through a small supported surface, strict user

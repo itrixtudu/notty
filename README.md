@@ -12,7 +12,7 @@ network-evidence tooling through Nosh Guard.
 > security and Guard subsystems include Labs work whose limitations are part of
 > the interface, not hidden implementation details.
 
-The package metadata currently identifies `0.1.0-rc.1`; [RELEASE.md](RELEASE.md)
+The package metadata currently identifies `1.0.0`; [RELEASE.md](RELEASE.md)
 is the release authority and still marks the checkout **No-go** until its
 applicable gates are complete.
 
@@ -66,9 +66,9 @@ The practical boundaries are:
 - The recommended Nosh command publishes Notty on `127.0.0.1`. Starting the
   server directly without a bind host can listen more broadly, so direct
   server launches require deliberate address and authentication configuration.
-- HTTP Basic authentication and spawn OTPs are distinct controls. Basic Auth
-  protects the HTTP surface; a spawn OTP authorizes one matching terminal
-  creation attempt.
+- OAuth Bearer authentication protects MCP in the default mode, while HTTP
+  Basic authentication protects browser/admin routes and OAuth consent. A
+  spawn OTP is a separate, single-use capability for terminal creation.
 - Legacy Nosh is a convenient development container, not a boundary against a
   malicious Docker-authorized user or against trusted credentials deliberately
   mounted by a selected profile.
@@ -134,10 +134,62 @@ nosh recreate \
   --publish 127.0.0.1:3000
 ```
 
-Nosh generates HTTP Basic credentials unless `--noauth` is explicitly used.
-Open <http://127.0.0.1:3000/> and enter the credentials printed by the
-launcher. Keep `--noauth` for deliberate loopback-only development; never
-combine it with a LAN or public bind.
+Nosh generates HTTP Basic credentials and one terminal-spawn OTP. Open
+<http://127.0.0.1:3000/> and enter the Basic credentials printed by the
+launcher. MCP clients use the OAuth authorization-code flow described below;
+the Basic credential is entered only on the browser consent page.
+
+### Authentication modes
+
+MCP authentication and terminal-spawn authorization are intentionally
+separate:
+
+| Launcher mode | MCP and browser authentication | Terminal spawning |
+| --- | --- | --- |
+| default | OAuth Bearer for MCP; Basic for consent and UI | OTP required |
+| `--noauth` | OAuth remains; Basic is disabled | OTP required |
+| `--no-oauth` | Basic remains; OAuth is disabled | OTP required |
+| `--no-otp-auth` | No Bearer, Basic, or other auth header | OTP required |
+| `--no-otp` | Normal OAuth/Basic policy | OTP disabled |
+
+All four disabling flags are restricted to loopback listeners and loopback
+public origins. `--no-otp-auth` cannot be combined with `--no-otp` and is not
+available in Guard mode. Guard keeps its mTLS gateway and starts each runner
+with OTP enforcement enabled.
+
+OAuth and consumed-OTP state is stored at
+`${XDG_STATE_HOME:-$HOME/.local/state}/notty/auth/<workspace-id>/auth.sqlite3`
+and mounted independently of container lifetime. `nosh auth reset`, run from
+the same workspace, revokes that workspace's clients, grants, tokens, and
+OTPs. After consuming a launcher OTP, `nosh auth otp` mints a fresh workspace
+OTP and prints it once without enabling HTTP minting. Dashboard reads show OTP
+status and timestamps, never reusable values.
+
+The default reset manages legacy state under `XDG_STATE_HOME`. Guard keeps its
+separate database below the root daemon state directory; reset it through the
+root-only management socket with `sudo nosh auth reset --secure --workdir
+/absolute/workspace`. Add `--dry-run` to print the delegated Guard command
+without contacting the daemon or changing either state store.
+
+### Connect Codex to MCP
+
+For the default mode, register the Streamable HTTP endpoint on the host, then
+run the browser login flow:
+
+```sh
+codex mcp add notty --url http://127.0.0.1:3000/mcp
+codex mcp login notty
+```
+
+Approve the request in the browser using the launcher's Basic credential.
+After Codex connects, provide the launcher's one-time OTP only as the `otp`
+argument to a terminal-spawn tool.
+
+For deliberate credentialless, loopback-only MCP access, launch with
+`--no-otp-auth`, register the same `/mcp` URL, and connect without `codex mcp
+login` or custom headers. Non-spawn tools are unauthenticated, but every spawn
+still requires a fresh OTP. OAuth browser callbacks are initiated on the host;
+do not try to perform the Codex login flow inside the container.
 
 Use the same project directory for lifecycle commands so Nosh resolves the
 same project-scoped container name:

@@ -143,6 +143,12 @@ function fixture(t) {
     'record();',
     "if (args[0] === 'run') {",
     "  if (!has('--detach')) {",
+    "    if (has('/app/scripts/nosh-policy-session.mjs')) {",
+    "      const directory = path.join(after('--session'), 'runtime');",
+    "      fs.writeFileSync(path.join(directory, 'review-session.json'), '{}', { mode: 0o600 });",
+    "      fs.writeFileSync(path.join(directory, 'review.graph.json'), '{}', { mode: 0o600 });",
+    "      write('{}'); process.exit(0);",
+    '    }',
     "    if (!has('review') || (!has('bundle') && !has('inspect'))) fail(97);",
     "    const output = after('--output');",
     '    if (output) {',
@@ -403,8 +409,9 @@ test('materializes and serves a review on distinct discovered bridge addresses',
   const events = eventsOf(selected);
   assert.match(events[0], /^profile\t/);
   const dockerRuns = events.filter((line) => line.startsWith('docker\trun\t'));
-  assert.equal(dockerRuns.length, 3, events.join('\n'));
+  assert.equal(dockerRuns.length, 4, events.join('\n'));
   const bundleRun = dockerRuns.find((line) => /\treview\tbundle\t/.test(line));
+  assert.ok(bundleRun.includes(`type=bind,src=${selected.workdir},dst=${selected.workdir},readonly`));
   const uiRun = dockerRuns.find((line) => line.includes('\tio.notty.policy-review.component=ui\t'));
   const graphRun = dockerRuns.find((line) => line.includes('\tio.notty.policy-review.component=graph\t'));
   assert.ok(bundleRun);

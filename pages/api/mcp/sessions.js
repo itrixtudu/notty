@@ -2,8 +2,7 @@ import { getActiveSessions, cleanupSession } from '../../../lib/mcpHttpServer.js
 
 export default function handler(req, res) {
   if (req.method === 'GET') {
-    // List all active sessions
-    const sessions = getActiveSessions();
+    const sessions = getActiveSessions(req);
     res.status(200).json({ sessions, count: sessions.length });
   } else if (req.method === 'DELETE') {
     // Clean up a specific session
@@ -13,7 +12,7 @@ export default function handler(req, res) {
       return;
     }
 
-    const success = cleanupSession(sessionId);
+    const success = cleanupSession(sessionId, req);
     if (success) {
       res.status(200).json({ message: 'Session cleaned up', sessionId });
     } else {

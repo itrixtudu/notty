@@ -7,6 +7,7 @@ import {
   isTerminalLockdownEnabled,
   sendTerminalLockdownResponse
 } from '../../../lib/lockdown.js';
+import { isJsonRequest } from '../../../lib/httpContentType.js';
 
 function withHttpContext(req, route, fn) {
   const protocol = getHttpProtocol(req);
@@ -38,15 +39,34 @@ export default function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    withHttpContext(req, 'POST /api/terminals', () => {
-      const options = req.body || {};
-      // Default to 'xterm' for web/websocket connections
-      if (!options.terminalType) {
-        options.terminalType = 'xterm';
-      }
-      const session = spawnTerminal(options);
-      res.status(201).json({ session });
-    });
+    if (!isJsonRequest(req)) {
+      res.status(415).json({
+        error: {
+          code: 'terminal_spawn_json_required',
+          message: 'Terminal spawn requests require a JSON body.'
+        }
+      });
+      return;
+    }
+    try {
+      withHttpContext(req, 'POST /api/terminals', () => {
+        const options = { ...(req.body || {}) };
+        // Default to 'xterm' for web/websocket connections
+        if (!options.terminalType) {
+          options.terminalType = 'xterm';
+        }
+        const session = spawnTerminal(options);
+        res.status(201).json({ session });
+      });
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 400;
+      res.status(status).json({
+        error: {
+          code: error?.code || 'terminal_spawn_invalid',
+          message: error?.message || 'Unknown error'
+        }
+      });
+    }
     return;
   }
 

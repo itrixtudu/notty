@@ -100,7 +100,7 @@ RUN NODE_EXTRA_CA_CERTS="$NOSH_HTTP_CAPTURE_CA_FILE" \
 
 RUN NODE_EXTRA_CA_CERTS="$NOSH_HTTP_CAPTURE_CA_FILE" npm install -g \
     @anthropic-ai/claude-code@2.1.197 \
-    @openai/codex@0.144.1
+    @openai/codex@0.151.0
 #   @google/gemini-cli@0.50.0
 #   Replaced by anti gravity
 
@@ -146,7 +146,7 @@ RUN echo "alias ls='ls --color=yes'" >> "/home/$USERNAME/.bashrc" \
     && echo "alias run='npm run start'" >> "/home/$USERNAME/.bashrc" \
     && echo "alias tmux='tmux -u'" >> "/home/$USERNAME/.bashrc" \
     && echo "alias tmuxa='tmux -u a -t '" >> "/home/$USERNAME/.bashrc" \
-    && echo 'export PATH="$HOME/.local/bin:$HOME/node_modules/.bin:$PATH:$PWD/node_modules/.bin:$HOME/zig-x86_64"' >> "/home/$USERNAME/.bashrc" \
+    && echo 'export PATH="$HOME/node_modules/.bin:$HOME/.local/bin:$PATH:$PWD/node_modules/.bin:$HOME/zig-x86_64"' >> "/home/$USERNAME/.bashrc" \
     && echo "export LANG=C.UTF-8" >> "/home/$USERNAME/.bashrc" \
     && echo "export LC_ALL=C.UTF-8" >> "/home/$USERNAME/.bashrc" \
     && echo "export LC_CTYPE=C.UTF-8" >> "/home/$USERNAME/.bashrc" \
@@ -207,6 +207,7 @@ RUN set -eux; \
 
 USER $USERNAME
 WORKDIR /app
+ENV PATH="/home/${USERNAME}/node_modules/.bin:/home/${USERNAME}/.local/bin:${PATH}"
 
 CMD ["npm", "run", "start:next:sse"]
 

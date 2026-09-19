@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
@@ -21,6 +20,7 @@ const {
   removeOllamaModelCatalog
 } = require('../lib/collab/ollama.cjs');
 const { buildOllamaCodexRelayCommand } = require('../lib/collab/ollama-codex-relay.cjs');
+const { sanitizeChildEnvironment } = require('../lib/childEnvironment.cjs');
 
 const ENABLE_ENV = 'NOTTY_COLLAB_REAL_RUNTIME_SMOKE';
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -35,20 +35,11 @@ function positiveInteger(value, fallback) {
 }
 
 function scrubbedChildEnv() {
-  const env = { ...process.env };
-  delete env.NOTTY_MCP_SPAWN_OTP;
-  delete env.MCP_SPAWN_OTP;
-  delete env.COLLAB_AGENT_SPAWN_OTP;
-  return env;
+  return sanitizeChildEnvironment(process.env);
 }
 
 function runtimeEnv() {
-  return {
-    ...scrubbedChildEnv(),
-    // A Notty server OTP is not an agent credential. Give each runtime only
-    // its explicitly generated, single-use MCP_SPAWN_OTP.
-    MCP_SPAWN_OTP: randomBytes(32).toString('base64url')
-  };
+  return scrubbedChildEnv();
 }
 
 function appendCapture(current, chunk) {

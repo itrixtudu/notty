@@ -151,8 +151,8 @@ test('pre-tag CI accepts only a sole missing release-tag gate', (t) => {
 
 ## Run identity
 
-- Release candidate at captured commit: \` 0.1.0-rc.1 \`
-- Package version at captured commit: \` 0.1.0-rc.1 \`
+- Release candidate at captured commit: \` 1.0.0 \`
+- Package version at captured commit: \` 1.0.0 \`
 
 ## Repository worktree
 
@@ -168,7 +168,7 @@ ${gateRows}
 
 ### Failed or incomplete
 
-- [ ] \` captured commit lacks release tag 0.1.0-rc.1 or v0.1.0-rc.1 \`
+- [ ] \` captured commit lacks release tag 1.0.0 or v1.0.0 \`
 
 ### Warnings
 
@@ -198,8 +198,8 @@ ${gateRows}
   fs.writeFileSync(
     reportPath,
     goodReport.replace(
-      'Package version at captured commit: ` 0.1.0-rc.1 `',
-      'Package version at captured commit: ` 0.1.0-rc.2 `',
+      'Package version at captured commit: ` 1.0.0 `',
+      'Package version at captured commit: ` 1.0.1 `',
     ),
   );
   const mismatchedVersion = run('python3', [pretagChecker, reportPath]);
@@ -242,9 +242,9 @@ ${gateRows}
   fs.writeFileSync(
     reportPath,
     goodReport.replace(
-      '- Package version at captured commit: ` 0.1.0-rc.1 `',
-      '- Package version at captured commit: ` 0.1.0-rc.1 `\n' +
-      '- Package version at captured commit: ` 0.1.0-rc.1 `',
+      '- Package version at captured commit: ` 1.0.0 `',
+      '- Package version at captured commit: ` 1.0.0 `\n' +
+      '- Package version at captured commit: ` 1.0.0 `',
     ),
   );
   const duplicateIdentity = run('python3', [pretagChecker, reportPath]);

@@ -23,9 +23,21 @@ import { getMcpToolset, getToolsetMode } from './lib/mcpToolset.js';
 import { registerExternalWsServer } from './lib/standaloneWsServer.js';
 import { createMcpServer } from './lib/createMcpServer.js';
 import { listenHttpServer } from './lib/httpServerListen.js';
-import { createMcpHttpCallHandler } from './lib/mcpHttpCallHandler.js';
+import {
+  createMcpHttpCallHandler,
+  routeMcpTransportOrUi
+} from './lib/mcpHttpCallHandler.js';
 import { createCorsMiddleware, resolveOriginPolicy } from './lib/corsPolicy.js';
-import { createTokenHandler, getAuthMiddleware, getPublicTokenInfo } from './lib/authToken.js';
+import {
+  createOAuthService,
+  mountLegacyOAuthTombstone
+} from './lib/oauthService.js';
+import { resolveAuthMode, validateAuthModeExposure } from './lib/authMode.js';
+import { resolvePublicOrigin } from './lib/publicOrigin.js';
+import {
+  authenticateGuardGatewayRequest,
+  guardGatewayMiddleware
+} from './lib/guardGatewayAuth.js';
 import {
   getHttpBasicAuthInfo,
   getHttpBasicAuthMiddleware,
@@ -37,9 +49,13 @@ import {
   getTerminalSummary,
   killTerminal,
   listTerminals,
-  spawnTerminal
+  spawnTrustedTerminal
 } from './lib/terminalManager.js';
 import { isTerminalLockdownEnabled } from './lib/lockdown.js';
+import {
+  jsonBodyErrorHandler,
+  safeRequestErrorDetails
+} from './lib/safeRequestError.js';
 import {
   getHttpProtocol,
   getRequestIpInfo,
@@ -49,8 +65,6 @@ import {
   withLogContext
 } from './lib/terminalLogging.js';
 import {
-  buildHttpUrl,
-  buildWsUrl,
   resolveServerAddress
 } from './lib/serverAddress.js';
 import {
@@ -68,6 +82,7 @@ const RUNTIME_CONFIG = resolveRuntimeConfig({
 });
 applyRuntimeConfigToEnv(RUNTIME_CONFIG);
 const MODE = RUNTIME_CONFIG.mode;
+const AUTH_MODE = resolveAuthMode();
 
 if (RUNTIME_CONFIG.help) {
   console.log(runtimeHelp());
@@ -82,25 +97,17 @@ const lockdownState = {
 };
 
 function summarizeOauthState() {
-  const info = getPublicTokenInfo({ eager: false });
-
-  if (!info.enabled) {
-    return 'disabled';
+  if (MODE === 'stdio') {
+    return 'not mounted (stdio)';
   }
-
-  if (!info.configured) {
-    return 'enabled (missing client id/secret)';
-  }
-
-  if (info.ttlSeconds === null) {
-    return 'enabled (no ttl)';
-  }
-
-  return `enabled (ttl=${info.ttlSeconds}s)`;
+  return AUTH_MODE.oauthEnabled ? 'enabled (DCR + PKCE)' : 'disabled';
 }
 
 function summarizeHttpBasicAuthState() {
-  const info = getHttpBasicAuthInfo();
+  if (MODE === 'stdio') {
+    return 'not mounted (stdio)';
+  }
+  const info = getHttpBasicAuthInfo({ enabled: AUTH_MODE.basicEnabled });
   if (!info.enabled) {
     return 'disabled';
   }
@@ -177,6 +184,7 @@ function logSystemState({ mcpTransport, allowedOrigin, publicWsUrl, showWsUrl = 
     `lockdown=${lockdownEnabled ? 'on' : 'off'}`,
     `lockdown_ui=${lockdownUiEnabled ? 'on' : 'off'}`,
     lockdownSessionId ? `lockdown_session=${lockdownSessionId}` : null,
+    `auth_mode=${AUTH_MODE.name}`,
     `basic_auth=${summarizeHttpBasicAuthState()}`,
     `oauth=${summarizeOauthState()}`,
     `spawn_otp=${summarizeSpawnOtpState()}`,
@@ -197,34 +205,83 @@ function logSystemState({ mcpTransport, allowedOrigin, publicWsUrl, showWsUrl = 
 }
 
 function logOauthStatus() {
-  const info = getPublicTokenInfo({ eager: false });
-
-  if (!info.enabled) {
-    console.error('[auth] OAuth shim disabled');
+  if (MODE === 'stdio') {
+    console.error('[auth] HTTP OAuth and Basic authentication are not mounted in stdio mode');
     return;
   }
-
-  if (!info.configured) {
-    console.error('[auth] OAuth shim enabled but NOTTY_OAUTH_CLIENT_ID/SECRET are missing');
-    return;
+  if (AUTH_MODE.oauthEnabled) {
+    console.error('[auth] OAuth 2.1 authorization-code service enabled (DCR, PKCE S256)');
+  } else {
+    console.error(`[auth] OAuth disabled (${AUTH_MODE.name})`);
   }
+}
 
-  const ttlText =
-    info.ttlSeconds === null
-      ? 'no TTL configured (tokens persist until restart)'
-      : `${info.ttlSeconds}s TTL`;
+function createHttpAuthentication({ port, bindHost, publicHost }) {
+  const publicOrigin = resolvePublicOrigin({ port, publicHost });
+  validateAuthModeExposure(AUTH_MODE, {
+    bindHost,
+    publicOrigin,
+    allowContainerLoopback: process.env.NOTTY_LOOPBACK_PUBLICATION === 'true'
+  });
 
-  if (!info.createdAt) {
-    console.error(`[auth] OAuth shim enabled (${ttlText}); token not yet issued`);
-    return;
+  const basicOptions = { enabled: AUTH_MODE.basicEnabled };
+  const basicMiddleware = getHttpBasicAuthMiddleware(basicOptions);
+  const oauthService = AUTH_MODE.oauthEnabled
+    ? createOAuthService({
+        publicOrigin,
+        basicAuth: {
+          enabled: AUTH_MODE.basicEnabled,
+          validate: (req) => validateHttpBasicAuthRequest(req, basicOptions),
+          challenge: (res) => writeHttpBasicAuthChallenge(res),
+          localSubject: 'local-operator'
+        }
+      })
+    : null;
+
+  const transportMiddleware = (resourcePath) => {
+    const canonicalResource = `${publicOrigin}${resourcePath}`;
+    const identifyResource = (req, res, next) => {
+      if (req.query?.access_token !== undefined) {
+        res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'Bearer tokens are accepted only in the Authorization header'
+        });
+        return;
+      }
+      req.nottyResource = canonicalResource;
+      next();
+    };
+    if (oauthService) {
+      return [identifyResource, oauthService.bearerMiddleware(resourcePath)];
+    }
+    if (AUTH_MODE.basicEnabled) {
+      return [identifyResource, basicMiddleware];
+    }
+    return [identifyResource];
+  };
+
+  return {
+    publicOrigin,
+    oauthService,
+    basicMiddleware,
+    mcpMiddleware: transportMiddleware('/mcp'),
+    sseMiddleware: transportMiddleware('/sse')
+  };
+}
+
+function mountOAuthRoutes(app, authentication) {
+  if (authentication.oauthService) {
+    authentication.oauthService.mountPublicRoutes(app, { legacy: false });
+    authentication.oauthService.mountAuthorizeRoute(app);
   }
+  mountLegacyOAuthTombstone(app, authentication.publicOrigin);
+}
 
-  const expiresIn =
-    info.expiresAt === null ? null : Math.max(0, Math.floor((info.expiresAt - Date.now()) / 1000));
-  const issuedAt = new Date(info.createdAt).toISOString();
-  const expiryText = expiresIn === null ? 'no expiry' : `expires in ${expiresIn}s`;
-
-  console.error(`[auth] OAuth shim enabled (${ttlText}); issued ${issuedAt}, ${expiryText}`);
+function publicWebSocketUrl(publicOrigin, websocketPath) {
+  const url = new URL(publicOrigin);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.pathname = websocketPath;
+  return url.href;
 }
 
 function ensureLockdownSession() {
@@ -247,7 +304,7 @@ function ensureLockdownSession() {
   }
 
   try {
-    const session = spawnTerminal({
+    const session = spawnTrustedTerminal({
       shell: 'bash',
       args: ['-c', 'exec "$0"', lockdownState.command],
       cwd: lockdownState.cwd
@@ -265,6 +322,9 @@ function ensureLockdownSession() {
 logOauthStatus();
 
 try {
+  // Open and validate persistent OTP/auth state before any transport starts.
+  // This also validates OTP TTL configuration even when OAuth is disabled.
+  getSpawnOtpSummary();
   if (MODE === 'stdio') {
     await startStdioServer();
   } else if (MODE === 'sse') {
@@ -293,30 +353,32 @@ async function startStdioServer() {
 
 async function startStandaloneSseServer() {
   const { port, bindHost, publicHost } = resolveServerAddress();
-  const trustedHosts = [publicHost, bindHost, process.env.NOTTY_TRUSTED_HOSTS];
+  const authentication = createHttpAuthentication({ port, bindHost, publicHost });
+  const trustedHosts = [
+    publicHost,
+    bindHost,
+    new URL(authentication.publicOrigin).hostname,
+    process.env.NOTTY_TRUSTED_HOSTS
+  ];
   console.error('[notty] Starting MCP server in standalone SSE mode');
 
   const app = express();
   const allowedOrigin = process.env.ALLOWED_ORIGIN;
-  const httpBasicAuthMiddleware = getHttpBasicAuthMiddleware();
-  const authMiddleware = getAuthMiddleware({ allowQueryToken: true });
-  const tokenHandler = createTokenHandler();
   const jsonParser = express.json({ type: 'application/json', limit: '4mb' });
-  const urlencodedParser = express.urlencoded({ extended: false });
 
+  app.use(guardGatewayMiddleware());
+  mountOAuthRoutes(app, authentication);
   app.use(createCorsMiddleware({
     allowedOrigin,
+    publicOrigin: authentication.publicOrigin,
     allowedHeaders: 'Content-Type, Authorization, Last-Event-ID, MCP-Protocol-Version',
     exposedHeaders: 'X-Session-Id, MCP-Session-Id',
     trustedHosts
   }));
 
-  app.use(httpBasicAuthMiddleware);
-  app.post('/oauth/token', urlencodedParser, jsonParser, tokenHandler);
-
-  app.get('/sse', authMiddleware, async (_req, res) => {
+  app.get('/sse', ...authentication.sseMiddleware, async (req, res) => {
     try {
-      const { sessionId } = await createSseSession(res, { messagePath: '/message' });
+      const { sessionId } = await createSseSession(req, res, { messagePath: '/message' });
       console.error(`[notty] SSE session established (${sessionId})`);
     } catch (err) {
       console.error('[notty] Failed to establish SSE session:', err);
@@ -326,7 +388,7 @@ async function startStandaloneSseServer() {
     }
   });
 
-  app.post('/message', authMiddleware, jsonParser, async (req, res) => {
+  app.post('/message', ...authentication.sseMiddleware, jsonParser, async (req, res) => {
     const sessionIdParam = req.query.sessionId;
     const sessionId = Array.isArray(sessionIdParam) ? sessionIdParam[0] : sessionIdParam;
 
@@ -351,13 +413,15 @@ async function startStandaloneSseServer() {
       }
     );
   });
+  app.use(jsonBodyErrorHandler);
 
   const listenArgs = bindHost ? [port, bindHost] : [port];
   const server = http.createServer(app);
+  server.once('close', () => {
+    authentication.oauthService?.close();
+  });
   await listenHttpServer(server, listenArgs);
-  console.error(
-    `[notty] SSE server listening on ${buildHttpUrl({ host: publicHost, port, path: '/sse' })}`
-  );
+  console.error(`[notty] SSE server listening on ${authentication.publicOrigin}/sse`);
   if (bindHost && bindHost !== publicHost) {
     console.error(`[notty] SSE bind host ${bindHost}`);
   }
@@ -369,7 +433,14 @@ async function startNextServer() {
   const dev = process.env.NODE_ENV !== 'production';
   const nextDir = fileURLToPath(new URL('.', import.meta.url));
   const { port, bindHost, publicHost } = resolveServerAddress();
-  const trustedHosts = [publicHost, bindHost, process.env.NOTTY_TRUSTED_HOSTS];
+  const authentication = createHttpAuthentication({ port, bindHost, publicHost });
+  const trustedHosts = [
+    publicHost,
+    bindHost,
+    new URL(authentication.publicOrigin).hostname,
+    process.env.NOTTY_TRUSTED_HOSTS
+  ];
+  process.env.NOTTY_INTEGRATED_SERVER = 'true';
   const nextApp = next({ dev, dir: nextDir, hostname: publicHost, port });
   let nextRequestHandler = null;
   let nextUpgradeHandler = null;
@@ -378,82 +449,19 @@ async function startNextServer() {
   const app = express();
   let copilotManager = null;
   let copilotBroker = null;
-  const httpBasicAuthMiddleware = getHttpBasicAuthMiddleware();
-  app.use(httpBasicAuthMiddleware);
-
-  const readApiCorsMiddleware = createCorsMiddleware({
+  app.use(guardGatewayMiddleware());
+  mountOAuthRoutes(app, authentication);
+  app.use(createCorsMiddleware({
     allowedOrigin,
-    allowedMethods: 'GET,OPTIONS',
-    trustedHosts
-  });
-  app.use('/api/features', readApiCorsMiddleware);
-  app.use('/api/lockdown', readApiCorsMiddleware);
-  app.use('/api/ws', readApiCorsMiddleware);
-
-  ensureLockdownSession();
-  registerTerminalHttpRoutes(app, {
-    allowedOrigin,
-    trustedHosts,
-    lockdown: lockdownState.enabled
-  });
-  registerAgentHttpRoutes(app, {
-    allowedOrigin,
-    trustedHosts,
-    lockdown: lockdownState.enabled
-  });
-  copilotBroker = await startCopilotMcpBroker({
-    getOperations: () => copilotManager
-  });
-  copilotManager = createCopilotManager({
-    workspaceRoot: TERMINAL_WORKDIR,
-    brokerUrlResolver: (bindingId, role, runtime, accessToken) => (
-      copilotBroker.urlFor(bindingId, role, runtime, accessToken)
-    )
-  });
-  registerCopilotHttpRoutes(app, {
-    allowedOrigin,
-    trustedHosts,
-    lockdown: lockdownState.enabled,
-    operations: copilotManager
-  });
-  let collabSupervisor = null;
-
-  app.get('/api/features', (_req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    res.json({
-      collab: RUNTIME_CONFIG.switches.collab,
-      sources: { collab: RUNTIME_CONFIG.sources.collab }
-    });
-  });
-
-  app.get('/api/lockdown', (_req, res) => {
-    const sessionId = ensureLockdownSession();
-    res.setHeader('Cache-Control', 'no-store');
-    res.json({ lockdown: lockdownState.enabled, sessionId });
-  });
-
-  app.use('/oauth', createCorsMiddleware({
-    allowedOrigin,
-    allowedMethods: 'POST,OPTIONS',
-    trustedHosts
-  }));
-
-  const mcpRouter = express.Router();
-  const authMiddleware = getAuthMiddleware({ allowQueryToken: true });
-  const tokenHandler = createTokenHandler();
-  const urlencodedParser = express.urlencoded({ extended: false });
-  mcpRouter.use(createCorsMiddleware({
-    allowedOrigin,
+    publicOrigin: authentication.publicOrigin,
     allowedHeaders: 'Content-Type, Authorization, X-Session-Id, MCP-Session-Id, MCP-Protocol-Version, Last-Event-ID',
-    allowedMethods: 'GET,POST,DELETE,OPTIONS',
+    allowedMethods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
     exposedHeaders: 'X-Session-Id, MCP-Session-Id',
     trustedHosts
   }));
 
-  app.post('/oauth/token', urlencodedParser, express.json(), tokenHandler);
-  mcpRouter.use(authMiddleware);
-
-  mcpRouter.get('/tools', (req, res) => {
+  const mcpRouter = express.Router();
+  mcpRouter.get('/tools', ...authentication.mcpMiddleware, (req, res) => {
     const { toolDefinitions } = getMcpToolset();
     const { sourceIp, forwardedFor } = getRequestIpInfo(req);
     withLogContext(
@@ -476,26 +484,26 @@ async function startNextServer() {
     );
   });
 
-  mcpRouter.post('/call', express.json(), createMcpHttpCallHandler({
+  mcpRouter.post('/call', ...authentication.mcpMiddleware, express.json(), createMcpHttpCallHandler({
     getMcpToolset,
     getHttpProtocol,
     getRequestIpInfo,
     withLogContext
   }));
 
-  mcpRouter.get('/sessions', (_req, res) => {
-    const sessions = getActiveSessions();
+  mcpRouter.get('/sessions', ...authentication.mcpMiddleware, (req, res) => {
+    const sessions = getActiveSessions(req);
     res.json({ sessions, count: sessions.length });
   });
 
-  mcpRouter.delete('/sessions/:sessionId', (req, res) => {
+  mcpRouter.delete('/sessions/:sessionId', ...authentication.mcpMiddleware, (req, res) => {
     const { sessionId } = req.params;
     if (!sessionId) {
       res.status(400).json({ error: 'sessionId is required' });
       return;
     }
 
-    const success = cleanupSession(sessionId);
+    const success = cleanupSession(sessionId, req);
     if (success) {
       res.json({ message: 'Session cleaned up', sessionId });
     } else {
@@ -508,12 +516,13 @@ async function startNextServer() {
     const messagePath = '/message';
     const jsonParser = express.json({ type: 'application/json', limit: '4mb' });
 
-    const handleSseConnection = async (req, res) => {
+    const handleSseConnection = (messagePathForRequest) => async (req, res) => {
       try {
-        const resolvedMessagePath = `${req.baseUrl || ''}${messagePath}`;
-        const { sessionId } = await createSseSession(res, { messagePath: resolvedMessagePath });
+        const { sessionId } = await createSseSession(req, res, {
+          messagePath: messagePathForRequest
+        });
         console.error(
-          `[mcp-http] SSE transport connected (${sessionId}) -> ${resolvedMessagePath}`
+          `[mcp-http] SSE transport connected (${sessionId}) -> ${messagePathForRequest}`
         );
       } catch (err) {
         console.error('[mcp-http] Failed to establish SSE session:', err);
@@ -551,20 +560,25 @@ async function startNextServer() {
 
     const legacySseCorsMiddleware = createCorsMiddleware({
       allowedOrigin,
+      publicOrigin: authentication.publicOrigin,
       allowedHeaders: 'Content-Type, Authorization, Last-Event-ID, MCP-Protocol-Version',
       exposedHeaders: 'X-Session-Id, MCP-Session-Id',
       trustedHosts
     });
     app.use('/sse', legacySseCorsMiddleware);
     app.use(messagePath, legacySseCorsMiddleware);
-    app.get('/sse', authMiddleware, handleSseConnection);
-    app.post(messagePath, authMiddleware, jsonParser, handleSseMessage);
+    app.get('/sse', ...authentication.sseMiddleware, handleSseConnection('/message'));
+    app.post(messagePath, ...authentication.sseMiddleware, jsonParser, handleSseMessage);
 
-    mcpRouter.get('/sse', authMiddleware, handleSseConnection);
-    mcpRouter.post('/message', authMiddleware, jsonParser, handleSseMessage);
+    mcpRouter.get(
+      '/sse',
+      ...authentication.sseMiddleware,
+      handleSseConnection('/mcp/message')
+    );
+    mcpRouter.post('/message', ...authentication.sseMiddleware, jsonParser, handleSseMessage);
   }
 
-  mcpRouter.all('/', async (req, res) => {
+  const handleStreamableMcp = async (req, res) => {
     const { sourceIp, forwardedFor } = getRequestIpInfo(req);
     await withLogContext(
       {
@@ -582,9 +596,9 @@ async function startNextServer() {
           res.setHeader('X-Session-Id', sessionId);
           await transport.handleRequest(req, res);
         } catch (err) {
-          console.error('[mcp-http] request error:', err);
+          console.error('[mcp-http] request failed:', safeRequestErrorDetails(err));
           if (!res.headersSent) {
-            res.statusCode = 500;
+            res.statusCode = Number.isInteger(err?.statusCode) ? err.statusCode : 500;
             res.setHeader('Content-Type', 'application/json');
             res.end(
               JSON.stringify({
@@ -600,9 +614,68 @@ async function startNextServer() {
         }
       }
     );
+  };
+
+  // An ordinary browser GET renders the Basic-protected /mcp UI. MCP GET
+  // streams advertise text/event-stream and stay on the Bearer-only transport.
+  mcpRouter.all(
+    '/',
+    routeMcpTransportOrUi,
+    ...authentication.mcpMiddleware,
+    handleStreamableMcp
+  );
+  app.use('/mcp', mcpRouter);
+  app.all('/api/mcp', ...authentication.mcpMiddleware, handleStreamableMcp);
+  app.use(jsonBodyErrorHandler);
+
+  // OAuth protocol and MCP transports have their own authentication policy.
+  // Basic authentication applies only to the remaining browser/UI and REST surface.
+  app.use(authentication.basicMiddleware);
+
+  ensureLockdownSession();
+  registerTerminalHttpRoutes(app, {
+    allowedOrigin,
+    publicOrigin: authentication.publicOrigin,
+    trustedHosts,
+    lockdown: lockdownState.enabled
+  });
+  registerAgentHttpRoutes(app, {
+    allowedOrigin,
+    publicOrigin: authentication.publicOrigin,
+    trustedHosts,
+    lockdown: lockdownState.enabled
+  });
+  copilotBroker = await startCopilotMcpBroker({
+    getOperations: () => copilotManager
+  });
+  copilotManager = createCopilotManager({
+    workspaceRoot: TERMINAL_WORKDIR,
+    brokerUrlResolver: (bindingId, role, runtime, accessToken) => (
+      copilotBroker.urlFor(bindingId, role, runtime, accessToken)
+    )
+  });
+  registerCopilotHttpRoutes(app, {
+    allowedOrigin,
+    publicOrigin: authentication.publicOrigin,
+    trustedHosts,
+    lockdown: lockdownState.enabled,
+    operations: copilotManager
+  });
+  let collabSupervisor = null;
+
+  app.get('/api/features', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      collab: RUNTIME_CONFIG.switches.collab,
+      sources: { collab: RUNTIME_CONFIG.sources.collab }
+    });
   });
 
-  app.use('/mcp', mcpRouter);
+  app.get('/api/lockdown', (_req, res) => {
+    const sessionId = ensureLockdownSession();
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ lockdown: lockdownState.enabled, sessionId });
+  });
 
   const server = http.createServer(app);
   let removeSignalHandlers = () => {};
@@ -643,6 +716,11 @@ async function startNextServer() {
             failures.push(error);
           }
         }
+        try {
+          authentication.oauthService?.close();
+        } catch (error) {
+          failures.push(error);
+        }
         if (failures.length) {
           throw new AggregateError(failures, 'Notty runtime cleanup failed');
         }
@@ -658,7 +736,7 @@ async function startNextServer() {
   });
 
   const wsPath = '/ws/terminals';
-  const defaultPublicWsUrl = buildWsUrl({ host: publicHost, port, path: wsPath });
+  const defaultPublicWsUrl = publicWebSocketUrl(authentication.publicOrigin, wsPath);
   const advertisedWsUrl = explicitPublicWsUrl || defaultPublicWsUrl;
 
   const wss = new WebSocketServer({ noServer: true });
@@ -672,12 +750,26 @@ async function startNextServer() {
 
   server.on('upgrade', (request, socket, head) => {
     const { pathname } = new URL(request.url, 'http://localhost');
+    const guardAuthentication = authenticateGuardGatewayRequest(request);
+    if (!guardAuthentication.ok) {
+      socket.end(
+        'HTTP/1.1 401 Unauthorized\r\n'
+          + 'Content-Type: text/plain; charset=utf-8\r\n'
+          + 'Connection: close\r\n\r\n'
+          + 'Guard gateway authentication required'
+      );
+      return;
+    }
+    if (guardAuthentication.principal) {
+      request.nottyAuthPrincipal = guardAuthentication.principal;
+    }
     if (pathname === wsPath) {
       const originDecision = resolveOriginPolicy({
         origin: request.headers.origin,
         host: request.headers.host,
         protocol: request.socket.encrypted ? 'https' : 'http',
         allowedOrigin,
+        publicOrigin: authentication.publicOrigin,
         fetchSite: request.headers['sec-fetch-site'],
         trustedHosts
       });
@@ -691,7 +783,9 @@ async function startNextServer() {
         return;
       }
 
-      const authResult = validateHttpBasicAuthRequest(request);
+      const authResult = validateHttpBasicAuthRequest(request, {
+        enabled: AUTH_MODE.basicEnabled
+      });
       if (!authResult.ok) {
         if (authResult.code === 'misconfigured') {
           socket.end(
@@ -739,24 +833,17 @@ async function startNextServer() {
         appRoot: APP_WORKDIR,
         workspaceRoot: TERMINAL_WORKDIR,
         allowedOrigin,
+        publicOrigin: authentication.publicOrigin,
         trustedHosts,
         lockdown: lockdownState.enabled
       })
     : null;
 
-  app.get('/api/ws', (req, res) => {
-    const headerHost =
-      req.headers['x-forwarded-host'] || req.headers.host || `${wsState.host}:${port}`;
-    const protocolHeader = req.headers['x-forwarded-proto'] || req.protocol;
-    const secure = protocolHeader === 'https';
-    const scheme = secure ? 'wss' : 'ws';
-    const defaultUrl = `${scheme}://${headerHost}${wsPath}`;
-    const url = explicitPublicWsUrl || defaultUrl;
-
+  app.get('/api/ws', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       ready: true,
-      url,
+      url: advertisedWsUrl,
       host: wsState.host,
       port,
       path: wsPath,
@@ -826,7 +913,7 @@ async function startNextServer() {
     process.off('SIGTERM', onSigterm);
   };
 
-  const publicHttpUrl = buildHttpUrl({ host: publicHost, port });
+  const publicHttpUrl = authentication.publicOrigin;
 
   console.error(`[notty] listening on ${publicHttpUrl}`);
   if (bindHost && bindHost !== publicHost) {
@@ -834,15 +921,15 @@ async function startNextServer() {
   }
   console.error(`[notty] websocket upgrade path ${wsPath}`);
   console.error(`[notty] websocket public url ${advertisedWsUrl}`);
-  console.error(`[notty] MCP endpoint ${buildHttpUrl({ host: publicHost, port, path: '/mcp' })}`);
+  console.error(`[notty] MCP endpoint ${authentication.publicOrigin}/mcp`);
   if (enableSse) {
-    console.error(`[notty] MCP SSE endpoint ${buildHttpUrl({ host: publicHost, port, path: '/sse' })}`);
-    console.error(`[notty] MCP SSE alias ${buildHttpUrl({ host: publicHost, port, path: '/mcp/sse' })}`);
+    console.error(`[notty] MCP SSE endpoint ${authentication.publicOrigin}/sse`);
+    console.error(`[notty] MCP SSE alias ${authentication.publicOrigin}/mcp/sse`);
     console.error(
-      `[notty] MCP SSE message endpoint ${buildHttpUrl({ host: publicHost, port, path: '/message' })}`
+      `[notty] MCP SSE message endpoint ${authentication.publicOrigin}/message`
     );
     console.error(
-      `[notty] MCP SSE alias message endpoint ${buildHttpUrl({ host: publicHost, port, path: '/mcp/message' })}`
+      `[notty] MCP SSE alias message endpoint ${authentication.publicOrigin}/mcp/message`
     );
   }
   logSystemState({

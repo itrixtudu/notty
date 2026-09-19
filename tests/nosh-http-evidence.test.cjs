@@ -300,6 +300,7 @@ test('strict response, redirect, stats, NDJSON, and source descriptors fail clos
     () => evidence.createHttpEvidenceSourceDescriptor({
       file: '../escape.ndjson',
       content,
+      expectedCollectorIdentity: collectorIdentity,
     }),
     /escapes or ambiguously names/,
   );
@@ -468,8 +469,8 @@ test('content-addressed store is write-once, verified, and manifest-bound', asyn
       generatedAt: at,
       mode: selected.mode,
       entries: [{
-        ...selected.entry,
-        request: { ...selected.entry.request, credentialed: undefined },
+        ...manifest.entries[0],
+        request: { ...manifest.entries[0].request, credentialed: undefined },
       }],
     }),
     /explicit credentialed classification/,

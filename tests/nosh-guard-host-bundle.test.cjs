@@ -308,23 +308,23 @@ test('containerized host bundle builder and installer preserve the privilege bou
   assert.doesNotMatch(containerBuilder, /^[\t ]*(?:npm|npx)(?:[\t ]|$)/m);
   assert.match(
     containerBuilder,
-    /make -C "\$REPOSITORY_ROOT\/bpf\/nosh_build" test/,
+    /"\$NODE_REQUESTED" --test "\$REPOSITORY_ROOT\/bpf\/nosh_build\/tests\/"\*\.test\.cjs/,
   );
   assert.match(
     containerBuilder,
-    /make -C "\$REPOSITORY_ROOT\/bpf\/nosh_url" test/,
+    /make -C "\$LOADER_BUILD_ROOT\/nosh_url" test/,
   );
   assert.match(
     containerBuilder,
-    /make -C "\$REPOSITORY_ROOT\/bpf\/nosh_l4" test/,
+    /make -C "\$LOADER_BUILD_ROOT\/nosh_l4" test/,
   );
   assert.match(
     containerBuilder,
-    /make -C "\$REPOSITORY_ROOT\/bpf\/nosh_egress" test/,
+    /make -C "\$LOADER_BUILD_ROOT\/nosh_egress" test/,
   );
   assert.match(
     containerBuilder,
-    /make -C "\$LOADER_BUILD_ROOT\/nosh_build" CLANG=clang-14 loader/,
+    /make -C "\$LOADER_BUILD_ROOT\/nosh_build" CLANG=clang-14 loader test-dns/,
   );
   assert.match(
     containerBuilder,
@@ -739,4 +739,46 @@ test('installer and verifier reject unsafe prefixes before privileged work', () 
     assert.equal(checked.status, 2, `${prefix}: ${checked.stderr}`);
     assert.match(checked.stderr, /--prefix/);
   }
+});
+
+test('bpffs preparation creates a private child on an existing mount and preserves pins', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nosh-bpffs-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bpffs = path.join(root, 'bpf');
+  const commands = path.join(root, 'bin');
+  fs.mkdirSync(bpffs);
+  fs.mkdirSync(commands);
+  // Simulate filesystem magic and root identity; mkdir, modes, and symlink
+  // handling operate on real temporary files, without mounting host bpffs.
+  fs.writeFileSync(path.join(commands, 'id'), '#!/bin/sh\necho 0\n', { mode: 0o700 });
+  fs.writeFileSync(path.join(commands, 'stat'), `#!/bin/sh
+if [ "$1" = -f ]; then echo cafe4a11
+elif [ "$2" = %u ]; then echo "\${TEST_PIN_OWNER:-0}"
+else exec /usr/bin/stat "$@"
+fi
+`, { mode: 0o700 });
+  fs.writeFileSync(path.join(commands, 'mount'), '#!/bin/sh\nexit 99\n', { mode: 0o700 });
+  const script = path.join(root, 'prepare.sh');
+  fs.writeFileSync(script, read('scripts/ensure-nosh-guard-bpffs.sh')
+    .replace('BPFFS_PATH=/sys/fs/bpf', `BPFFS_PATH='${bpffs}'`));
+  const run = (extra = {}) => childProcess.spawnSync('bash', [script], {
+    encoding: 'utf8', env: { ...process.env, PATH: `${commands}:${process.env.PATH}`, ...extra },
+  });
+  const created = run();
+  assert.equal(created.status, 0, created.stderr);
+  const base = path.join(bpffs, 'nosh-guard');
+  assert.equal(fs.statSync(base).mode & 0o777, 0o700);
+  const pin = path.join(base, 'existing-pin');
+  fs.writeFileSync(pin, 'preserve');
+  assert.equal(run().status, 0);
+  assert.equal(fs.readFileSync(pin, 'utf8'), 'preserve');
+  assert.notEqual(run({ TEST_PIN_OWNER: '1000' }).status, 0);
+  fs.chmodSync(base, 0o777);
+  assert.match(run().stderr, /group\/other writable/);
+  assert.equal(fs.statSync(base).mode & 0o777, 0o777);
+  fs.chmodSync(base, 0o700);
+  fs.renameSync(base, `${base}-original`);
+  fs.symlinkSync(`${base}-original`, base);
+  assert.match(run().stderr, /unsafe pin base/);
+  assert.equal(fs.readFileSync(path.join(`${base}-original`, 'existing-pin'), 'utf8'), 'preserve');
 });

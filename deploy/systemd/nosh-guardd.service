@@ -37,10 +37,12 @@ ProtectKernelModules=true
 ProtectKernelTunables=true
 ProtectSystem=strict
 # The daemon creates /run/nosh-guardd.sock. AppArmor policy replacement uses
-# securityfs, and the eBPF adapters may use bpffs; keep only those kernel
-# filesystem subtrees writable inside the service mount namespace.
+# securityfs. ProtectKernelTunables explicitly protects the bpffs mount on
+# systemd 255; permit only the pre-created Guard child directory, rather than
+# trying to override protection at the same /sys/fs/bpf mount path.
 ReadWritePaths=/var/lib/nosh-guard /run
-ReadWritePaths=-/sys/fs/bpf -/sys/kernel/security/apparmor
+ReadWritePaths=/sys/fs/bpf/nosh-guard
+ReadWritePaths=-/sys/kernel/security/apparmor
 KeyringMode=private
 LockPersonality=true
 RemoveIPC=true

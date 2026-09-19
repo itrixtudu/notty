@@ -450,7 +450,8 @@ resolve_policy_tooling_image() {
 }
 
 run_profile_node() {
-  "$DOCKER_BIN" run --rm --pull never --network none \
+  # The validators arrive via heredoc; Docker must forward stdin to node -.
+  "$DOCKER_BIN" run --interactive --rm --pull never --network none \
     --user "$(id -u):$(id -g)" \
     --read-only --cap-drop ALL --security-opt no-new-privileges:true \
     --pids-limit 64 --memory 512m --memory-swap 512m \

@@ -11,6 +11,45 @@ incompatible configuration fails closed. `SIGTERM` ends evidence collection
 but does not detach policy; only `nosh-egress-loader detach --pin-root ...`
 removes the exact pinned instance.
 
+When the target cgroup is destroyed, the kernel detaches its links and reports
+their cgroup ID as zero. The pins and final counters can remain. `status` still
+requires each link to reference the original live cgroup. `snapshot` and
+`detach` accept either that original ID or zero, while retaining link, map,
+and policy identity checks and rejecting foreign cgroup IDs. A final snapshot
+of detached links does not attest that enforcement is active. Cleanup reports
+success only after the pin root has been removed.
+
+## Building and checking kernel acceptance
+
+Run builds and tests inside the offline host-bundle toolchain container.
+`make loader test CLANG=clang-14` builds the object and loader, rejects invalid
+bytecode branch destinations, and runs native DNS parser, staging, grant,
+wire-format and loader lifecycle regressions. Lifecycle tests exercise the
+actual loader with mocked BPF metadata and pin operations; they check live
+versus detached links and failed cleanup without kernel attachment. These
+checks do not establish kernel acceptance.
+
+`nosh-egress-loader verify` asks the running kernel to load every program, then
+closes the object. It requires the kernel privileges used by the loader and
+never attaches programs or creates pins. A successful result reports
+`status: "verified"`, `attachedPrograms: 0`, and `pinned: false`.
+
+`make test-kernel CLANG=clang-14` is a separate, explicit test for a container
+with `CAP_BPF`, `CAP_PERFMON`, and `CAP_NET_ADMIN`. It uses
+`BPF_PROG_TEST_RUN` with synthetic packets to check exact-address policy,
+DNS grants, malformed-response rejection, scratch reentry protection, and
+evidence fields. It does not transmit packets, attach hooks, or pin state;
+the guarded-run workflow is still required to test real container traffic.
+
+DNS parsing, matching, staging, and grant commit use bounded helper loops.
+Global BPF functions let the verifier check expensive operations separately.
+Packet and response-key temporaries live in private per-CPU scratch, claimed
+atomically across each packet invocation. A nested invocation denies and
+records a backend failure; the owner releases scratch after all parsing and
+evidence work completes. The 12-map pinned ABI inventory excludes private
+`packet_scratch` and `events` maps, whose lifetime is retained by references
+from the loaded programs or loader. Policy and evidence ABIs remain at 2.
+
 ## Policy manifest v2
 
 The loader consumes a deterministic tab-separated projection of the reviewed

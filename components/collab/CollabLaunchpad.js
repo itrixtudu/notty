@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import AgentSpecEditor from './AgentSpecEditor.js';
+import AgentSpecEditor, { modelOptionsFromCatalogs } from './AgentSpecEditor.js';
+import ConversationTaskPicker from './ConversationTaskPicker.js';
 import {
   createAgentDocument,
   createPromptDocument,
   createTemplateDocument,
-  formatAgentModel,
+  AGENT_HARNESSES,
+  displayModelName,
+  launchThinkDefaultLabel,
+  applyLaunchDefaults,
   isCompatibleAgentBackend,
   isPromptReferenced,
   normalizeAgentSpec,
@@ -294,9 +298,15 @@ export default function CollabLaunchpad({
   onRefreshCatalog,
   modelCatalog,
   launchCatalog,
+  tasks,
+  onCreateTask,
+  onTaskSettings,
   busy
 }) {
   const templates = config?.templates || [];
+  const selectedTask = tasks?.tasks?.find((entry) => entry.id === tasks.lastTaskId);
+  const [taskName, setTaskName] = useState(selectedTask?.name || '');
+  const [startingTask, setStartingTask] = useState(false);
   const selected = templates.find((template) => template.id === selectedTemplateId)
     || templates[0]
     || null;
@@ -309,6 +319,9 @@ export default function CollabLaunchpad({
   const [validationError, setValidationError] = useState('');
   const [selectedPromptId, setSelectedPromptId] = useState(config?.prompts?.[0]?.id || '');
   const [creatingPrompt, setCreatingPrompt] = useState(false);
+  const [launchChoices, setLaunchChoices] = useState({});
+  const [bulkSelection, setBulkSelection] = useState({ harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' });
+  const [bulkNotice, setBulkNotice] = useState('');
 
   useEffect(() => {
     if (!selected) return;
@@ -318,7 +331,20 @@ export default function CollabLaunchpad({
     setScope(nextScope);
     setDraft(templateToDraft(scopedTemplate(config, nextScope, selected)));
     setValidationError('');
+    setLaunchChoices({});
+    setBulkSelection({ harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low' });
+    setBulkNotice('');
+    const saved = tasks?.tasks?.find((entry) => entry.id === tasks.lastTaskId)?.launch;
+    if (saved?.templateId === selected.id) {
+      setCoordinatorMode(saved.coordinatorMode);
+      setChannel(saved.channel);
+      const roster = resolveLaunchAgents(selected, saved.coordinatorMode, config?.prompts);
+      if (roster.length === saved.agentChoices.length) {
+        setLaunchChoices(Object.fromEntries(roster.map((agent, index) => [agent.identity, saved.agentChoices[index]])));
+      }
+    }
   }, [
+    tasks?.lastTaskId,
     selected?.id,
     selected?.source,
     config?.revisions?.user,
@@ -326,8 +352,49 @@ export default function CollabLaunchpad({
   ]);
 
   const parsedAgents = useMemo(() => (
-    resolveLaunchAgents(selected, coordinatorMode, config?.prompts)
-  ), [selected, coordinatorMode, config?.prompts]);
+    resolveLaunchAgents(selected, coordinatorMode, config?.prompts).map((agent) => ({
+      ...agent,
+      timeoutSeconds: 3600,
+      terminateOnExpire: true,
+      ...launchChoices[agent.identity]
+    }))
+  ), [selected, coordinatorMode, config?.prompts, launchChoices]);
+
+  const bulkModels = Array.from(new Set([
+    ...modelOptionsFromCatalogs([launchCatalog, modelCatalog], bulkSelection.harness, bulkSelection.backend).map(({ id }) => id),
+    ...parsedAgents.filter((agent) => agent.harness === bulkSelection.harness && agent.backend === bulkSelection.backend).map((agent) => agent.model)
+  ])).filter(Boolean);
+
+  const changeBulkTarget = (value) => {
+    const [harness, backend] = value.split(':');
+    setBulkSelection({ harness, backend, model: harness === 'codex' && backend === 'default' ? 'gpt-5.3-codex-spark' : '', think: 'low' });
+    setBulkNotice('');
+  };
+
+  const applyBulkSelection = () => {
+    const choices = applyLaunchDefaults(parsedAgents, bulkSelection);
+    for (const agent of parsedAgents) {
+      choices[agent.identity].timeoutSeconds = agent.timeoutSeconds;
+      choices[agent.identity].terminateOnExpire = agent.terminateOnExpire;
+    }
+    setLaunchChoices((current) => ({ ...current, ...choices }));
+    setBulkNotice(`Applied to ${parsedAgents.length} launch rows. Individual rows can still be changed.`);
+    setValidationError('');
+  };
+
+  const editLaunchAgent = (agent, field, value) => {
+    const next = createAgentDocument(agent);
+    next.timeoutSeconds = agent.timeoutSeconds;
+    next.terminateOnExpire = agent.terminateOnExpire;
+    if (field === 'target') {
+      [next.harness, next.backend] = value.split(':');
+      next.model = modelOptionsFromCatalogs([launchCatalog, modelCatalog], next.harness, next.backend)[0]?.id || '';
+      if (!thinkOptionsFor(next.harness, next.backend).includes(next.think)) next.think = '';
+    } else {
+      next[field] = value;
+    }
+    setLaunchChoices((current) => ({ ...current, [agent.identity]: next }));
+  };
 
   const launch = async (event) => {
     event.preventDefault();
@@ -348,12 +415,33 @@ export default function CollabLaunchpad({
       return;
     }
     setValidationError('');
+    if (parsedAgents.some((agent) => !validAgentDocument(agent))) {
+      setValidationError('Choose a model and supported Think level for each agent.');
+      return;
+    }
+    if (startingTask) return;
+    setStartingTask(true);
+    try {
+    const name = taskName.trim();
+    let taskId = tasks?.lastTaskId;
+    if (name) {
+      const existing = tasks?.tasks?.find((entry) => entry.name.toLowerCase() === name.toLowerCase());
+      if (existing) taskId = existing.id;
+      else {
+        const created = await onCreateTask(name);
+        if (!created?.lastTaskId) return;
+        taskId = created.lastTaskId;
+      }
+    }
     await onLaunch({
+      taskId,
       templateId: selected.id,
+      agentChoices: parsedAgents.map(({ harness, backend, model, think, timeoutSeconds, terminateOnExpire }) => ({ harness, backend, model, think, timeoutSeconds, terminateOnExpire })),
       coordinatorMode,
       task: task.trim() || undefined,
       channel: channel.trim() || undefined
     });
+    } finally { setStartingTask(false); }
   };
 
   const saveTemplate = async (event) => {
@@ -493,22 +581,83 @@ export default function CollabLaunchpad({
 
         {panel === 'launch' && (
           <form className={styles.launchForm} onSubmit={launch}>
+            <div className={styles.editorToolbar}>
+              <span className={styles.overrideState}>Selections apply to this launch only.</span>
+              {onRefreshCatalog && <button type="button" className={styles.secondaryCommand}
+                onClick={onRefreshCatalog} disabled={busy}>Refresh models</button>}
+            </div>
+            <fieldset className={styles.bulkLaunchBar} disabled={busy}>
+              <legend>Apply to all launch rows</legend>
+              <label>Agent / runtime
+                <select value={`${bulkSelection.harness}:${bulkSelection.backend}`}
+                  onChange={(event) => changeBulkTarget(event.target.value)}>
+                  {AGENT_HARNESSES.map(({ id, label }) => <option key={id} value={`${id}:default`}>{label}</option>)}
+                  <option value="codex:ollama">Codex / Ollama</option>
+                </select>
+              </label>
+              <label className={styles.bulkModelField}>Model
+                <select value={bulkSelection.model} onChange={(event) => setBulkSelection((current) => ({ ...current, model: event.target.value }))}>
+                  <option value="" disabled>{bulkModels.length ? 'Select model' : 'No models — refresh catalog'}</option>
+                  {bulkModels.map((model) => <option key={model} value={model}>{displayModelName({ ...bulkSelection, model })}</option>)}
+                </select>
+              </label>
+              <label>Think
+                <select value={bulkSelection.think} onChange={(event) => setBulkSelection((current) => ({ ...current, think: event.target.value }))}>
+                  {thinkOptionsFor(bulkSelection.harness, bulkSelection.backend).map((think) => <option key={think} value={think}>{think || 'Agent default'}</option>)}
+                </select>
+              </label>
+              <button type="button" className={styles.launchButton} onClick={applyBulkSelection}
+                disabled={!parsedAgents.length || !bulkModels.includes(bulkSelection.model)}>Apply to all</button>
+              <span className={styles.bulkLaunchHint}>Replaces Agent, Model and Think on every visible row, including the coordinator when shown.</span>
+              {bulkNotice && <span className={styles.bulkLaunchHint} role="status">{bulkNotice}</span>}
+            </fieldset>
+            <div className={styles.launchBody}>
             <div className={styles.agentPreview}>
               <div className={styles.previewHeader}>
                 <span>Role</span>
                 <span>Agent + Model</span>
-                <span>Think</span>
+                <span title="Profile defaults before per-launch edits; unset levels use the agent's own default">
+                  Think ( {launchThinkDefaultLabel(resolveLaunchAgents(selected, coordinatorMode, config?.prompts))} )
+                </span>
                 <span>Identity</span>
+                <span>Timeout (seconds)</span>
+                <span>Terminate on expire</span>
               </div>
-              {parsedAgents.map((agent, index) => (
-                <div className={styles.previewRow} key={`${agent.prompt}-${agent.harness}-${agent.model}-${index}`}>
+              {parsedAgents.map((agent) => (
+                <div className={styles.previewRow} key={agent.identity}>
                   <strong>{agent.label || agent.role || agent.prompt}</strong>
                   <span className={styles.agentModelCell}>
-                    <strong>{formatAgentModel(agent)}</strong>
-                    {agent.backend === 'ollama' && <small>via Ollama</small>}
+                    <span className={styles.launchSelectors}>
+                      <select aria-label={`Agent for ${agent.identity}`} disabled={busy}
+                        value={`${agent.harness}:${agent.backend}`}
+                        onChange={(event) => editLaunchAgent(agent, 'target', event.target.value)}>
+                        {AGENT_HARNESSES.map(({ id, label }) => <option key={id} value={`${id}:default`}>{label}</option>)}
+                        <option value="codex:ollama">Codex / Ollama</option>
+                      </select>
+                      <select aria-label={`Model for ${agent.identity}`} title={agent.model} disabled={busy}
+                        value={agent.model} onChange={(event) => editLaunchAgent(agent, 'model', event.target.value)}>
+                        <option value="" disabled>Select model</option>
+                        {Array.from(new Set([agent.model, ...modelOptionsFromCatalogs([launchCatalog, modelCatalog], agent.harness, agent.backend).map(({ id }) => id)]))
+                          .filter(Boolean).map((model) => <option key={model} value={model}>{displayModelName({ ...agent, model })}</option>)}
+                      </select>
+                    </span>
                   </span>
-                  <span>{agent.think || 'Default'}</span>
+                  <select aria-label={`Think for ${agent.identity}`} disabled={busy}
+                    value={agent.think} onChange={(event) => editLaunchAgent(agent, 'think', event.target.value)}>
+                    {thinkOptionsFor(agent.harness, agent.backend).map((think) => <option key={think} value={think}>{think || 'Default'}</option>)}
+                  </select>
                   <code>{agent.identity || agent.prompt}</code>
+                  <div className={styles.agentTimeout}>
+                    <input type="number" min="1" max="604800" step="1" required
+                      aria-label={`Timeout for ${agent.identity}`} disabled={busy}
+                      value={agent.timeoutSeconds}
+                      onChange={(event) => editLaunchAgent(agent, 'timeoutSeconds', event.target.value === '' ? '' : Number(event.target.value))} />
+                  </div>
+                  <div className={styles.agentTerminate}>
+                    <input type="checkbox" aria-label={`Terminate on expire for ${agent.identity}`}
+                      disabled={busy} checked={agent.terminateOnExpire}
+                      onChange={(event) => editLaunchAgent(agent, 'terminateOnExpire', event.target.checked)} />
+                  </div>
                 </div>
               ))}
               {!parsedAgents.length && (
@@ -517,8 +666,35 @@ export default function CollabLaunchpad({
             </div>
 
             <div className={styles.launchFields}>
+              <div className={styles.taskLaunchActions}>
+                <button type="submit" className={styles.launchButton} disabled={busy || startingTask || !parsedAgents.length}>
+                  {busy ? 'Launching…' : 'Launch profile'}
+                </button>
+                <button type="button" className={styles.launchButton}
+                  disabled={busy || startingTask || !selectedTask?.launch || taskName.trim() !== selectedTask.name}
+                  title="Resume this task using its saved launch settings, without replaying kickoff instructions"
+                  onClick={() => onLaunch({ ...selectedTask.launch, taskId: selectedTask.id })}>
+                  Resume
+                </button>
+              </div>
+              <div className={styles.taskField}>
+                <ConversationTaskPicker tasks={tasks} busy={busy || startingTask} onSelect={onTaskSettings} onCreate={onCreateTask}
+                  query={taskName} setQuery={setTaskName} />
+                <small>Existing tasks resume their Codex role conversations. New tasks start fresh.</small>
+                {tasks && (tasks.autoResume
+                  || tasks.tasks?.find((entry) => entry.id === tasks.lastTaskId)?.manualResumes >= 3) && (
+                  <label className={styles.autoResumeControl}>
+                    <input type="checkbox" checked={tasks.autoResume} disabled={busy}
+                      onChange={(event) => onTaskSettings({ autoResume: event.target.checked })} />
+                    <span>Automatically resume the selected task when Collab opens</span>
+                  </label>
+                )}
+                {(tasks?.tasks?.find((entry) => entry.id === tasks.lastTaskId)?.roles || []).map((role) => (
+                  <small key={`${role.identity}:${role.backend}`}>{role.identity} ({role.backend}): {role.status}{role.threadId ? ` · ${role.threadId}` : ''}</small>
+                ))}
+              </div>
               <label className={styles.taskField}>
-                <span>Task</span>
+                <span>Kickoff instructions</span>
                 <textarea
                   value={task}
                   onChange={(event) => setTask(event.target.value)}
@@ -560,10 +736,8 @@ export default function CollabLaunchpad({
                   <strong>{requiredProfiles.length ? requiredProfiles.join(', ') : 'none'}</strong>
                 </div>
                 {validationError && <div className={styles.formError} role="alert">{validationError}</div>}
-                <button type="submit" className={styles.launchButton} disabled={busy || !parsedAgents.length}>
-                  {busy ? 'Launching…' : 'Launch profile'}
-                </button>
               </div>
+            </div>
             </div>
           </form>
         )}

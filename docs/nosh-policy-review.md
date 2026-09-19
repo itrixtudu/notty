@@ -37,6 +37,80 @@ not non-reviewable invariants as a class. A known parser or protocol gap remains
 visible as blocking coverage; it is allowed during learn, represented as
 would-deny during audit, and denied during enforce.
 
+## CLI review and manual JSON edits
+
+The browser is optional. `review decisions` creates the same
+`NoshPolicyDecisionSet` contract used by the UI, with every proposal initially
+marked `needs-review`. It can also regenerate the digest after manual edits to
+an existing CLI draft or UI export. These commands require tooling built from
+a revision containing `review decisions`; an older installed image will not
+have that command.
+
+Run the following **inside a tooling container**, with the frozen bundle and
+a private writable output directory mounted at the paths shown. For signed
+workflows use the exact reviewed tooling image and network-none Docker setup
+in [Guard eBPF review and activation](#guard-ebpf-review-and-activation).
+
+```bash
+node /app/scripts/nosh-guard.mjs review inspect \
+  --bundle /policy-io/review-001 --json > /policy-io/graph.json
+node /app/scripts/nosh-guard.mjs review decisions \
+  --bundle /policy-io/review-001 --reviewer operator \
+  --output /policy-io/decisions-draft.json
+```
+
+Inspect `graph.json` to match proposal IDs to destinations, protocols, ports,
+scope, and target restrictions. In `decisions-draft.json`, edit each decision's
+`disposition` to `accept` or `reject` and replace its `rationale` with your
+reason. An accepted decision allows the existing proposal; rejecting it omits
+that allow rule. Overlapping accepted rules can still allow the same traffic.
+Resolve any required target acknowledgements explicitly. Do not change the
+graph bindings or proposal IDs. To change a destination or port, generate a
+new candidate/bundle containing that rule; a DecisionSet selects frozen
+proposals and cannot introduce new rules.
+
+After editing, run inside the tooling container:
+
+```bash
+node /app/scripts/nosh-guard.mjs review decisions \
+  --bundle /policy-io/review-001 --reviewer operator \
+  --input /policy-io/decisions-draft.json \
+  --output /policy-io/decisions.json
+node /app/scripts/nosh-guard.mjs policy project \
+  --bundle /policy-io/review-001 \
+  --decisions /policy-io/decisions.json \
+  --target guard-ebpf \
+  --context /policy-io/guard-ebpf-target-context.json \
+  --output /policy-io/projected-ebpf
+```
+
+Each output path must be new. The command recomputes the DecisionSet identity
+and content digest, validates decision structure and graph bindings, and
+does not approve or activate anything. Missing evidence and unsupported target
+mappings still block projection/approval. For an edited UI export, supply
+that file as `--input` and use its existing reviewer identity.
+
+The compiled JSON is `projected-ebpf/rendered/ebpf-policy.json`. Inspect it,
+then proceed with signing and activation only if the projection reports
+`activationEligible: true`. Edit decisions and compile a new revision for
+subsequent changes; editing a signed leaf invalidates its hashes/signatures.
+
+For a live enforcement test, use a separate test workspace and a representative
+runtime learn capture with two reachable literal-IP endpoints. First confirm
+both endpoints respond during learn. Accept one endpoint and reject the other,
+ensuring no other accepted CIDR permits the rejected endpoint. After projection,
+signing, and activation, repeat the same requests from the Guard-enforced
+workload: the positive control must succeed, and the negative control must
+fail with corresponding Guard eBPF deny evidence/counter changes. A timeout
+alone is inconclusive. Repeat after swapping the decisions and activating a
+new revision. Generated-rule tests and mocked backend tests do not substitute
+for this live packet test.
+
+The UI's **Export decisions** writes `decisions.json` through its managed
+output mount (the launcher's printed `DecisionSet output` location). That file
+can feed `policy project` directly when unedited; manually edited exports go
+through `review decisions --input` first.
+
 ## Worked profile → review → enforcement example
 
 Run the one-click profile from the repository root on the Docker host:
@@ -65,6 +139,9 @@ jq '(.decisions[] | select(.proposalId == "PROPOSAL_ID")).disposition = "reject"
   /absolute/path/to/decisions/decisions.json > /tmp/decisions.json
 install -m 0600 /tmp/decisions.json /absolute/path/to/decisions/decisions.json
 ```
+
+This edit makes the existing content digest stale. Rebuild it with
+`review decisions --input` as described above before projection.
 
 Project that exact reviewed JSON:
 
@@ -944,3 +1021,111 @@ scanning uses a local `docker image save` archive, not the Docker socket inside
 the scanner. Checksums prove integrity, not provenance; use a reviewed checkout
 and reviewed pinned image update. Imported SPDX JSON and CycloneDX JSON remain
 supported for systems that already produce SBOMs.
+
+## Saved runtime profiles
+
+For a workspace policy, run `./nosh.sh net learn`. When learning finishes, the
+launcher opens runtime review. `--no-review` skips opening the UI; JSON learning
+also stays noninteractive. Reopen without relearning or rebuilding:
+
+```sh
+./nosh.sh net review --workdir /absolute/workspace
+# Or choose an older exported learning run:
+./nosh.sh net review --workdir /absolute/workspace --revision LEARN_ID
+```
+
+The endpoint table shows observed DNS names beside the actual address, protocol,
+and ports. Expand DNS evidence for the captured resolver and expiry. No mapping
+means no DNS evidence was captured; no reverse lookup is invented. Allow/Deny
+controls select an IP allow list. These IP rules do not follow future DNS changes.
+Unconvertible domain evidence remains visible and may block native activation.
+
+Enter a reviewer, select endpoints, and acknowledge the review. **Save draft**
+preserves unfinished work. **Save profile** saves completed decisions and displays
+an exact, digest-bound **Apply command**. **Download JSON** exports a separate
+browser download; **Import saved JSON** restores a review bound to the same graph.
+The UI displays the host paths and save status. Changing a saved selection removes
+its Apply command until you save again. Reopening the same session restores its
+draft. Saving or downloading alone does not activate anything.
+
+Host files are under the displayed private review session:
+
+- `decisions/draft.json`: editable review progress and profile name.
+- `decisions/decisions.json`: canonical completed selection.
+- `decisions/applied.json`: historical activation receipt; check host status for
+  the current deployment.
+
+Run the UI's `nosh.sh net apply --review ... --decision-digest ...` command on the
+host. It snapshots and revalidates the selection, projects the native policy,
+shows the replacement, asks for confirmation, signs with separate review and
+deployment roles, and activates through the installed privileged Guard. `--yes`
+is available for an already-reviewed noninteractive operation. Apply artifacts
+are retained in the printed private directory. Failures preserve saved review.
+Repeating the currently active selection does not mint another grant.
+
+Apply needs both source and exact-image SBOMs, complete evidence, supported rules,
+and the installed Guard's signing trust. `net review` uses the configured cached
+Syft image if available; otherwise pass `--sbom-source FILE --sbom-image FILE`.
+Missing SBOMs still permit reviewing and saving, but prevent signing.
+
+Create a caller-owned mode-0600 `~/.config/nosh/policy-apply.json` (override with
+`NOSH_POLICY_APPLY_CONFIG`) using the existing installed trust's keys/audiences:
+
+```json
+{
+  "schemaVersion": 1,
+  "reviewPrivateKey": "/absolute/review/private.pem",
+  "reviewPublicKey": "/absolute/review/public.pem",
+  "deploymentPrivateKey": "/absolute/deployment/private.pem",
+  "reviewAudience": "your-configured-review-audience",
+  "deploymentAudience": "your-configured-guard-instance-audience"
+}
+```
+
+Keep private keys outside the workspace, review, and candidate directories. Apply
+mounts each signing key only into its own signing container. The browser receives
+no private keys or Docker socket. This configuration does not install or change
+root-owned trust. `./nosh.sh net apply --help` repeats the setup details.
+
+Activation affects future guarded runs for the exact image/workspace. Use the
+printed `net enforce` command and privileged status command to check the active revision.
+Unprivileged `net status` reads a user mirror and cannot prove the active deployment.
+Learning another candidate does not replace the applied launch settings. This
+Guard instance currently has one active deployment; applying another workspace
+replaces it. Existing containers keep their current policy.
+
+`build-nosh.sh net learn` captures build traffic. Its build review is useful for
+build policy, but a future workspace run requires runtime learning as above.
+Rebuild tooling/UI images and reinstall the Guard host bundle when updating the
+implementation; an existing exact image ID still contains its older code.
+
+## Capacity checks
+
+```sh
+./scripts/nosh-egress-capacity.sh --deterministic
+# On the configured Docker/eBPF host, with the same prerequisites as the POC:
+sudo ./scripts/nosh-egress-capacity.sh --live
+```
+
+Current limits are distinct and are not increased by this workflow:
+
+| Layer | Limit |
+| --- | --- |
+| Browser review graph | 5,000 nodes, 5,000 proposals, 20,000 observations, 25 MiB stream |
+| Managed draft/decision save | 8 MiB serialized JSON |
+| Native IPv4 policy | 16,384 expanded address/protocol/port entries |
+| Native IPv6 policy | 16,384 expanded address/protocol/port entries |
+| Native domain policy | 8,192 expanded entries; 8 slots shared by matching exact/wildcard names |
+
+A rule with several ports consumes several native entries. Graph nodes also
+include the workspace, evidence, and SBOM packages, so 5,000 proposals does not
+mean 5,000 endpoints will fit every review. DNS grant/transaction caches are
+separate from policy capacity. The deterministic suite checks each native family
+at N-1/N/N+1, port expansion, and DNS slot overlap. The live mode loads two full
+IPv4 policies and performs the existing local allowed/blocked socket probes,
+retaining evidence with `capacityRuleCount`. It does not establish IPv6/DNS kernel
+capacity, throughput, or maximum-size browser responsiveness.
+
+UI verification screenshots (synthetic runtime evidence, no activation performed):
+[desktop](images/nosh-runtime-review-desktop.png) ·
+[mobile](images/nosh-runtime-review-mobile.png).

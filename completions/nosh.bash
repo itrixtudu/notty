@@ -149,8 +149,11 @@ _nosh_completion_accepts_equals() {
 }
 
 _nosh_completion() {
-  local commands="start attach stop rm recreate net build review policy gateway set-login-password completion"
-  local options="-p --profile --profile-list --collab --no-collab --config --persist --image --name --publish -P --network --security-mode --security-profile-dir --otp --workdir --start-app --no-start-app --dry-run --noauth -h --help"
+  local commands="start attach stop rm recreate net build review policy gateway auth set-login-password completion"
+  local options="-p --profile --profile-list --collab --no-collab --config --persist --image --name --publish -P --network --security-mode --security-profile-dir --otp --workdir --start-app --no-start-app --dry-run --noauth --no-oauth --no-otp-auth --no-otp -h --help"
+  local auth_commands="otp reset"
+  local auth_options="--image --workdir --dry-run -h --help"
+  local auth_reset_options="$auth_options --secure"
   local net_commands="learn audit approve enforce status"
   local net_launch_options="-p --profile --collab --no-collab --config --image --name --workdir --start-app --no-start-app --dry-run -h --help"
   local net_learn_options="$net_launch_options --duration --json"
@@ -358,6 +361,21 @@ _nosh_completion() {
   if [[ "${COMP_WORDS[1]:-}" == "completion" ]]; then
     if ((COMP_CWORD == 2)); then
       _nosh_completion_add_words "$current" "bash"
+    fi
+    return
+  fi
+
+  if [[ "${COMP_WORDS[1]:-}" == "auth" ]]; then
+    if ((COMP_CWORD == 2)); then
+      _nosh_completion_add_words "$current" "$auth_commands -h --help"
+      return
+    fi
+    if [[ ( -z "$current" || "$current" == -* ) ]]; then
+      if [[ "${COMP_WORDS[2]:-}" == "reset" ]]; then
+        _nosh_completion_add_words "$current" "$auth_reset_options"
+      elif [[ "${COMP_WORDS[2]:-}" == "otp" ]]; then
+        _nosh_completion_add_words "$current" "$auth_options"
+      fi
     fi
     return
   fi

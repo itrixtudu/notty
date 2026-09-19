@@ -55,6 +55,24 @@ export function thinkOptionsFor(harness, backend) {
   return [...(THINK_LEVELS[`${harness}:${backend || 'default'}`] || [])];
 }
 
+export function launchThinkDefaultLabel(agents) {
+  const levels = new Set(agents.map((agent) => normalizeAgentSpec(agent).think));
+  if (levels.size > 1) return 'Mixed';
+  const level = [...levels][0];
+  return level ? level[0].toUpperCase() + level.slice(1) : 'Agent default';
+}
+
+export function applyLaunchDefaults(agents, selection) {
+  const { harness, backend, model, think } = selection;
+  if (!isCompatibleAgentBackend(harness, backend) || !String(model || '').trim()
+    || !thinkOptionsFor(harness, backend).includes(think)) {
+    throw new Error('Choose a compatible agent, model, and Think level.');
+  }
+  return Object.fromEntries(agents.map((agent) => [agent.identity, {
+    ...createAgentDocument(agent), harness, backend, model, think
+  }]));
+}
+
 function defaultThinkFor(harness, backend) {
   const options = thinkOptionsFor(harness, backend);
   return options[0] || '';
@@ -345,4 +363,16 @@ export function isPromptReferenced(templates, promptId) {
 
 export function resolveTerminalId(summary) {
   return summary?.id ?? summary?.terminal_uuid ?? null;
+}
+
+export function collabChatsPath(sessionId) {
+  const query = new URLSearchParams({ chats: '1', session: String(sessionId) });
+  return `/collab?${query}`;
+}
+
+export function clampChatPaneSpan(columns, rows, availableColumns) {
+  return {
+    columns: Math.max(1, Math.min(availableColumns, Math.round(columns))),
+    rows: Math.max(1, Math.min(3, Math.round(rows)))
+  };
 }

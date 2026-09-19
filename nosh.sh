@@ -17,6 +17,10 @@ resolve_script_dir() {
 }
 
 SCRIPT_DIR="$(resolve_script_dir)"
+if [[ "${1:-}" == net && ( "${2:-}" == review || "${2:-}" == apply ) ]]; then
+  shift
+  exec bash "$SCRIPT_DIR/scripts/nosh-net-review.sh" "$@"
+fi
 ORIGINAL_CWD="$PWD"
 DEFAULT_PORT="3000"
 DEFAULT_OLLAMA_HOST="172.17.0.1:11434"
@@ -45,6 +49,8 @@ Commands:
   review     Build, inspect, and serve semantic policy-review graphs
   policy     Project accepted semantic-graph decisions into target policy
   gateway    Issue short-lived signed deployment grants
+  auth otp   Mint a single-use spawn OTP for this workspace and show it once
+  auth reset Invalidate OAuth clients, grants, tokens, and spawn OTPs for this workspace
   set-login-password
              Set the container user's Unix password interactively for vlock
   completion Generate shell completion (currently: completion bash)
@@ -53,6 +59,8 @@ Options:
   -p, --profile NAMES      Comma-separated profiles, e.g. codex,durdraw,zig,arduino
   --profile-list           List available profiles and exit
   --collab                 Enable the Collab UI, APIs, and supervisor
+  --resume                 Enable Collab and bundled service; run Codex resume
+                           with --dangerously-bypass-approvals-and-sandbox
   --no-collab              Disable Collab even when enabled elsewhere
   --config PATH            Load an additional Notty config.json layer
   --persist                Keep container after the primary shell exits
@@ -70,6 +78,27 @@ Options:
   --no-start-app           Keep container alive without starting bundled /app service
   --dry-run                Print Docker or guard commands instead of running them
   --noauth                 Disable generated HTTP basic auth
+  --no-oauth               Disable OAuth Bearer authentication
+  --no-otp-auth            Use OTP-only auth (no Basic or OAuth; spawn OTP remains required)
+  --no-otp                 Disable terminal spawn OTP enforcement
+  -h, --help               Show help
+EOF
+}
+
+auth_usage() {
+  cat <<'EOF'
+Usage: nosh.sh auth otp|reset [options]
+
+`auth otp` mints one spawn OTP and prints its plaintext once. `auth reset`
+invalidates OAuth clients, grants, tokens, and spawn OTPs for the current
+workspace. Legacy auth state survives container recreation under
+XDG_STATE_HOME; `--secure` selects the Guard daemon's separate state tree.
+
+Options:
+  --image IMAGE            Docker image containing the auth-state helper (default: nosh)
+  --workdir PATH           Workspace whose auth state is managed (default: cwd)
+  --secure                 Reset Guard daemon state instead of legacy XDG state (reset only)
+  --dry-run                Print the Docker or Guard command without changing auth state
   -h, --help               Show help
 EOF
 }
@@ -187,6 +216,8 @@ Commands:
   approve    Review and approve the current candidate network profile
   enforce    Launch with an approved outbound network profile
   status     Show the workspace network profile state
+  review     Reopen a learned runtime revision in Policy Review
+  apply      Apply a saved review with its exact decision digest
 
 Launch options (learn, audit, and enforce):
   -p, --profile NAMES      Comma-separated launcher profiles
@@ -211,6 +242,7 @@ Workflow options:
                            hashes, and timing; with status, emit the receipt
   --repair                 Repair the user-visible status mirror
   --dry-run                Print the delegated nosh-guard command
+  --no-review              With learn, do not open Policy Review after capture
   -h, --help               Show help
 
 The net workflow manages its own lifecycle and network. It does not accept
@@ -411,6 +443,131 @@ make_basic_auth_password() {
   make_otp
 }
 
+workspace_auth_id() {
+  local workspace="$1"
+  local canonical
+
+  canonical="$(cd -P "$workspace" && pwd)"
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$canonical" | sha256sum | awk '{ print substr($1, 1, 32) }'
+  elif command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$canonical" | shasum -a 256 | awk '{ print substr($1, 1, 32) }'
+  else
+    die 'cannot derive workspace auth id; install sha256sum or shasum'
+  fi
+}
+
+auth_stat() {
+  local gnu_format="$1"
+  local bsd_format="$2"
+  local target="$3"
+
+  if stat -c "$gnu_format" -- "$target" 2>/dev/null; then
+    return
+  fi
+  stat -f "$bsd_format" "$target" 2>/dev/null
+}
+
+validate_no_auth_symlink_components() {
+  local cursor="$1"
+
+  while [[ -n "$cursor" && "$cursor" != "/" ]]; do
+    if [[ -L "$cursor" ]]; then
+      die "auth state path must not contain symlinks: $cursor"
+    fi
+    cursor="$(dirname -- "$cursor")"
+  done
+}
+
+validate_secure_auth_directory() {
+  local target="$1"
+  local stat_uid
+  local stat_mode
+
+  if [[ -L "$target" || ! -d "$target" ]]; then
+    die "auth state directory must be a real directory: $target"
+  fi
+  read -r stat_uid stat_mode < <(auth_stat '%u %a' '%u %Lp' "$target") \
+    || die "cannot inspect auth state directory: $target"
+  if [[ "$stat_uid" != "$(id -u)" ]]; then
+    die "auth state directory is not owned by the current user: $target"
+  fi
+  if [[ "$stat_mode" != "700" ]]; then
+    die "auth state directory must have mode 0700: $target"
+  fi
+}
+
+validate_secure_auth_database() {
+  local target="$1"
+  local stat_uid
+  local stat_mode
+  local stat_links
+
+  if [[ ! -e "$target" && ! -L "$target" ]]; then
+    return
+  fi
+  if [[ -L "$target" || ! -f "$target" ]]; then
+    die "auth database must be a real file: $target"
+  fi
+  read -r stat_uid stat_mode stat_links < <(auth_stat '%u %a %h' '%u %Lp %l' "$target") \
+    || die "cannot inspect auth database: $target"
+  if [[ "$stat_uid" != "$(id -u)" ]]; then
+    die "auth database is not owned by the current user: $target"
+  fi
+  if [[ "$stat_mode" != "600" ]]; then
+    die "auth database must have mode 0600: $target"
+  fi
+  if [[ "$stat_links" != "1" ]]; then
+    die "auth database must not have multiple hard links: $target"
+  fi
+}
+
+configure_auth_state_paths() {
+  local configured_state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
+
+  if [[ "$configured_state_home" != /* || "$configured_state_home" == "/" ]]; then
+    die 'XDG_STATE_HOME must be an absolute path'
+  fi
+  case "$configured_state_home" in
+    *$'\n'*|*:* )
+      die 'XDG_STATE_HOME contains characters that cannot be mounted safely'
+      ;;
+  esac
+  AUTH_WORKSPACE_ID="$(workspace_auth_id "$WORKDIR")"
+  AUTH_HOST_STATE_HOME="${configured_state_home%/}"
+  AUTH_HOST_STATE_DIR="$AUTH_HOST_STATE_HOME/notty/auth/$AUTH_WORKSPACE_ID"
+  AUTH_CONTAINER_STATE_DIR="/var/lib/notty-auth"
+}
+
+prepare_auth_state_directory() {
+  local target
+  local parent
+
+  configure_auth_state_paths
+  validate_no_auth_symlink_components "$AUTH_HOST_STATE_HOME"
+  for target in \
+    "$AUTH_HOST_STATE_HOME" \
+    "$AUTH_HOST_STATE_HOME/notty" \
+    "$AUTH_HOST_STATE_HOME/notty/auth" \
+    "$AUTH_HOST_STATE_DIR"; do
+    if [[ -e "$target" || -L "$target" ]]; then
+      validate_secure_auth_directory "$target"
+      continue
+    fi
+    if [[ "$DRY_RUN" == "true" ]]; then
+      continue
+    fi
+    parent="$(dirname "$target")"
+    if [[ ! -d "$parent" ]]; then
+      (umask 077 && mkdir -p -- "$parent")
+    fi
+    (umask 077 && mkdir -m 0700 -- "$target")
+    validate_no_auth_symlink_components "$target"
+    validate_secure_auth_directory "$target"
+  done
+  validate_secure_auth_database "$AUTH_HOST_STATE_DIR/auth.sqlite3"
+}
+
 shell_quote() {
   local value="$1"
   if [[ "$value" =~ ^[A-Za-z0-9_./:=@,-]+$ ]]; then
@@ -430,6 +587,207 @@ format_url_host() {
   fi
 }
 
+is_loopback_host() {
+  local host="${1#[}"
+  local octets=()
+  local octet
+  host="${host%]}"
+  host="${host,,}"
+
+  if [[ "$host" == "localhost" || "$host" == *.localhost || "$host" == "::1" ]]; then
+    return 0
+  fi
+  if [[ ! "$host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    return 1
+  fi
+  IFS='.' read -r -a octets <<< "$host"
+  if [[ "${octets[0]}" != "127" ]]; then
+    return 1
+  fi
+  for octet in "${octets[@]}"; do
+    if [[ ${#octet} -gt 3 || ("$octet" != "0" && "$octet" == 0*) ]]; then
+      return 1
+    fi
+    if ((10#$octet > 255)); then
+      return 1
+    fi
+  done
+  return 0
+}
+
+parse_normalized_publish() {
+  local normalized="$1"
+  local parts=()
+
+  PUBLISH_HOST=""
+  PUBLISH_PORT=""
+  if [[ "$normalized" =~ ^\[([^]]+)\]:([0-9]+):([0-9]+)$ ]]; then
+    PUBLISH_HOST="${BASH_REMATCH[1]}"
+    PUBLISH_PORT="${BASH_REMATCH[2]}"
+    return
+  fi
+
+  IFS=':' read -r -a parts <<< "$normalized"
+  if ((${#parts[@]} == 2)); then
+    PUBLISH_PORT="${parts[0]}"
+    return
+  fi
+  if ((${#parts[@]} >= 3)); then
+    PUBLISH_PORT="${parts[${#parts[@]} - 2]}"
+    PUBLISH_HOST="$(IFS=:; printf '%s' "${parts[*]:0:${#parts[@]} - 2}")"
+    return
+  fi
+  die "invalid publish specification: $normalized"
+}
+
+validate_public_origin() {
+  local origin="$1"
+  local require_loopback="$2"
+  local scheme
+  local authority
+  local host
+  local port=""
+
+  if [[ ! "$origin" =~ ^(http|https)://([^/?#]+)$ ]]; then
+    die 'NOTTY_PUBLIC_ORIGIN must be an exact http or https origin without a path, query, or fragment'
+  fi
+  scheme="${BASH_REMATCH[1]}"
+  authority="${BASH_REMATCH[2]}"
+  if [[ "$authority" == *@* ]]; then
+    die 'NOTTY_PUBLIC_ORIGIN must not contain credentials'
+  fi
+  if [[ "$authority" =~ ^\[([^]]+)\](:([0-9]+))?$ ]]; then
+    host="${BASH_REMATCH[1]}"
+    port="${BASH_REMATCH[3]:-}"
+    if [[ ! "$host" =~ ^[0-9a-f:.]+$ ]]; then
+      die 'NOTTY_PUBLIC_ORIGIN contains an invalid IPv6 host'
+    fi
+  else
+    if [[ "$authority" == *:*:* ]]; then
+      die 'NOTTY_PUBLIC_ORIGIN IPv6 hosts must use brackets'
+    fi
+    host="${authority%%:*}"
+    if [[ "$authority" == *:* ]]; then
+      port="${authority##*:}"
+    fi
+    if [[ -z "$host" || "$host" != "${host,,}" || ! "$host" =~ ^[a-z0-9.-]+$ ]]; then
+      die 'NOTTY_PUBLIC_ORIGIN contains an invalid or non-canonical host'
+    fi
+  fi
+  if [[ -n "$port" ]]; then
+    if [[ ! "$port" =~ ^[1-9][0-9]*$ || ${#port} -gt 5 ]]; then
+      die 'NOTTY_PUBLIC_ORIGIN contains an invalid port'
+    fi
+    if ((10#$port > 65535)); then
+      die 'NOTTY_PUBLIC_ORIGIN contains an invalid port'
+    fi
+    if [[ ("$scheme" == "http" && "$port" == "80") \
+      || ("$scheme" == "https" && "$port" == "443") ]]; then
+      die 'NOTTY_PUBLIC_ORIGIN must omit its scheme default port'
+    fi
+  fi
+  if [[ "$scheme" == "http" ]] && ! is_loopback_host "$host"; then
+    die 'NOTTY_PUBLIC_ORIGIN may use HTTP only for a loopback host'
+  fi
+  if [[ "$require_loopback" == "true" ]] && ! is_loopback_host "$host"; then
+    die 'this authentication mode requires a loopback NOTTY_PUBLIC_ORIGIN'
+  fi
+}
+
+resolve_auth_public_origin() {
+  local require_loopback="false"
+  local effective_publish_count=0
+  local publish
+  local normalized
+  local derived_host
+
+  if [[ "$NOAUTH_CLI" == "true" \
+    || "$NO_OAUTH_CLI" == "true" \
+    || "$NO_OTP_AUTH_CLI" == "true" \
+    || "$NO_OTP_CLI" == "true" ]]; then
+    require_loopback="true"
+  fi
+  AUTH_REQUIRES_LOOPBACK="$require_loopback"
+  LOOPBACK_PUBLICATION="false"
+
+  if [[ "$require_loopback" == "true" && "$NETWORK" == "host" ]]; then
+    die '--noauth, --no-oauth, --no-otp-auth, and --no-otp cannot use the host network; loopback exposure is required'
+  fi
+
+  if [[ "$require_loopback" == "true" && "$NETWORK" != "none" ]]; then
+    for publish in "${PUBLISHES[@]}"; do
+      if normalized="$(normalize_publish_spec "$publish")"; then
+        parse_normalized_publish "$normalized"
+        if [[ -z "$PUBLISH_HOST" ]] || ! is_loopback_host "$PUBLISH_HOST"; then
+          die '--noauth, --no-oauth, --no-otp-auth, and --no-otp require every published listener to specify a loopback host'
+        fi
+        effective_publish_count=$((effective_publish_count + 1))
+      fi
+    done
+    if ((effective_publish_count > 0)); then
+      LOOPBACK_PUBLICATION="true"
+    fi
+  fi
+
+  PUBLIC_ORIGIN="${NOTTY_PUBLIC_ORIGIN:-}"
+  if [[ -z "$PUBLIC_ORIGIN" ]]; then
+    if normalized="$(first_normalized_publish)"; then
+      parse_normalized_publish "$normalized"
+      derived_host="${PUBLISH_HOST:-127.0.0.1}"
+      PUBLIC_ORIGIN="http://$(format_url_host "$derived_host"):$PUBLISH_PORT"
+    else
+      PUBLIC_ORIGIN="http://127.0.0.1:$DEFAULT_PORT"
+    fi
+  fi
+  validate_public_origin "$PUBLIC_ORIGIN" "$require_loopback"
+}
+
+finalize_auth_mode() {
+  OTP="$(trim "$OTP")"
+  case "${HTTP_AUTH_ENABLED,,}" in
+    1|true|yes|on)
+      HTTP_AUTH_ENABLED="true"
+      ;;
+    *)
+      HTTP_AUTH_ENABLED="false"
+      ;;
+  esac
+
+  if [[ "$HTTP_AUTH_ENABLED" != "true" ]]; then
+    NOAUTH_CLI="true"
+  fi
+  if [[ "$NOAUTH_CLI" == "true" && "$NO_OAUTH_CLI" == "true" ]]; then
+    NO_OTP_AUTH_CLI="true"
+  fi
+  if [[ "$NO_OTP_AUTH_CLI" == "true" && "$NO_OTP_CLI" == "true" ]]; then
+    die '--no-otp-auth cannot be combined with --no-otp'
+  fi
+  if [[ "$NO_OTP_CLI" == "true" && "$OTP_EXPLICIT" == "true" ]]; then
+    die '--otp cannot be combined with --no-otp'
+  fi
+
+  if [[ "$NO_OTP_AUTH_CLI" == "true" ]]; then
+    NOAUTH_CLI="true"
+    NO_OAUTH_CLI="true"
+  fi
+  if [[ "$NOAUTH_CLI" == "true" ]]; then
+    HTTP_AUTH_ENABLED="false"
+  fi
+  if [[ "$NO_OAUTH_CLI" == "true" ]]; then
+    OAUTH_ENABLED="false"
+  else
+    OAUTH_ENABLED="true"
+  fi
+  if [[ "$NO_OTP_CLI" == "true" ]]; then
+    OTP_ENABLED="false"
+    OTP=""
+  else
+    OTP_ENABLED="true"
+  fi
+
+  resolve_auth_public_origin
+}
+
 print_command() {
   local arg
   local first="true"
@@ -445,6 +803,27 @@ print_command() {
   printf '\n'
 }
 
+redact_command_environment() {
+  local argument
+  local key
+  local redacted=()
+
+  for argument in "$@"; do
+    if [[ "$argument" == *=* ]]; then
+      key="${argument%%=*}"
+      case "$key" in
+        NOTTY_MCP_SPAWN_OTP|NOTTY_BASIC_AUTH_PASSWORD|NOTTY_BASIC_AUTH_VERIFIER|NOTTY_MCP_BEARER_TOKEN|\
+        NOTTY_MCP_AUTHORIZATION|NOTTY_AUTHORIZATION|\
+        *_API_KEY|*_TOKEN|*_OTP|*_PASSWORD|*_SECRET|*_AUTHORIZATION)
+          argument="$key=<redacted>"
+          ;;
+      esac
+    fi
+    redacted+=("$argument")
+  done
+  print_command "${redacted[@]}"
+}
+
 print_labeled_command() {
   local label="$1"
   shift
@@ -453,6 +832,46 @@ print_labeled_command() {
     printf '%s: ' "$label"
     print_command "$@"
   } >&2
+}
+
+print_labeled_redacted_command() {
+  local label="$1"
+  shift
+
+  {
+    printf '%s: ' "$label"
+    redact_command_environment "$@"
+  } >&2
+}
+
+unset_server_auth_environment() {
+  local key
+
+  while IFS= read -r key; do
+    case "$key" in
+      NOTTY_OAUTH_*|NOTTY_BASIC_AUTH_*|NOTTY_MCP_SPAWN_OTP*)
+        unset "$key"
+        ;;
+    esac
+  done < <(compgen -e)
+  unset \
+    AUTHORIZATION \
+    HTTP_AUTHORIZATION \
+    MCP_SPAWN_OTP \
+    SPAWN_OTP \
+    COLLAB_AGENT_SPAWN_OTP \
+    NOTTY_AUTHORIZATION \
+    NOTTY_MCP_AUTHORIZATION \
+    NOTTY_MCP_BEARER_TOKEN \
+    NOTTY_COPILOT_ACCESS_TOKEN \
+    NOTTY_COPILOT_MCP_URL \
+    NOTTY_NOAUTH \
+    NOTTY_NO_OAUTH \
+    NOTTY_NO_OTP_AUTH \
+    NOTTY_LOOPBACK_PUBLICATION \
+    NOTTY_AUTH_STATE_DIR \
+    NOTTY_WORKSPACE_ID \
+    NOTTY_PUBLIC_ORIGIN
 }
 
 normalize_bool_mode() {
@@ -645,7 +1064,7 @@ ensure_collab_profile() {
 
 docker_quiet() {
   if [[ "$DRY_RUN" == "true" ]]; then
-    print_command docker "$@"
+    redact_command_environment docker "$@"
   else
     docker "$@" >/dev/null
   fi
@@ -677,7 +1096,18 @@ docker_exec_shell() {
     fi
   done
 
-  exec_args+=(-w "$WORKDIR" "$NAME" /bin/bash)
+  exec_args+=(-w "$WORKDIR" "$NAME")
+  if [[ "$RESUME_CODEX" == "true" ]]; then
+    if [[ "$DRY_RUN" != "true" && -t 0 ]]; then
+      local resume_ready
+      printf '\nnosh: Copy the OTP and Basic Auth password shown above before continuing.\nPress Enter to open Codex resume… ' >&2
+      IFS= read -r resume_ready || return 130
+    fi
+    # docker exec does not read .bashrc; resolve user-installed tools explicitly.
+    exec_args+=(/bin/bash -c 'export PATH="$HOME/node_modules/.bin:$HOME/.local/bin:$PATH"; exec codex resume --dangerously-bypass-approvals-and-sandbox')
+  else
+    exec_args+=(/bin/bash)
+  fi
   docker_status "${exec_args[@]}"
 }
 
@@ -760,6 +1190,11 @@ add_env_value() {
     ENV_KEYS+=("$key")
   fi
   ENV_VALUES[$key]="$value"
+}
+
+remove_env_value() {
+  local key="$1"
+  unset 'ENV_VALUES[$key]'
 }
 
 add_mount_volume() {
@@ -1254,7 +1689,7 @@ print_endpoint() {
     container_ip="$(get_container_ip || true)"
     if [[ -z "$container_ip" ]]; then
       printf 'notty endpoint: not published\n'
-      printf 'spawn otp: %s\n' "$OTP"
+      print_spawn_otp
       return
     fi
     endpoint_host="$container_ip"
@@ -1265,14 +1700,28 @@ print_endpoint() {
   printf 'notty endpoint: http://%s:%s\n' "$url_host" "$endpoint_port"
   if [[ "$HTTP_AUTH_ENABLED" == "true" ]]; then
     printf 'basic auth username: %s\n' "$HTTP_AUTH_USERNAME"
-    printf 'basic auth password: %s\n' "$HTTP_AUTH_PASSWORD"
+    if [[ "$DRY_RUN" == "true" ]]; then
+      printf 'basic auth password: <redacted in dry run>\n'
+    else
+      printf 'basic auth password: %s\n' "$HTTP_AUTH_PASSWORD"
+    fi
   fi
-  printf 'spawn otp: %s\n' "$OTP"
+  print_spawn_otp
+}
+
+print_spawn_otp() {
+  if [[ "$OTP_ENABLED" != "true" ]]; then
+    printf 'spawn otp: disabled\n'
+  elif [[ "$DRY_RUN" == "true" ]]; then
+    printf 'spawn otp: <redacted in dry run>\n'
+  else
+    printf 'spawn otp: %s\n' "$OTP"
+  fi
 }
 
 print_app_not_started() {
   printf 'notty endpoint: app service not started\n'
-  printf 'spawn otp: %s\n' "$OTP"
+  print_spawn_otp
 }
 
 add_default_mounts() {
@@ -1290,7 +1739,9 @@ flush_collected_args() {
   local device
 
   for key in "${ENV_KEYS[@]}"; do
-    RUN_ARGS+=(-e "$key=${ENV_VALUES[$key]}")
+    if [[ -n "${ENV_VALUES[$key]+x}" ]]; then
+      RUN_ARGS+=(-e "$key=${ENV_VALUES[$key]}")
+    fi
   done
 
   for target in "${MOUNT_TARGETS[@]}"; do
@@ -1726,11 +2177,7 @@ delegate_build_to_nosh_guard() {
   fi
 
   resolve_nosh_guard_bin
-  unset \
-    NOTTY_MCP_SPAWN_OTP \
-    NOTTY_BASIC_AUTH_ENABLED \
-    NOTTY_BASIC_AUTH_USERNAME \
-    NOTTY_BASIC_AUTH_PASSWORD
+  unset_server_auth_environment
   exec "$GUARD_BIN" "${guard_command[@]}"
 }
 
@@ -2152,8 +2599,17 @@ delegate_to_nosh_guard() {
   if ((${#PUBLISHES[@]})); then
     die "--publish is not supported in secure mode; use the authenticated mTLS gateway"
   fi
+  if [[ "$NO_OTP_AUTH_CLI" == "true" ]]; then
+    die '--no-otp-auth is not available in Guard mTLS mode'
+  fi
   if [[ "$NOAUTH_CLI" == "true" ]]; then
     warn "--noauth has no effect in secure mode; guarded runners never receive legacy HTTP credentials"
+  fi
+  if [[ "$NO_OAUTH_CLI" == "true" ]]; then
+    warn "--no-oauth has no effect in secure mode; Guard mTLS remains mandatory"
+  fi
+  if [[ "$NO_OTP_CLI" == "true" ]]; then
+    warn "--no-otp has no effect in secure mode; guarded runners remain OTP-locked"
   fi
   if [[ -n "$OTP" ]]; then
     warn "--otp has no effect in secure mode; guarded runners never receive the legacy spawn OTP"
@@ -2201,11 +2657,7 @@ delegate_to_nosh_guard() {
   resolve_nosh_guard_bin
   # Secure runners never consume legacy HTTP credentials or the spawn OTP.
   # Keep these out of the root-owned management process as well as the runner.
-  unset \
-    NOTTY_MCP_SPAWN_OTP \
-    NOTTY_BASIC_AUTH_ENABLED \
-    NOTTY_BASIC_AUTH_USERNAME \
-    NOTTY_BASIC_AUTH_PASSWORD
+  unset_server_auth_environment
   exec "$GUARD_BIN" "${guard_command[@]}"
 }
 
@@ -2221,6 +2673,7 @@ delegate_net_to_nosh_guard() {
   case "$NET_COMMAND" in
     learn)
       guard_command+=(--image "$IMAGE")
+      guard_command+=(--review-output)
       if [[ -n "$NET_DURATION" ]]; then
         guard_command+=(--duration "$NET_DURATION")
       fi
@@ -2302,8 +2755,17 @@ delegate_net_to_nosh_guard() {
     guard_command+=(--repair)
   fi
 
+  if [[ "$NO_OTP_AUTH_CLI" == "true" ]]; then
+    die '--no-otp-auth is not available in Guard mTLS mode'
+  fi
   if [[ "$NOAUTH_CLI" == "true" ]]; then
     warn "--noauth has no effect in the net workflow; guarded runners never receive legacy HTTP credentials"
+  fi
+  if [[ "$NO_OAUTH_CLI" == "true" ]]; then
+    warn "--no-oauth has no effect in the net workflow; Guard mTLS remains mandatory"
+  fi
+  if [[ "$NO_OTP_CLI" == "true" ]]; then
+    warn "--no-otp has no effect in the net workflow; guarded runners remain OTP-locked"
   fi
   if [[ -n "$OTP" ]]; then
     warn "--otp has no effect in the net workflow; guarded runners never receive the legacy spawn OTP"
@@ -2319,11 +2781,13 @@ delegate_net_to_nosh_guard() {
 
   resolve_nosh_guard_bin
   # The workflow command and every runner it creates are credentialless.
-  unset \
-    NOTTY_MCP_SPAWN_OTP \
-    NOTTY_BASIC_AUTH_ENABLED \
-    NOTTY_BASIC_AUTH_USERNAME \
-    NOTTY_BASIC_AUTH_PASSWORD
+  unset_server_auth_environment
+  if [[ "$NET_COMMAND" == learn && "$NET_JSON" == false && "$NET_NO_REVIEW" == false ]]; then
+    "$GUARD_BIN" "${guard_command[@]}"
+    bash "$SCRIPT_DIR/scripts/nosh-net-review.sh" review --workdir "$WORKDIR" \
+      || warn "learning was saved; reopen it with nosh net review --workdir $(shell_quote "$WORKDIR")"
+    return
+  fi
   exec "$GUARD_BIN" "${guard_command[@]}"
 }
 
@@ -2345,6 +2809,8 @@ start_container() {
     return
   fi
 
+  prepare_auth_state_directory
+
   RUN_ARGS=(
     run
     -d
@@ -2358,16 +2824,7 @@ start_container() {
     -v "$WORKDIR:$WORKDIR"
     -e "NOTTY_APP_WORKDIR=$APP_WORKDIR"
     -e "NOTTY_WORKDIR=$WORKDIR"
-    -e "NOTTY_MCP_SPAWN_OTP=$OTP"
   )
-
-  if [[ "$HTTP_AUTH_ENABLED" == "true" ]]; then
-    RUN_ARGS+=(
-      -e "NOTTY_BASIC_AUTH_ENABLED=true"
-      -e "NOTTY_BASIC_AUTH_USERNAME=$HTTP_AUTH_USERNAME"
-      -e "NOTTY_BASIC_AUTH_PASSWORD=$HTTP_AUTH_PASSWORD"
-    )
-  fi
 
   add_publish_args
 
@@ -2389,6 +2846,22 @@ start_container() {
       "NOTTY_MCP_SPAWN_OTP_TTL_SECONDS" \
       "$NOTTY_MCP_SPAWN_OTP_TTL_SECONDS"
   fi
+  local auth_env_key
+  for auth_env_key in "${ENV_KEYS[@]}"; do
+    case "$auth_env_key" in
+      NOTTY_OAUTH_*|NOTTY_MCP_BEARER_TOKEN|NOTTY_MCP_AUTHORIZATION|NOTTY_AUTHORIZATION)
+        remove_env_value "$auth_env_key"
+        ;;
+    esac
+  done
+  if [[ "$HTTP_AUTH_ENABLED" != "true" ]]; then
+    remove_env_value "NOTTY_BASIC_AUTH_USERNAME"
+    remove_env_value "NOTTY_BASIC_AUTH_PASSWORD"
+    remove_env_value "NOTTY_BASIC_AUTH_VERIFIER"
+  fi
+  if [[ "$OTP_ENABLED" != "true" ]]; then
+    remove_env_value "NOTTY_MCP_SPAWN_OTP"
+  fi
   if [[ -v NOTTY_COLLAB_UNSANDBOXED ]]; then
     local collab_unsandboxed
     if ! collab_unsandboxed="$(
@@ -2398,6 +2871,32 @@ start_container() {
     fi
     add_env_value "NOTTY_COLLAB_UNSANDBOXED" "$collab_unsandboxed"
   fi
+  add_mount_volume "$AUTH_HOST_STATE_DIR" "$AUTH_CONTAINER_STATE_DIR" rw
+  add_env_value "NOTTY_AUTH_STATE_DIR" "$AUTH_CONTAINER_STATE_DIR"
+  add_env_value "NOTTY_WORKSPACE_ID" "$AUTH_WORKSPACE_ID"
+  add_env_value "NOTTY_PUBLIC_ORIGIN" "$PUBLIC_ORIGIN"
+  add_env_value "NOTTY_NOAUTH" "$NOAUTH_CLI"
+  add_env_value "NOTTY_NO_OAUTH" "$NO_OAUTH_CLI"
+  add_env_value "NOTTY_NO_OTP_AUTH" "$NO_OTP_AUTH_CLI"
+  add_env_value "NOTTY_LOOPBACK_PUBLICATION" "$LOOPBACK_PUBLICATION"
+  add_env_value "NOTTY_OAUTH_ENABLED" "$OAUTH_ENABLED"
+  add_env_value "NOTTY_BASIC_AUTH_ENABLED" "$HTTP_AUTH_ENABLED"
+  add_env_value "NOTTY_MCP_SPAWN_OTP_ENABLED" "$OTP_ENABLED"
+  if [[ "$HTTP_AUTH_ENABLED" == "true" ]]; then
+    add_env_value "NOTTY_BASIC_AUTH_USERNAME" "$HTTP_AUTH_USERNAME"
+    remove_env_value "NOTTY_BASIC_AUTH_PASSWORD"
+    local basic_verifier
+    basic_verifier="$(printf '%s' "$HTTP_AUTH_PASSWORD" | python3 "$SCRIPT_DIR/scripts/basic-auth-verifier.py")" \
+      || die 'Unable to create Basic password verifier (Python 3 with scrypt is required)'
+    add_env_value "NOTTY_BASIC_AUTH_VERIFIER" "$basic_verifier"
+  fi
+  if [[ "$OTP_ENABLED" == "true" ]]; then
+    add_env_value "NOTTY_MCP_SPAWN_OTP" "$OTP"
+  fi
+  if [[ "$AUTH_REQUIRES_LOOPBACK" == "true" \
+    && "$LOOPBACK_PUBLICATION" != "true" ]]; then
+    add_env_value "NOTTY_BIND_HOST" "127.0.0.1"
+  fi
   add_env_value "NOTTY_COLLAB_ENABLED" "$COLLAB_ENABLED"
   add_env_value "NOTTY_NOSH_PROFILES" "$(join_by_comma "${PROFILES[@]}")"
   flush_collected_args
@@ -2406,7 +2905,8 @@ start_container() {
   build_container_command
 
   if [[ "$DRY_RUN" != "true" ]]; then
-    print_labeled_command "nosh docker run" docker "${RUN_ARGS[@]}" "$IMAGE" "${CONTAINER_COMMAND[@]}"
+    print_labeled_redacted_command \
+      "nosh docker run" docker "${RUN_ARGS[@]}" "$IMAGE" "${CONTAINER_COMMAND[@]}"
   fi
   docker_quiet "${RUN_ARGS[@]}" "$IMAGE" "${CONTAINER_COMMAND[@]}"
   if [[ "$DRY_RUN" != "true" ]]; then
@@ -2434,6 +2934,80 @@ start_container() {
   return "$status"
 }
 
+run_auth_reset() {
+  local reset_args
+
+  prepare_auth_state_directory
+  reset_args=(
+    run
+    --rm
+    --network none
+    --read-only
+    --cap-drop ALL
+    --security-opt no-new-privileges
+    --user "$(id -u):$(id -g)"
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=0700
+    -v "$AUTH_HOST_STATE_DIR:$AUTH_CONTAINER_STATE_DIR:rw"
+    -e "NOTTY_AUTH_STATE_DIR=$AUTH_CONTAINER_STATE_DIR"
+    -e "NOTTY_WORKSPACE_ID=$AUTH_WORKSPACE_ID"
+    -e "NOTTY_WORKDIR=$WORKDIR"
+    "$IMAGE"
+    node /app/scripts/auth-state-cli.mjs reset
+  )
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    redact_command_environment docker "${reset_args[@]}"
+    return
+  fi
+  docker "${reset_args[@]}"
+}
+
+run_guard_auth_reset() {
+  local -a guard_command=(auth reset --workdir "$WORKDIR")
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    guard_command+=(--dry-run)
+    local guard_binary
+    guard_binary="$(dry_run_nosh_guard_bin)" || return $?
+    print_command "$guard_binary" "${guard_command[@]}"
+    return
+  fi
+
+  resolve_nosh_guard_bin
+  unset_server_auth_environment
+  exec "$GUARD_BIN" "${guard_command[@]}"
+}
+
+run_auth_otp() {
+  local otp_args
+
+  prepare_auth_state_directory
+  otp_args=(
+    run
+    --rm
+    --network none
+    --read-only
+    --cap-drop ALL
+    --security-opt no-new-privileges
+    --user "$(id -u):$(id -g)"
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=0700
+    -v "$AUTH_HOST_STATE_DIR:$AUTH_CONTAINER_STATE_DIR:rw"
+    -e "NOTTY_AUTH_STATE_DIR=$AUTH_CONTAINER_STATE_DIR"
+    -e "NOTTY_WORKSPACE_ID=$AUTH_WORKSPACE_ID"
+    -e "NOTTY_WORKDIR=$WORKDIR"
+    -e "NOTTY_MCP_SPAWN_OTP_ENABLED=true"
+    -e "NOTTY_MCP_SPAWN_OTP_TTL_SECONDS=$DEFAULT_MCP_SPAWN_OTP_TTL_SECONDS"
+    "$IMAGE"
+    node /app/scripts/auth-state-cli.mjs otp
+  )
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    redact_command_environment docker "${otp_args[@]}"
+    return
+  fi
+  docker "${otp_args[@]}"
+}
+
 if [[ "${1:-}" == "completion" ]]; then
   shift
   if [[ $# -ne 1 ]]; then
@@ -2456,15 +3030,12 @@ if [[ "${1:-}" == "review" || "${1:-}" == "policy" || "${1:-}" == "gateway" ]]; 
   delegated_command="$1"
   shift
   resolve_nosh_guard_bin
-  unset \
-    NOTTY_MCP_SPAWN_OTP \
-    NOTTY_BASIC_AUTH_ENABLED \
-    NOTTY_BASIC_AUTH_USERNAME \
-    NOTTY_BASIC_AUTH_PASSWORD
+  unset_server_auth_environment
   exec "$GUARD_BIN" "$delegated_command" "$@"
 fi
 
 COMMAND="start"
+RESUME_CODEX="false"
 NET_WORKFLOW="false"
 NET_COMMAND=""
 NET_DURATION=""
@@ -2473,12 +3044,15 @@ NET_REVISION=""
 NET_REVIEWER=""
 NET_YES="false"
 NET_JSON="false"
+NET_NO_REVIEW="false"
 NET_REPAIR="false"
 IMAGE="${NOSH_IMAGE:-nosh}"
 NETWORK=""
 SECURITY_MODE="legacy"
 SECURITY_PROFILE_DIR="${NOSH_GUARD_PROFILE_DIR:-}"
 OTP="${NOTTY_MCP_SPAWN_OTP:-}"
+OTP_EXPLICIT="false"
+OTP_ENABLED="true"
 WORKDIR="$PWD"
 APP_WORKDIR="${NOSH_APP_WORKDIR:-/app}"
 START_APP="${NOSH_START_APP:-auto}"
@@ -2489,6 +3063,18 @@ HTTP_AUTH_ENABLED="${NOTTY_BASIC_AUTH_ENABLED:-true}"
 HTTP_AUTH_USERNAME="${NOTTY_BASIC_AUTH_USERNAME:-notty}"
 HTTP_AUTH_PASSWORD="${NOTTY_BASIC_AUTH_PASSWORD:-}"
 NOAUTH_CLI="false"
+NO_OAUTH_CLI="false"
+NO_OTP_AUTH_CLI="false"
+NO_OTP_CLI="false"
+OAUTH_ENABLED="true"
+PUBLIC_ORIGIN=""
+AUTH_REQUIRES_LOOPBACK="false"
+LOOPBACK_PUBLICATION="false"
+AUTH_WORKSPACE_ID=""
+AUTH_HOST_STATE_HOME=""
+AUTH_HOST_STATE_DIR=""
+AUTH_CONTAINER_STATE_DIR=""
+AUTH_GUARD_MODE="false"
 CONFIG_PATH="${NOTTY_CONFIG:-}"
 COLLAB_CLI=""
 COLLAB_ENABLED="false"
@@ -2512,6 +3098,32 @@ START_APP_EXPLICIT="false"
 declare -A ENV_VALUES=()
 declare -A MOUNT_VOLUMES=()
 declare -A DEVICE_SEEN=()
+
+if [[ "${1:-}" == "auth" ]]; then
+  shift
+  case "${1:-}" in
+    otp)
+      COMMAND="auth-otp"
+      shift
+      ;;
+    reset)
+      COMMAND="auth-reset"
+      shift
+      ;;
+    -h|--help)
+      auth_usage
+      exit 0
+      ;;
+    "")
+      auth_usage >&2
+      die 'auth requires a command: otp or reset'
+      ;;
+    *)
+      auth_usage >&2
+      die "unknown auth command: $1"
+      ;;
+  esac
+fi
 
 if [[ "${1:-}" == "net" ]]; then
   NET_WORKFLOW="true"
@@ -2550,8 +3162,15 @@ fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --no-review)
+      [[ "$NET_WORKFLOW" == true && "$NET_COMMAND" == learn ]] || die '--no-review is supported only by net learn'
+      NET_NO_REVIEW=true
+      shift
+      ;;
     -h|--help)
-      if [[ "$NET_WORKFLOW" == "true" ]]; then
+      if [[ "$COMMAND" == "auth-reset" || "$COMMAND" == "auth-otp" ]]; then
+        auth_usage
+      elif [[ "$NET_WORKFLOW" == "true" ]]; then
         net_usage
       else
         usage
@@ -2574,6 +3193,11 @@ while [[ $# -gt 0 ]]; do
     --profile-list)
       reject_net_option "--profile-list"
       PROFILE_LIST="true"
+      shift
+      ;;
+    --resume)
+      reject_net_option "--resume"
+      RESUME_CODEX="true"
       shift
       ;;
     --collab)
@@ -2675,11 +3299,15 @@ while [[ $# -gt 0 ]]; do
       ;;
     --otp)
       require_value "$1" "${2:-}"
-      OTP="$2"
+      OTP="$(trim "$2")"
+      require_value "$1" "$OTP"
+      OTP_EXPLICIT="true"
       shift 2
       ;;
     --otp=*)
-      OTP="${1#--otp=}"
+      OTP="$(trim "${1#--otp=}")"
+      require_value "--otp" "$OTP"
+      OTP_EXPLICIT="true"
       shift
       ;;
     --workdir)
@@ -2738,6 +3366,13 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN="true"
       shift
       ;;
+    --secure)
+      if [[ "$COMMAND" != "auth-reset" && "$COMMAND" != "auth-otp" ]]; then
+        die '--secure is available only for auth operator commands'
+      fi
+      AUTH_GUARD_MODE="true"
+      shift
+      ;;
     --duration)
       require_net_workflow_option "$1"
       require_value "$1" "${2:-}"
@@ -2762,6 +3397,18 @@ while [[ $# -gt 0 ]]; do
     --noauth)
       HTTP_AUTH_ENABLED="false"
       NOAUTH_CLI="true"
+      shift
+      ;;
+    --no-oauth)
+      NO_OAUTH_CLI="true"
+      shift
+      ;;
+    --no-otp-auth)
+      NO_OTP_AUTH_CLI="true"
+      shift
+      ;;
+    --no-otp)
+      NO_OTP_CLI="true"
       shift
       ;;
     --revision)
@@ -2816,10 +3463,37 @@ while [[ $# -gt 0 ]]; do
 done
 
 SECURITY_MODE="$(normalize_security_mode "$SECURITY_MODE")"
+if [[ "$RESUME_CODEX" == "true" ]]; then
+  [[ "$COMMAND" == "start" || "$COMMAND" == "attach" ]] || die "--resume is supported only with start or attach"
+  [[ "$SECURITY_MODE" == "legacy" ]] || die "--resume is supported only in legacy mode"
+  [[ "$COLLAB_CLI" != "false" ]] || die "--resume cannot be combined with --no-collab"
+  COLLAB_CLI="true"
+  COLLAB_EXPLICIT="true"
+  START_APP="true"
+fi
 WORKDIR="$(resolve_workdir "$WORKDIR")"
 if [[ "$NET_WORKFLOW" == "true" ]]; then
   WORKDIR="$(cd -P "$WORKDIR" && pwd)"
 fi
+if [[ "$COMMAND" == "auth-reset" || "$COMMAND" == "auth-otp" ]]; then
+  if [[ "$SECURITY_MODE" != "legacy" ]]; then
+    die 'auth operator commands do not accept a Guard security mode'
+  fi
+  if [[ "$AUTH_GUARD_MODE" == "true" ]]; then
+    if [[ "$COMMAND" != "auth-reset" ]]; then
+      die '--secure is available only for auth reset; Guard OTPs are minted through the mTLS gateway'
+    fi
+    run_guard_auth_reset
+    exit $?
+  fi
+  if [[ "$COMMAND" == "auth-reset" ]]; then
+    run_auth_reset
+  else
+    run_auth_otp
+  fi
+  exit $?
+fi
+finalize_auth_mode
 if [[ "$PROFILE_LIST" == "true" ]]; then
   list_profiles
   exit 0
@@ -2863,20 +3537,12 @@ esac
 if [[ -z "$NAME" ]]; then
   NAME="nosh-$(sanitize_name_part "$(basename "$WORKDIR")")"
 fi
-case "${HTTP_AUTH_ENABLED,,}" in
-  1|true|yes|on)
-    HTTP_AUTH_ENABLED="true"
-    ;;
-  *)
-    HTTP_AUTH_ENABLED="false"
-    ;;
-esac
 if [[ "$SECURITY_MODE" != "legacy" ]]; then
   delegate_to_nosh_guard
   exit $?
 fi
 if [[ "$COMMAND" != "set-login-password" ]]; then
-  if [[ -z "$OTP" ]]; then
+  if [[ "$OTP_ENABLED" == "true" && -z "$OTP" ]]; then
     OTP="$(make_otp)"
   fi
   if [[ "$HTTP_AUTH_ENABLED" == "true" && -z "$HTTP_AUTH_PASSWORD" ]]; then

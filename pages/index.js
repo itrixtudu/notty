@@ -10,6 +10,7 @@ import {
   Plus,
   RefreshCw,
   Rows2,
+  KeyRound,
   Settings2,
   SquareTerminal,
   Trash2
@@ -18,9 +19,11 @@ import TerminalCreator from '../components/TerminalCreator.js';
 import TerminalList from '../components/TerminalList.js';
 import ConfigPanel from '../components/ConfigPanel.js';
 import SpawnOtpManager from '../components/SpawnOtpManager.js';
+import SpawnTerminalDialog from '../components/SpawnTerminalDialog.js';
 import CopilotPane from '../components/CopilotPane.js';
 import TerminalConsole from '../components/TerminalConsole.js';
 import SessionTabs from '../components/SessionTabs.js';
+import { getSessionIdAfterClose } from '../components/sessionTabsModel.js';
 import TerminalPaneLayout from '../components/terminal/TerminalPaneLayout.js';
 import {
   buildCopilotPopoutPath,
@@ -36,6 +39,7 @@ import {
 import { browserFetch, resolveBrowserUrl } from '../lib/browserRequest.js';
 import { isTerminalLockdownEnabled } from '../lib/lockdown.js';
 import { isCollabEnabled } from '../lib/runtimeFeatures.js';
+import useTerminalSpawnDialog from '../hooks/useTerminalSpawnDialog.js';
 import styles from '../styles/Terminal.module.css';
 import {
   createInitialLayout,
@@ -182,10 +186,14 @@ export default function HomePage({ collabEnabled = false }) {
   const [terminalLayout, setTerminalLayout] = useState(() => createInitialLayout());
   const [activePaneId, setActivePaneId] = useState('pane-1');
   const nextPaneIdRef = useRef(2);
+  const closingSessionIdsRef = useRef(new Set());
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [renewingTerminalId, setRenewingTerminalId] = useState(null);
+  const [closingSessionIds, setClosingSessionIds] = useState(() => new Set());
   const [error, setError] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [otpManagerOpen, setOtpManagerOpen] = useState(false);
   const [consoleExpanded, setConsoleExpanded] = useState(false);
   const [terminalSelections, setTerminalSelections] = useState({});
   const [agentSidebarWidth, setAgentSidebarWidth] = useState(AGENT_SIDEBAR_DEFAULT_WIDTH);
@@ -202,6 +210,7 @@ export default function HomePage({ collabEnabled = false }) {
   const copilotPopupContextRef = useRef(null);
   const focusCopilotRailRef = useRef(false);
   const terminalSelectionsRef = useRef(terminalSelections);
+  const { requestTerminalSpawn, requestSpawnOtp, spawnDialogProps } = useTerminalSpawnDialog();
   terminalSelectionsRef.current = terminalSelections;
   const copilotPanePresentation = deriveCopilotPanePresentation(copilotPaneMode);
 
@@ -305,10 +314,10 @@ export default function HomePage({ collabEnabled = false }) {
   const handleCreate = useCallback(async (payload) => {
     setCreating(true);
     try {
-      const data = await jsonFetch('/api/terminals', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
+      const data = await requestTerminalSpawn(payload);
+      if (!data) {
+        return;
+      }
       setSelectedId(data.session.id);
       setTerminalLayout((layout) => updatePane(layout, activePaneId, (pane) => ({
         ...pane,
@@ -320,7 +329,7 @@ export default function HomePage({ collabEnabled = false }) {
     } finally {
       setCreating(false);
     }
-  }, [activePaneId, loadSessions]);
+  }, [activePaneId, loadSessions, requestTerminalSpawn]);
 
   const handleKill = async () => {
     if (!selectedId) return;
@@ -517,6 +526,70 @@ export default function HomePage({ collabEnabled = false }) {
   const activePane = getPane(terminalLayout, activePaneId) || getFirstPane(terminalLayout);
   const activeSessionId = activePane?.sessionId ?? null;
 
+  const renewSessionAccess = async (sessionId) => {
+    setRenewingTerminalId(sessionId);
+    try {
+      const result = await requestSpawnOtp(async (otp) => {
+        const response = await browserFetch(`/api/terminals/${encodeURIComponent(sessionId)}/renew`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ otp })
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error?.message || payload.error || 'Access renewal failed');
+        return payload;
+      });
+      if (result?.session) {
+        setSessions((current) => current.map((session) => session.id === sessionId ? result.session : session));
+        await loadSessions();
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRenewingTerminalId(null);
+    }
+  };
+
+  const closeSessionTab = useCallback(async (sessionId) => {
+    if (closingSessionIdsRef.current.has(sessionId)) {
+      return { closed: false, nextSessionId: activeSessionId };
+    }
+    closingSessionIdsRef.current.add(sessionId);
+    setClosingSessionIds(new Set(closingSessionIdsRef.current));
+    const nextSessionId = getSessionIdAfterClose(sessions, sessionId, activeSessionId);
+    try {
+      const response = await browserFetch(`/api/terminals/${encodeURIComponent(sessionId)}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        const message = typeof payload?.error === 'string'
+          ? payload.error
+          : payload?.error?.message || response.statusText || 'Unable to close terminal';
+        throw new Error(message);
+      }
+      setSessions((current) => current.filter((session) => session.id !== sessionId));
+      setTerminalLayout((layout) => {
+        const pruned = pruneSessionFromLayout(layout, sessionId);
+        return sessionId === activeSessionId
+          ? updatePane(pruned, activePaneId, (pane) => ({ ...pane, sessionId: nextSessionId }))
+          : pruned;
+      });
+      if (sessionId === activeSessionId) {
+        setSelectedId(nextSessionId);
+      }
+      setError('');
+      await loadSessions();
+      return { closed: true, nextSessionId };
+    } catch (err) {
+      setError(err.message);
+      return { closed: false, nextSessionId: activeSessionId };
+    } finally {
+      closingSessionIdsRef.current.delete(sessionId);
+      setClosingSessionIds(new Set(closingSessionIdsRef.current));
+    }
+  }, [activePaneId, activeSessionId, loadSessions, sessions]);
+
   useEffect(() => {
     setSelectedId(activeSessionId);
   }, [activeSessionId]);
@@ -529,10 +602,10 @@ export default function HomePage({ collabEnabled = false }) {
     const targetPaneId = activePaneId;
     setCreating(true);
     try {
-      const data = await jsonFetch('/api/terminals', {
-        method: 'POST',
-        body: JSON.stringify({})
-      });
+      const data = await requestTerminalSpawn({});
+      if (!data) {
+        return;
+      }
       const newSession = data?.session;
       if (newSession?.id == null) {
         throw new Error('Terminal creation did not return a session id');
@@ -555,7 +628,7 @@ export default function HomePage({ collabEnabled = false }) {
     } finally {
       setCreating(false);
     }
-  }, [activePaneId, creating]);
+  }, [activePaneId, creating, requestTerminalSpawn]);
 
   const resizeTerminalSplit = useCallback((splitId, ratios) => {
     setTerminalLayout((layout) => updateSplitRatios(layout, splitId, ratios));
@@ -872,9 +945,23 @@ export default function HomePage({ collabEnabled = false }) {
           sessions={sessions}
           activeSessionId={activeSessionId}
           onSelect={selectSession}
+          onClose={closeSessionTab}
+          onRenew={renewSessionAccess}
+          renewing={renewingTerminalId !== null}
+          closingSessionIds={closingSessionIds}
         />
 
         <div className={styles.toolbarControls}>
+          <button
+            type="button"
+            className={styles.toolbarIcon}
+            aria-label="Open spawn OTP management"
+            title="Spawn OTP management"
+            onClick={() => setOtpManagerOpen(true)}
+          >
+            <KeyRound size={15} aria-hidden="true" />
+          </button>
+
           <button
             type="button"
             className={styles.toolbarIcon}
@@ -969,6 +1056,10 @@ export default function HomePage({ collabEnabled = false }) {
           </button>
         </div>
       </div>
+      <SpawnOtpManager
+        open={otpManagerOpen}
+        onClose={() => setOtpManagerOpen(false)}
+      />
       {error && (
         <div className="inline-error" role="alert">
           {error}
@@ -1114,11 +1205,16 @@ export default function HomePage({ collabEnabled = false }) {
                 onRefresh={loadSessions}
               />
               <ConfigPanel />
-              <SpawnOtpManager />
             </div>
           </div>
         </div>
       )}
+
+      <SpawnTerminalDialog
+        {...spawnDialogProps}
+        title={renewingTerminalId !== null ? `Renew terminal #${renewingTerminalId} access` : 'Spawn terminal'}
+        actionLabel={renewingTerminalId !== null ? 'Renew access' : 'Spawn terminal'}
+      />
     </main>
   );
 }

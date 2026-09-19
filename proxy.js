@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server.js';
 import { resolveOriginPolicy } from './lib/corsPolicy.js';
 
 function withCorsHeaders(response, decision) {
@@ -25,6 +25,19 @@ export function proxy(request) {
   const isMcpTransportRequest = pathname === '/mcp'
     && (method !== 'GET' || (request.headers.get('accept') || '').includes('text/event-stream'));
 
+  if ((isApiRequest || isMcpTransportRequest)
+    && process.env.NOTTY_INTEGRATED_SERVER !== 'true') {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'INTEGRATED_SERVER_REQUIRED',
+          message: 'Notty API and MCP routes require the authenticated server entrypoint'
+        }
+      },
+      { status: 503 }
+    );
+  }
+
   let originDecision = null;
   if (isApiRequest || isMcpTransportRequest) {
     const trustedHosts = [
@@ -34,6 +47,7 @@ export function proxy(request) {
       process.env.NOTTY_HOST,
       process.env.BIND_HOST,
       process.env.HOST,
+      process.env.NOTTY_PUBLIC_ORIGIN,
       process.env.NOTTY_TRUSTED_HOSTS
     ];
     originDecision = resolveOriginPolicy({
@@ -41,6 +55,7 @@ export function proxy(request) {
       host: request.headers.get('host'),
       protocol: request.nextUrl.protocol,
       allowedOrigin: process.env.ALLOWED_ORIGIN,
+      publicOrigin: process.env.NOTTY_PUBLIC_ORIGIN,
       fetchSite: request.headers.get('sec-fetch-site'),
       trustedHosts
     });

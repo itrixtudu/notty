@@ -50,6 +50,7 @@ const DEFAULT_SESSION_ID = 1;
     console.error('      --local          Skip remote discovery and use in-process sessions only');
     console.error('      --debug          Enable verbose logging');
     console.error('  -h, --help           Show this help message');
+    console.error('A one-time spawn OTP is prompted for without echo when session creation requires it.');
     console.error('Detach with Ctrl+] (ASCII 29). Ctrl+C is forwarded to the session.');
   };
 
@@ -188,11 +189,17 @@ const DEFAULT_SESSION_ID = 1;
 
     if (!remoteContext && allowDefaultSessionCreation) {
       console.error('[rsh] Session 1 not found remotely. Creating new default session...');
-      remoteContext = await tryCreateRemoteSession({
-        httpOverride,
-        wsOverride,
-        logDebug
-      });
+      try {
+        remoteContext = await tryCreateRemoteSession({
+          httpOverride,
+          wsOverride,
+          logDebug
+        });
+      } catch (error) {
+        console.error(`[rsh] ${error.message || error}`);
+        process.exitCode = Number.isInteger(error?.exitCode) ? error.exitCode : 1;
+        return;
+      }
       if (remoteContext) {
         sessionId = remoteContext.session.id;
         if (sessionId !== DEFAULT_SESSION_ID) {
@@ -545,23 +552,36 @@ async function tryCreateRemoteSession(options) {
     seen.add(baseInfo.listUrl);
 
     options.logDebug('Attempting remote session creation via', baseInfo.listUrl);
+    let spawnOtpAttempted = false;
 
     try {
-      const res = await fetchWithTimeout(baseInfo.listUrl, DEFAULT_SESSION_TIMEOUT_MS, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({})
-      });
+      let attempt = await postRemoteSession(baseInfo.listUrl);
 
-      if (!res.ok) {
-        options.logDebug('Remote session create status', res.status, 'for', baseInfo.listUrl);
+      if (!attempt.response.ok && getSpawnOtpErrorCode(attempt.body) === 'spawn_terminal_otp_required') {
+        let otp = await promptSpawnOtp();
+        spawnOtpAttempted = true;
+        try {
+          attempt = await postRemoteSession(baseInfo.listUrl, otp);
+        } finally {
+          otp = '';
+        }
+      }
+
+      if (!attempt.response.ok) {
+        if (spawnOtpAttempted) {
+          const message = attempt.body?.error?.message || 'Terminal creation rejected the spawn OTP.';
+          throw createSpawnOtpPromptError(message);
+        }
+        options.logDebug(
+          'Remote session create status',
+          attempt.response.status,
+          'for',
+          baseInfo.listUrl
+        );
         continue;
       }
 
-      const body = await safeJson(res);
+      const body = attempt.body;
       if (!body?.session) {
         options.logDebug('Remote session create response missing session payload at', baseInfo.listUrl);
         continue;
@@ -579,11 +599,37 @@ async function tryCreateRemoteSession(options) {
         wsUrl
       };
     } catch (err) {
+      if (isSpawnOtpPromptError(err)) {
+        throw err;
+      }
+      if (spawnOtpAttempted) {
+        throw createSpawnOtpPromptError('Terminal creation failed after the spawn OTP was submitted.');
+      }
       options.logDebug('Remote session create error for', baseInfo.listUrl, err.message || err);
     }
   }
 
   return null;
+}
+
+async function postRemoteSession(url, otp = '') {
+  const value = typeof otp === 'string' ? otp.trim() : '';
+  const response = await fetchWithTimeout(url, DEFAULT_SESSION_TIMEOUT_MS, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(value ? { otp: value } : {})
+  });
+  return {
+    response,
+    body: await safeJson(response)
+  };
+}
+
+function getSpawnOtpErrorCode(body) {
+  return typeof body?.error?.code === 'string' ? body.error.code : '';
 }
 
 async function resolveWsUrl({ httpBase, wsOverride, logDebug }) {
@@ -696,6 +742,119 @@ async function safeJson(res) {
   } catch {
     return null;
   }
+}
+
+function createSpawnOtpPromptError(message, exitCode = 1) {
+  const error = new Error(message);
+  error.code = 'rsh_spawn_otp_prompt_error';
+  error.exitCode = exitCode;
+  return error;
+}
+
+function isSpawnOtpPromptError(error) {
+  return error?.code === 'rsh_spawn_otp_prompt_error';
+}
+
+function requireSpawnOtp(value) {
+  const otp = typeof value === 'string' ? value.trim() : '';
+  if (!otp) {
+    throw createSpawnOtpPromptError('A non-empty spawn OTP is required.');
+  }
+  return otp;
+}
+
+async function promptSpawnOtp() {
+  const input = process.stdin;
+  const output = process.stderr;
+  const prompt = '[rsh] Spawn OTP: ';
+
+  if (input.isTTY && typeof input.setRawMode !== 'function') {
+    throw createSpawnOtpPromptError('This terminal cannot securely read a hidden spawn OTP.');
+  }
+
+  if (!input.isTTY) {
+    const { createInterface } = await import('node:readline/promises');
+    const reader = createInterface({ input, output, terminal: false });
+    try {
+      return requireSpawnOtp(await reader.question(prompt));
+    } catch (error) {
+      if (isSpawnOtpPromptError(error)) {
+        throw error;
+      }
+      throw createSpawnOtpPromptError('Unable to read a spawn OTP from stdin.');
+    } finally {
+      reader.close();
+    }
+  }
+
+  const wasRaw = Boolean(input.isRaw);
+  const wasPaused = input.isPaused();
+  output.write(prompt);
+
+  return new Promise((resolve, reject) => {
+    let value = '';
+    let settled = false;
+
+    const cleanup = () => {
+      input.off('data', onData);
+      if (!wasRaw) {
+        try {
+          input.setRawMode(false);
+        } catch {
+          // Best-effort restoration after an input failure.
+        }
+      }
+      if (wasPaused) {
+        input.pause();
+      }
+    };
+
+    const finish = (error = null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      output.write('\n');
+      if (error) {
+        reject(error);
+        return;
+      }
+      try {
+        resolve(requireSpawnOtp(value));
+      } catch (validationError) {
+        reject(validationError);
+      }
+    };
+
+    const onData = (chunk) => {
+      for (const character of String(chunk)) {
+        if (character === '\r' || character === '\n') {
+          finish();
+          return;
+        }
+        if (character === '\u0003') {
+          finish(createSpawnOtpPromptError('Spawn OTP entry cancelled.', 130));
+          return;
+        }
+        if (character === '\u007f' || character === '\b') {
+          value = Array.from(value).slice(0, -1).join('');
+          continue;
+        }
+        if (character >= ' ' && character !== '\u007f') {
+          value += character;
+        }
+      }
+    };
+
+    try {
+      input.setRawMode(true);
+      input.resume();
+      input.on('data', onData);
+    } catch {
+      finish(createSpawnOtpPromptError('Unable to read a spawn OTP from the terminal.'));
+    }
+  });
 }
 
 function printSessionList(sessions) {
@@ -816,7 +975,19 @@ async function attachLocal(sessionId, includeHistory, logDebug, options = {}) {
         `[rsh] Session ${defaultSessionId} not found locally. Creating new default session...`
       );
       try {
-        session = spawnTerminal({});
+        try {
+          session = spawnTerminal({});
+        } catch (spawnError) {
+          if (spawnError?.code !== 'spawn_terminal_otp_required') {
+            throw spawnError;
+          }
+          let otp = await promptSpawnOtp();
+          try {
+            session = spawnTerminal({ otp });
+          } finally {
+            otp = '';
+          }
+        }
         targetSessionId = session.id;
         if (targetSessionId !== defaultSessionId) {
           console.error(

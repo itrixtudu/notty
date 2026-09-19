@@ -86,13 +86,13 @@
       "description": "A coordinator and QA agent for focused implementation and review.",
       "layout": "pair-review",
       "channel": "lobby",
-      "defaultCoordinatorMode": "agent",
-      "coordinatorSpec": "coordinator_codex_gpt-5.6-sol",
+      "defaultCoordinatorMode": "human",
+      "coordinatorSpec": {"prompt":"coordinator","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"},
       "requiredNoshProfiles": ["agents"],
       "startup": {},
       "agents": [
-        "coordinator_codex_gpt-5.6-sol",
-        "qa_codex_gpt-5.6-sol"
+        {"prompt":"coordinator","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"},
+        {"prompt":"qa","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"}
       ]
     },
     "delivery-team": {
@@ -100,15 +100,15 @@
       "description": "Coordinator, developer, coder, and QA agent.",
       "layout": "monitor",
       "channel": "lobby",
-      "defaultCoordinatorMode": "agent",
-      "coordinatorSpec": "coordinator_codex_gpt-5.6-sol",
+      "defaultCoordinatorMode": "human",
+      "coordinatorSpec": {"prompt":"coordinator","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"},
       "requiredNoshProfiles": ["agents"],
       "startup": {},
       "agents": [
-        "coordinator_codex_gpt-5.6-sol",
-        "dev_codex_gpt-5.6-sol",
-        "coder_codex_gpt-5.6-sol",
-        "qa_codex_gpt-5.6-sol"
+        {"prompt":"coordinator","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"},
+        {"prompt":"dev","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"},
+        {"prompt":"coder","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"},
+        {"prompt":"qa","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"}
       ]
     },
     "pressure-test": {
@@ -116,15 +116,15 @@
       "description": "Coordinator, coder, QA, and a project harasser for adversarial delivery checks.",
       "layout": "grid",
       "channel": "lobby",
-      "defaultCoordinatorMode": "agent",
-      "coordinatorSpec": "coordinator_codex_gpt-5.6-sol",
+      "defaultCoordinatorMode": "human",
+      "coordinatorSpec": {"prompt":"coordinator","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"},
       "requiredNoshProfiles": ["agents"],
       "startup": {},
       "agents": [
-        "coordinator_codex_gpt-5.6-sol",
-        "coder_codex_gpt-5.6-sol",
-        "qa_codex_gpt-5.6-sol",
-        "project-harasser_codex_gpt-5.6-sol"
+        {"prompt":"coordinator","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"},
+        {"prompt":"coder","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"},
+        {"prompt":"qa","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"},
+        {"prompt":"project-harasser","harness":"codex","backend":"default","model":"gpt-5.3-codex-spark","think":"low"}
       ]
     },
     "full-roster": {
@@ -132,13 +132,13 @@
       "description": "Coordinator, implementer, reviewer, QA, observer, and BOFH agents across cloud and local model backends.",
       "layout": "grid",
       "channel": "lobby",
-      "defaultCoordinatorMode": "agent",
+      "defaultCoordinatorMode": "human",
       "coordinatorSpec": {
         "prompt": "coordinator",
         "harness": "codex",
         "backend": "default",
-        "model": "gpt-5.6-sol",
-        "think": "high"
+        "model": "gpt-5.3-codex-spark",
+        "think": "low"
       },
       "requiredNoshProfiles": ["agents"],
       "startup": {},
@@ -147,15 +147,15 @@
           "prompt": "coordinator",
           "harness": "codex",
           "backend": "default",
-          "model": "gpt-5.6-sol",
-          "think": "high"
+          "model": "gpt-5.3-codex-spark",
+          "think": "low"
         },
         {
           "prompt": "implementer",
           "harness": "codex",
           "backend": "default",
-          "model": "gpt-5.6-sol",
-          "think": "medium"
+          "model": "gpt-5.3-codex-spark",
+          "think": "low"
         },
         {
           "prompt": "reviewer",
@@ -168,8 +168,8 @@
           "prompt": "qa",
           "harness": "codex",
           "backend": "default",
-          "model": "gpt-5.6-sol",
-          "think": "max"
+          "model": "gpt-5.3-codex-spark",
+          "think": "low"
         },
         {
           "prompt": "observer",

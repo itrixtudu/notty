@@ -23,7 +23,10 @@ export default function TerminalConsole({
   autoFocus = true,
   updateDocumentTitle = true,
   onConnectionStatus,
-  onSelectionChange
+  onSelectionChange,
+  headerActions,
+  copyControls = false,
+  transcriptControl = false
 }) {
   return (
     <XtermRenderer
@@ -39,6 +42,9 @@ export default function TerminalConsole({
       updateDocumentTitle={updateDocumentTitle}
       onConnectionStatus={onConnectionStatus}
       onSelectionChange={onSelectionChange}
+      headerActions={headerActions}
+      copyControls={copyControls}
+      transcriptControl={transcriptControl}
     />
   );
 }

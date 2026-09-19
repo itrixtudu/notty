@@ -155,6 +155,7 @@ test('standalone service rejects enforce mode before touching Docker', async () 
   const { GuardService } = await importModule('lib/guardd/service.js');
   let inspected = false;
   const service = new GuardService({
+    guardGatewayKey: 'k'.repeat(43),
     healthProvider: healthyHost,
     docker: {
       async inspectImage() {
@@ -379,6 +380,14 @@ test('guard runner spec creates a credential-free, hardened Docker request', asy
     environment: {
       NOTTY_MCP_SPAWN_OTP: 'runner-otp',
       NOTTY_BASIC_AUTH_PASSWORD: 'runner-password',
+      NOTTY_AUTH_STATE_DIR: '/tmp/attacker-auth-state',
+      NOTTY_GUARD_GATEWAY_PEER_IP: '192.0.2.55',
+      NOTTY_GUARD_GATEWAY_TOKEN: 'attacker-gateway-token',
+      NOTTY_GUARD_MTLS: 'false',
+      NOTTY_NO_OTP_AUTH: 'true',
+      NOTTY_MCP_SPAWN_OTP_ENABLED: 'false',
+      NOTTY_MCP_AUTHORIZATION: 'Bearer attacker-token',
+      NOTTY_OAUTH_ACCESS_TOKEN: 'attacker-oauth-token',
       ALLOWED_ORIGIN: 'https://attacker.example',
       HOME: '/home/attacker',
       NOTTY_PUBLIC_WS_URL: 'wss://attacker.example/ws',
@@ -436,7 +445,7 @@ test('guard runner spec creates a credential-free, hardened Docker request', asy
   assert.match(runner.spec.Cmd[0], /mkdir -p "\$XDG_CONFIG_HOME"/);
   assert.doesNotMatch(
     runner.spec.Env.join('\n'),
-    /NOTTY_MCP_SPAWN_OTP|NOTTY_BASIC_AUTH_(?:PASSWORD|USERNAME)/,
+    /NOTTY_(?:AUTH_STATE_DIR|GUARD_GATEWAY_(?:PEER_IP|TOKEN)|MCP_AUTHORIZATION|MCP_SPAWN_OTP(?!_ENABLED)|OAUTH_)|NOTTY_BASIC_AUTH_(?:PASSWORD|USERNAME)/,
   );
   assert.doesNotMatch(serialized, /runner-otp|runner-password/);
   assert.doesNotMatch(serialized, /\.codex|\.claude|\.gemini|docker\.sock/);
@@ -472,6 +481,195 @@ test('guard runner spec creates a credential-free, hardened Docker request', asy
       mode === 'egress-enforce',
     );
   }
+});
+
+test('runner spec mounts trusted auth state and injects only its gateway binding', async (t) => {
+  const workdir = tempDir(t);
+  const authStateDir = tempDir(t);
+  const resolverConfigPath = path.join(tempDir(t), 'resolv.conf');
+  fs.writeFileSync(resolverConfigPath, 'nameserver 127.0.0.1\n', { mode: 0o644 });
+  fs.chmodSync(resolverConfigPath, 0o644);
+  const gatewayToken = 'g'.repeat(43);
+  const gatewayPeerIp = '10.240.9.2';
+  const { buildRunnerSpec } = await importModule('lib/guardd/runner-spec.js');
+  const { compileDockerArtifact } = await importModule('lib/guard/docker.js');
+  const { assertDockerArtifactConformance } = await importModule(
+    'lib/guardd/host-profiles.js',
+  );
+  const artifact = compileDockerArtifact([]);
+  const input = {
+    runId: 'run-auth-state',
+    mode: 'learn',
+    image: 'nosh@sha256:test',
+    name: 'agent-auth-state',
+    workdir,
+    authStateDir,
+    guardGatewayPeerIp: gatewayPeerIp,
+    guardGatewayToken: gatewayToken,
+    network: 'nosh-guard-run-auth-state',
+    seccompDocument: {},
+    apparmorProfileName: 'nosh-guard-agent-auth-state',
+    environment: {
+      NOTTY_AUTH_STATE_DIR: '/tmp/untrusted-state',
+      NOTTY_GUARD_GATEWAY_PEER_IP: '192.0.2.55',
+      NOTTY_GUARD_GATEWAY_TOKEN: 'untrusted-token',
+    },
+  };
+  const runner = buildRunnerSpec(input);
+
+  assert.deepEqual(runner.spec.HostConfig.Binds, [
+    `${workdir}:${workdir}:rw`,
+    `${authStateDir}:/var/lib/notty-auth:rw`,
+  ]);
+  assert.ok(runner.spec.Env.includes('NOTTY_AUTH_STATE_DIR=/var/lib/notty-auth'));
+  assert.ok(runner.spec.Env.includes(
+    `NOTTY_GUARD_GATEWAY_PEER_IP=${gatewayPeerIp}`,
+  ));
+  assert.ok(runner.spec.Env.includes(`NOTTY_GUARD_GATEWAY_TOKEN=${gatewayToken}`));
+  assert.ok(runner.spec.Env.includes('NOTTY_BASIC_AUTH_ENABLED=false'));
+  assert.ok(runner.spec.Env.includes('NOTTY_GUARD_MTLS=true'));
+  assert.ok(runner.spec.Env.includes('NOTTY_MCP_SPAWN_OTP_ENABLED=true'));
+  assert.equal(
+    runner.spec.Env.some((entry) => entry.includes('untrusted')),
+    false,
+  );
+  assert.doesNotThrow(() => assertDockerArtifactConformance(runner.spec, artifact));
+
+  const withResolver = buildRunnerSpec({ ...input, resolverConfigPath });
+  assert.deepEqual(withResolver.spec.HostConfig.Binds, [
+    `${workdir}:${workdir}:rw`,
+    `${authStateDir}:/var/lib/notty-auth:rw`,
+    `${resolverConfigPath}:/etc/resolv.conf:ro`,
+  ]);
+  assert.doesNotThrow(() => assertDockerArtifactConformance(withResolver.spec, artifact));
+
+  const specMutations = [
+    (spec) => { spec.HostConfig.Binds[0] = '/tmp/other:/tmp/other:rw'; },
+    (spec) => { spec.HostConfig.Binds[1] = 'relative:/var/lib/notty-auth:rw'; },
+    (spec) => { spec.HostConfig.Binds[1] = `${authStateDir}:/tmp/auth:rw`; },
+    (spec) => { spec.HostConfig.Binds.push('/tmp/extra:/tmp/extra:rw'); },
+  ];
+  for (const mutate of specMutations) {
+    const candidate = structuredClone(runner.spec);
+    mutate(candidate);
+    assert.throws(
+      () => assertDockerArtifactConformance(candidate, artifact),
+      /exact writable workspace and auth-state mounts/,
+    );
+  }
+  const badResolver = structuredClone(withResolver.spec);
+  badResolver.HostConfig.Binds[2] = 'relative:/etc/resolv.conf:ro';
+  assert.throws(
+    () => assertDockerArtifactConformance(badResolver, artifact),
+    /exact writable workspace and auth-state mounts/,
+  );
+
+  for (const mutate of [
+    (mounts) => mounts.push({ source: '/tmp/x', target: '/tmp/x', mode: 'rw' }),
+    (mounts) => { mounts[1].source = '/tmp/other'; },
+    (mounts) => { mounts[1].target = '/tmp/other'; },
+    (mounts) => { mounts[1].purpose = 'arbitrary'; },
+  ]) {
+    const changedArtifact = structuredClone(artifact);
+    mutate(changedArtifact.spec.writableMounts);
+    assert.throws(
+      () => assertDockerArtifactConformance(runner.spec, changedArtifact),
+      /exact writable workspace and auth-state mounts/,
+    );
+  }
+
+  assert.throws(
+    () => buildRunnerSpec({ ...input, guardGatewayToken: 'too-short' }),
+    /256-bit base64url capability/,
+  );
+  assert.throws(
+    () => buildRunnerSpec({ ...input, guardGatewayPeerIp: '10.240.9.2 ' }),
+    /canonical IP address/,
+  );
+  assert.throws(
+    () => buildRunnerSpec({ ...input, guardGatewayPeerIp: undefined }),
+    /must be configured together/,
+  );
+  fs.chmodSync(authStateDir, 0o755);
+  assert.throws(
+    () => buildRunnerSpec(input),
+    /owned by the runner identity with mode 0700/,
+  );
+  fs.chmodSync(authStateDir, 0o1700);
+  assert.throws(
+    () => buildRunnerSpec(input),
+    /owned by the runner identity with mode 0700/,
+  );
+});
+
+test('Guard runner gateway peer follows managed and scoped network topology', async () => {
+  const { guardGatewayPeerIpForTopology } = await importModule(
+    'lib/guardd/service.js',
+  );
+  const allocation = {
+    dockerGateway: '10.240.12.1',
+    egressGateway: '10.240.12.2',
+  };
+
+  assert.equal(
+    guardGatewayPeerIpForTopology(allocation, false),
+    allocation.egressGateway,
+    'full Guard modes receive the managed gateway container address',
+  );
+  assert.equal(
+    guardGatewayPeerIpForTopology(allocation, true),
+    allocation.dockerGateway,
+    'scoped egress modes receive the host-side Docker bridge address',
+  );
+  assert.throws(
+    () => guardGatewayPeerIpForTopology({ ...allocation, egressGateway: null }, false),
+    /managed runner network is missing its exact gateway peer IP/,
+  );
+  assert.throws(
+    () => guardGatewayPeerIpForTopology({ ...allocation, dockerGateway: 'invalid' }, true),
+    /scoped runner network is missing its exact gateway peer IP/,
+  );
+  assert.throws(
+    () => guardGatewayPeerIpForTopology(allocation, 'scoped'),
+    /topology selection must be explicit/,
+  );
+});
+
+test('guard workspace auth state fails closed on existing permission and symlink drift', async (t) => {
+  const root = tempDir(t);
+  const stateRoot = path.join(root, 'state');
+  const workdir = path.join(root, 'workspace');
+  fs.mkdirSync(stateRoot, { mode: 0o700 });
+  fs.mkdirSync(workdir, { mode: 0o700 });
+  const { prepareRunnerAuthState } = await importModule('lib/guardd/service.js');
+
+  const authStateDir = await prepareRunnerAuthState(stateRoot, workdir);
+  const authRoot = path.dirname(authStateDir);
+  assert.equal(fs.statSync(authRoot).mode & 0o7777, 0o700);
+  assert.equal(fs.statSync(authStateDir).mode & 0o7777, 0o700);
+
+  fs.chmodSync(authStateDir, 0o755);
+  await assert.rejects(
+    prepareRunnerAuthState(stateRoot, workdir),
+    /guard workspace auth state must have mode 0700/,
+  );
+  assert.equal(fs.statSync(authStateDir).mode & 0o7777, 0o755);
+
+  fs.chmodSync(authStateDir, 0o700);
+  fs.chmodSync(authRoot, 0o750);
+  await assert.rejects(
+    prepareRunnerAuthState(stateRoot, workdir),
+    /guard auth state root must have mode 0700/,
+  );
+  assert.equal(fs.statSync(authRoot).mode & 0o7777, 0o750);
+
+  fs.chmodSync(authRoot, 0o700);
+  fs.rmSync(authStateDir, { recursive: true });
+  fs.symlinkSync(workdir, authStateDir);
+  await assert.rejects(
+    prepareRunnerAuthState(stateRoot, workdir),
+    /guard workspace auth state must be a real directory|ELOOP/,
+  );
 });
 
 test('runner gate uses a non-login shell and defers the app until release', async (t) => {
@@ -682,6 +880,7 @@ test('scoped learning reuses proven terminal namespaces before releasing a runne
   const operations = [];
   let mountVerification = null;
   let connected = false;
+  let nullNetworkAttached = true;
   const fakeDocker = {
     async inspectImage() {
       operations.push('inspect-image');
@@ -703,6 +902,21 @@ test('scoped learning reuses proven terminal namespaces before releasing a runne
       operations.push('create');
       assert.equal(spec.HostConfig.NetworkMode, 'none');
       assert.deepEqual(spec.NetworkingConfig.EndpointsConfig, {});
+      assert.ok(
+        spec.HostConfig.Binds.some((bind) =>
+          bind.endsWith(':/var/lib/notty-auth:rw')
+          && bind.startsWith(`${path.join(root, 'state', 'auth')}${path.sep}`),
+        ),
+      );
+      assert.ok(spec.Env.includes('NOTTY_AUTH_STATE_DIR=/var/lib/notty-auth'));
+      assert.match(
+        spec.Env.find((entry) => entry.startsWith('NOTTY_GUARD_GATEWAY_TOKEN=')) || '',
+        /^NOTTY_GUARD_GATEWAY_TOKEN=[A-Za-z0-9_-]{43}$/,
+      );
+      assert.ok(
+        spec.Env.includes('NOTTY_GUARD_GATEWAY_PEER_IP=10.240.0.1'),
+        'scoped topology must authenticate the host-side Docker bridge peer',
+      );
       return { Id: 'container-1', Warnings: [] };
     },
     async startContainer() {
@@ -714,6 +928,7 @@ test('scoped learning reuses proven terminal namespaces before releasing a runne
         Id: 'container-1',
         Image: 'sha256:image',
         State: { Running: true, Pid: 4242 },
+        HostConfig: { NetworkMode: 'none' },
         Config: {
           Labels: {
             'io.notty.guard.run-id': 'run-attach-order',
@@ -728,11 +943,20 @@ test('scoped learning reuses proven terminal namespaces before releasing a runne
                   GlobalIPv6Address: 'fd42:6e6f:7368:1::3',
                 },
               }
-            : {},
+            : nullNetworkAttached ? { none: {
+                IPAMConfig: null, IPAddress: '', Gateway: '',
+                GlobalIPv6Address: '', IPv6Gateway: '', MacAddress: '',
+              } } : {},
         },
       };
     },
+    async disconnectNetwork(networkName, containerId) {
+      assert.equal(networkName, 'none');
+      assert.equal(containerId, 'container-1');
+      nullNetworkAttached = false;
+    },
     async connectNetwork(networkName, containerId, endpoint) {
+      assert.equal(nullNetworkAttached, false);
       operations.push('connect-network');
       assert.equal(networkName, 'nosh-guard-test');
       assert.equal(containerId, 'container-1');
@@ -2199,6 +2423,84 @@ test('rm recontains stale state and retains controls if containment fails', asyn
   );
 });
 
+test('rm clears resolved managed-egress failures after cleanup retry', async (t) => {
+  for (const mode of ['learn', 'egress-learn']) {
+    await t.test(mode, async (t) => {
+      const root = tempDir(t);
+      const operations = [];
+      let detachAttempts = 0;
+      const { GuardStateStore } = await importModule('lib/guardd/state-store.js');
+      const { GuardService } = await importModule('lib/guardd/service.js');
+      const store = new GuardStateStore(path.join(root, 'state'));
+      const backend = {
+        async initialize() {},
+        async detachRun() {
+          operations.push('detach-egress');
+          detachAttempts += 1;
+          if (detachAttempts === 1) {
+            throw new Error('transient egress detach failure');
+          }
+          return { ok: true };
+        },
+      };
+      const service = new GuardService({
+        store,
+        healthProvider: healthyHost,
+        docker: {},
+        adapters: {
+          async detach(run) {
+            assert.deepEqual(run.adapters, []);
+            operations.push('retry-adapter-cleanup');
+            return [];
+          },
+        },
+        egress: mode === 'learn' ? backend : { async initialize() {} },
+        scopedEgress: mode === 'egress-learn' ? backend : { async initialize() {} },
+        ebpfActivations: { async initialize() {} },
+      });
+      await service.initialize();
+      await store.writeRun({
+        runId: 'run-egress-cleanup-retry',
+        name: 'egress-cleanup-retry',
+        mode,
+        status: 'stopped',
+        containerId: 'container-egress-cleanup-retry',
+        containerRemoved: true,
+        containerPaused: false,
+        adapters: [],
+        detachResults: [],
+        cleanupFailures: [],
+        evidenceComplete: false,
+      });
+
+      await assert.rejects(
+        service.runAction('egress-cleanup-retry', 'rm'),
+        /transient egress detach failure/,
+      );
+      const failed = await store.findRun('egress-cleanup-retry');
+      assert.equal(failed.status, 'quarantined');
+      assert.deepEqual(failed.cleanupFailures, [{
+        name: 'managed-egress',
+        cleanupCritical: true,
+        cleanupOk: false,
+        error: 'transient egress detach failure',
+      }]);
+
+      const removed = await service.runAction('egress-cleanup-retry', 'rm');
+      assert.equal(removed.status, 'removed');
+      assert.equal(removed.containerRemoved, true);
+      assert.deepEqual(removed.egressResult, { ok: true });
+      assert.deepEqual(removed.cleanupFailures, []);
+      assert.equal(await store.findRun('egress-cleanup-retry'), null);
+      assert.deepEqual(operations, [
+        'detach-egress',
+        'retry-adapter-cleanup',
+        'detach-egress',
+      ]);
+    });
+  }
+});
+
 test('watchdog quarantines runtime and managed-policy drift before detaching', async (t) => {
   const root = tempDir(t);
   const operations = [];
@@ -2552,6 +2854,7 @@ test('stop captures final gateway counters before evidence finalization', async 
 test('allow-incomplete cannot bypass guarded admission', async () => {
   const { GuardService } = await importModule('lib/guardd/service.js');
   const service = new GuardService({
+    guardGatewayKey: 'k'.repeat(43),
     allowIncomplete: true,
     docker: {},
     adapters: {},
@@ -3711,4 +4014,44 @@ test('Docker release gate fails closed on exec failure or timeout', async () => 
       error.execId === 'exec-wedged' &&
       error.timeoutMs === 20,
   );
+});
+
+test('networkless admission accepts only the empty Docker null endpoint', async () => {
+  const { GuardService } = await importModule('lib/guardd/service.js');
+  const expected = {
+    containerId: 'null-test', runId: 'null-run', imageDigest: 'sha256:test',
+    requireNoNetwork: true,
+  };
+  const inspected = {
+    Id: expected.containerId, Image: expected.imageDigest,
+    State: { Running: true, Pid: 42 },
+    HostConfig: { NetworkMode: 'none' },
+    Config: { Labels: {
+      'io.notty.guard.run-id': expected.runId,
+      'io.notty.guard.image-digest': expected.imageDigest,
+    } },
+    NetworkSettings: { Networks: { none: {
+      IPAMConfig: null, IPAddress: '', Gateway: '', GlobalIPv6Address: '',
+      IPv6Gateway: '', MacAddress: '',
+    } } },
+  };
+  const service = {
+    docker: { async inspectContainer() { return inspected; } },
+    namespaceProvider: () => ({ cgroup: 'isolated' }),
+    hostNamespaceProvider: () => 'host',
+    cgroupProvider: () => ({ path: '/test', id: '42', membership: '/test' }),
+  };
+  const check = () => GuardService.prototype.inspectRuntimeIdentity.call(service, expected);
+  assert.equal((await check()).initPid, 42);
+  for (const field of ['IPAddress', 'Gateway', 'GlobalIPv6Address', 'IPv6Gateway', 'MacAddress', 'IPAMConfig']) {
+    const original = inspected.NetworkSettings.Networks.none[field];
+    inspected.NetworkSettings.Networks.none[field] = 'unexpected';
+    await assert.rejects(check(), /must remain networkless/);
+    inspected.NetworkSettings.Networks.none[field] = original;
+  }
+  inspected.NetworkSettings.Networks.bridge = {};
+  await assert.rejects(check(), /must remain networkless/);
+  delete inspected.NetworkSettings.Networks.bridge;
+  inspected.HostConfig.NetworkMode = 'bridge';
+  await assert.rejects(check(), /must remain networkless/);
 });

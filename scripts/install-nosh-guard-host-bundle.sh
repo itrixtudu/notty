@@ -865,7 +865,11 @@ run_install() {
     payload/docs/nosh-gateway.md \
     payload/docs/nosh-policy-review.md \
     payload/docs/nosh-http-capture-contract.md \
+    payload/lib/authState.js \
+    payload/lib/guardGatewayAuth.js \
     payload/lib/guard/review/gateway-host.js \
+    payload/lib/guardd/auth-reset-worker.js \
+    payload/lib/guardd/auth-state.js \
     payload/lib/guardd/http-capture-manager.js \
     payload/lib/guardd/http-content-store.js \
     payload/lib/guardd/http-evidence.js \

@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import SpawnTerminalDialog from '../components/SpawnTerminalDialog.js';
+import useTerminalSpawnDialog from '../hooks/useTerminalSpawnDialog.js';
+import {
+  mcpToolRequiresSpawnOtp,
+  prepareMcpToolArguments
+} from '../lib/browserTerminalSpawn.js';
 import { browserFetch } from '../lib/browserRequest.js';
 
 export default function McpPage() {
@@ -8,6 +14,7 @@ export default function McpPage() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const { requestSpawnOtp, spawnDialogProps } = useTerminalSpawnDialog();
 
   useEffect(() => {
     let cancelled = false;
@@ -70,19 +77,38 @@ export default function McpPage() {
       return;
     }
 
-    try {
+    const invokeTool = async (toolArguments) => {
       const response = await browserFetch('/api/mcp/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: selectedToolName, arguments: args })
+        body: JSON.stringify({ name: selectedToolName, arguments: toolArguments })
       });
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const text = data.content?.[0]?.text || data.error || 'Tool call failed';
-        throw new Error(text);
+        throw getToolCallError(data);
       }
-      setResult(data);
+      return data;
+    };
+
+    try {
+      const toolArguments = prepareMcpToolArguments(selectedTool, args);
+      if (
+        args
+        && typeof args === 'object'
+        && Object.prototype.hasOwnProperty.call(args, 'otp')
+      ) {
+        setArgsText(JSON.stringify(toolArguments, null, 2));
+      }
+
+      const data = mcpToolRequiresSpawnOtp(selectedTool, toolArguments)
+        ? await requestSpawnOtp((otp) => invokeTool(
+            prepareMcpToolArguments(selectedTool, toolArguments, otp)
+          ))
+        : await invokeTool(toolArguments);
+      if (data) {
+        setResult(data);
+      }
     } catch (err) {
       setError(err.message || 'Tool call failed');
     } finally {
@@ -190,6 +216,11 @@ export default function McpPage() {
                 {loading ? 'Calling...' : 'Call Tool'}
               </button>
             </div>
+            {selectedTool?.inputSchema?.properties?.otp && (
+              <p className="hint">
+                Spawn OTPs are entered in a separate one-time dialog and are never retained in this JSON field.
+              </p>
+            )}
           </form>
           {result && (
             <div>
@@ -199,6 +230,7 @@ export default function McpPage() {
           )}
         </div>
       </div>
+      <SpawnTerminalDialog {...spawnDialogProps} />
     </main>
   );
 }
@@ -206,6 +238,9 @@ export default function McpPage() {
 function buildDefaults(properties) {
   const out = {};
   for (const [key, value] of Object.entries(properties)) {
+    if (key === 'otp') {
+      continue;
+    }
     if (Object.prototype.hasOwnProperty.call(value, 'default')) {
       out[key] = value.default;
     } else {
@@ -213,6 +248,30 @@ function buildDefaults(properties) {
     }
   }
   return out;
+}
+
+function getToolCallError(payload) {
+  const text = payload?.content?.[0]?.text;
+  let code = '';
+  let message = typeof payload?.error === 'string'
+    ? payload.error
+    : payload?.error?.message;
+
+  if (typeof text === 'string' && text.trim()) {
+    try {
+      const parsed = JSON.parse(text);
+      code = parsed?.error?.code || '';
+      message = parsed?.error?.message || message || text;
+    } catch {
+      message = text;
+    }
+  }
+
+  const error = new Error(message || 'Tool call failed');
+  if (code) {
+    error.code = code;
+  }
+  return error;
 }
 
 function formatResult(result) {

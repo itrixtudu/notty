@@ -101,7 +101,7 @@ and intend to replace, acknowledge that explicitly:
 
 Review `git diff -- package.json package-lock.json`, then commit all reviewed
 dependency and generator changes. Run `./release-audit.sh` only after the
-worktree is clean. Leave `v0.1.0-rc.1` uncreated until its absence is the sole
+worktree is clean. Leave `v1.0.0` uncreated until its absence is the sole
 automated audit failure; tag that exact commit and rerun the audit.
 
 ## Run a source directory with Codex
@@ -115,27 +115,44 @@ cd /path/to/notty
 ./setup-nosh.sh
 ```
 
-The setup command creates both `nosh` and a development `nosh-guard` link,
-records their absolute locations, and prints the separate reviewed host-Guard
-installation recipe when that privileged component is absent. Use
+The setup command creates the `nosh` and development `nosh-guard` links. Use
 `--bin-dir DIR` to choose another command directory, or invoke
-`/path/to/notty/nosh.sh` directly from any project directory.
+`/path/to/notty/nosh.sh` directly.
 
-Before creating the container, register the Notty MCP service with Codex on
-the **host**:
+Start the project-scoped service in its default authentication mode:
+
+```sh
+cd /path/to/project
+nosh recreate \
+  -p codex \
+  --start-app \
+  --persist \
+  --publish 127.0.0.1:3000
+```
+
+Then register and authenticate from a **host** shell:
 
 ```sh
 codex mcp add notty --url http://127.0.0.1:3000/mcp
 codex mcp get notty
+codex mcp login notty
 ```
 
-Run `codex mcp add` only once for that name. If `notty` is already registered,
-use `codex mcp get notty` to check its URL. The host-side step matters because
-Nosh projects the host Codex configuration into the container and mounts
-`config.toml` read-only. Do not try to update the persistent Codex MCP
-configuration from inside the container.
+The login command opens the browser authorization-code flow. Enter the Basic
+credential printed by Nosh, review the requested `mcp:tools` scope and exact
+`/mcp` resource, and choose Allow or Deny. Codex performs DCR and PKCE and
+stores its refreshable client authorization on the host. Do not run `codex mcp
+login` inside the container; this project does not support container-initiated
+browser callbacks.
 
-Now change to any source directory and recreate its project-scoped container:
+Start Codex on the host and use `/mcp` to confirm that `notty` connected. Nosh
+also prints one spawn OTP. Submit it only as the MCP tool's `otp` argument when
+creating a terminal. It is consumed once even if PTY creation subsequently
+fails; never put it in an Authorization header, URL, cookie, config file,
+browser storage, prompt file, or shell history.
+
+For credentialless MCP on a trusted workstation, use the explicit OTP-only
+mode instead:
 
 ```sh
 cd /path/to/project
@@ -144,59 +161,46 @@ nosh recreate \
   --start-app \
   --persist \
   --publish 127.0.0.1:3000 \
-  --noauth
-```
+  --no-otp-auth
 
-This mounts the current directory at the same absolute path, starts Notty,
-keeps the container after the initial shell exits, and publishes only to host
-loopback. `--noauth` disables HTTP Basic authentication completely. Use this
-combination only for development on a trusted workstation; never change the
-publish address to a LAN or public interface while authentication is disabled.
-The loopback publish limits the host-facing port, but it does not isolate
-Notty from other containers that can reach the same Docker bridge.
-
-Legacy Nosh currently mounts several host tool and credential directories
-even when only `-p codex` is selected, and every process in the container uses
-the same Unix identity. Use this workflow only with agents, workspace code,
-and dependencies you trust. Guarded mode removes those credential mounts, but
-it does not yet have the broker needed to authenticate hosted agents.
-
-From the shell opened by Nosh, verify the projected registration and start
-Codex:
-
-```sh
+codex mcp add notty --url http://127.0.0.1:3000/mcp
 codex mcp get notty
-codex
 ```
 
-The browser interface is at <http://127.0.0.1:3000/>. A Codex process started
-from another host terminal can also reach the published MCP endpoint. That
-Codex process still runs on the host and is not isolated by the Nosh
-container; only its Notty MCP operations target terminals in the container.
+Do not run `codex mcp login` and do not configure an Authorization header in
+this mode. Listing and other non-spawn tools are unauthenticated; spawning is
+still fail-closed and requires the launcher OTP. `--no-otp-auth` is accepted
+only with loopback listener/public-origin configuration, cannot be combined
+with `--no-otp`, disables HTTP OTP minting, and is rejected in Guard mode.
 
-From a host shell, verify that the service is live and exposes its tool
-catalog:
+Mint another OTP locally after the launcher's value has been consumed:
 
 ```sh
-curl --fail --silent --show-error \
-  --retry 10 \
-  --retry-delay 1 \
-  --retry-connrefused \
-  http://127.0.0.1:3000/api/mcp/tools >/dev/null &&
-  echo 'Notty tool catalog is reachable'
+cd /path/to/project
+nosh auth otp
 ```
 
-`codex mcp get notty` verifies only the stored configuration. In the Codex
-TUI, use `/mcp` to confirm that `notty` connected, then ask Codex to call
-Notty's read-only `list_terminals` tool. Do not treat the setup as connected
-until that live tool call succeeds.
+The command stores only the hash and lifecycle record in persistent state and
+shows the new plaintext once.
 
-Nosh prints a generated spawn OTP separately. It is needed only for the
-protected `spawn_terminal` tool and is single-use. In the current legacy
-handoff, give it only to the requesting agent immediately before that tool
-call; doing so exposes it to that agent and process until it is consumed. Do
-not save an OTP in `config.toml`, a reusable prompt file, shell history, or
-this document.
+The default and OTP-only workflows both keep authentication/OTP state outside
+the container at
+`${XDG_STATE_HOME:-$HOME/.local/state}/notty/auth/<workspace-id>`. Recreating a
+container does not resurrect a consumed OTP. To invalidate every registered
+client, grant, token, and OTP for the current workspace, run:
+
+```sh
+cd /path/to/project
+nosh auth reset
+```
+
+Guard runners use the daemon's separate root-owned state tree. Reset the
+derived workspace database through its management socket (or add `--dry-run`
+to preview the delegation):
+
+```sh
+sudo ./nosh.sh auth reset --secure --workdir /absolute/path/to/project
+```
 
 Run lifecycle commands from the same project directory so Nosh resolves the
 same directory-derived container name:

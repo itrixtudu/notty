@@ -10,7 +10,7 @@ usage() {
     cat <<'USAGE'
 usage:
   agents/bin/create_agent.sh <name> [role]
-  agents/bin/create_agent.sh [--agent <name>] --role <role> [--harness codex|agy|claude] [--backend default|ollama] [--model <model>] [--think <level>] [--spawn-otp <value>]
+  agents/bin/create_agent.sh [--agent <name>] --role <role> [--harness codex|agy|claude] [--backend default|ollama] [--model <model>] [--think <level>]
 
 notes:
   - launches a detached tmux session named <name>
@@ -20,7 +20,6 @@ notes:
   - COLLAB_HARNESS and COLLAB_BACKEND mirror the canonical flags; COLLAB_RUNTIME remains compatible
   - Ollama is supported only with Codex and requires --model
   - --think sets Codex reasoning effort or Agy/Claude --effort
-  - --spawn-otp exposes one single-use terminal OTP to the agent as MCP_SPAWN_OTP
   - model names containing spaces must be passed as one quoted argument
   - Nosh defaults Codex and Ollama to full access; set NOTTY_COLLAB_UNSANDBOXED=false for workspace-write
   - Agy and Claude stay sandboxed by the Nosh default; explicit NOTTY_COLLAB_UNSANDBOXED=true unsandboxes all agents
@@ -53,7 +52,6 @@ BACKEND=''
 RUNTIME=''
 MODEL="${COLLAB_MODEL:-}"
 THINK="${COLLAB_THINK:-}"
-SPAWN_OTP="${COLLAB_AGENT_SPAWN_OTP:-}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -117,14 +115,6 @@ while [[ $# -gt 0 ]]; do
                 THINK='true'
                 shift
             fi
-            ;;
-        --spawn-otp|--otp)
-            [[ $# -ge 2 && -n "$2" && "$2" != --* ]] || {
-                printf 'create_agent.sh: %s requires a value\n' "$1" >&2
-                exit 1
-            }
-            SPAWN_OTP="$2"
-            shift 2
             ;;
         --)
             shift

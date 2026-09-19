@@ -10,6 +10,8 @@ import {
   waitForCanvasReadbackInput
 } from '../lib/canvasReadbackGate.js';
 import { resolveTerminalWsUrl } from '../lib/terminalWs.js';
+import { terminalSnapshot, terminalSnapshotStyle } from '../lib/terminalSnapshot.cjs';
+import { copyTerminalText } from '../lib/terminalClipboard.js';
 
 export default function XtermRenderer({
   sessionId,
@@ -23,8 +25,25 @@ export default function XtermRenderer({
   autoFocus = true,
   updateDocumentTitle = true,
   onConnectionStatus,
-  onSelectionChange
+  onSelectionChange,
+  headerActions,
+  copyControls = false,
+  transcriptControl = false
 }) {
+  const [snapshot, setSnapshot] = useState(null);
+  const [copyNote, setCopyNote] = useState('');
+  const selectionRef = useRef(null);
+  const selectButtonRef = useRef(null);
+  const closeSelection = () => {
+    setSnapshot(null);
+    selectButtonRef.current?.focus();
+  };
+  const copyText = async (all) => {
+    const field = selectionRef.current;
+    if (!field) return;
+    const note = await copyTerminalText(field, all, navigator.clipboard, document);
+    if (selectionRef.current === field) setCopyNote(note);
+  };
   const [status, setStatus] = useState('idle');
   const [statusNote, setStatusNote] = useState('');
   const [dimensions, setDimensions] = useState({ cols: 80, rows: 24 });
@@ -59,6 +78,8 @@ export default function XtermRenderer({
 
   useEffect(() => {
     setTerminalTitle('');
+    setSnapshot(null);
+    setCopyNote('');
   }, [sessionId]);
 
   useEffect(() => {
@@ -476,6 +497,23 @@ export default function XtermRenderer({
             >
               <RefreshCw size={14} aria-hidden="true" />
             </button>
+            {headerActions}
+            {transcriptControl && <button type="button" disabled={status !== 'connected' || Boolean(snapshot)}
+              title="Send Ctrl+T to toggle the Codex transcript" onClick={() => {
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(JSON.stringify({ type: 'input', data: '\u0014' }));
+                }
+              }}>Transcript</button>}
+            {copyControls && <button type="button" ref={selectButtonRef} disabled={!terminalRef.current}
+              onClick={() => {
+                setCopyNote('');
+                const terminal = terminalRef.current;
+                setSnapshot({
+                  ...terminalSnapshot(terminal.buffer.active),
+                  style: terminalSnapshotStyle(terminal.options,
+                    terminal.element?.querySelector('.xterm-screen')?.clientHeight, terminal.rows),
+                });
+              }}>Select text / Copy</button>}
           </div>
         </header>
       )}
@@ -484,7 +522,24 @@ export default function XtermRenderer({
         className="terminal-output xterm-wrapper"
         ref={containerRef}
         onClick={focusTerminal}
+        inert={snapshot ? true : undefined}
       />
+
+      {snapshot && <section className="terminal-selection" data-terminal-selection="true"
+        aria-label="Terminal text selection" onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === 'Escape') { event.preventDefault(); closeSelection(); }
+        }}>
+        <div className="terminal-selection-actions">
+          <span>Displayed buffer and scrollback only.{snapshot.truncated ? ' Truncated to the most recent available text.' : ''}</span>
+          <button type="button" onClick={() => copyText(false)}>Copy selection</button>
+          <button type="button" onClick={() => copyText(true)}>Copy all</button>
+          <button type="button" onClick={closeSelection}>Return to terminal</button>
+        </div>
+        <textarea autoFocus ref={selectionRef} readOnly value={snapshot.text}
+          style={snapshot.style} wrap="off" spellCheck={false} aria-label="Selectable terminal text" />
+        <span role="status">{copyNote}</span>
+      </section>}
 
       {showChrome && (
         <footer className="terminal-footer">

@@ -1,9 +1,8 @@
-gpt-5.6-sol                    Latest frontier agentic coding model.
-gpt-5.3-codex-spark            Ultra-fast coding model.
-gpt-5.3-codex                  Frontier Codex-optimized agentic coding model.
-gpt-5.2-codex                  Frontier agentic coding model.
-
-gpt-5.2                        Optimized for professional work and long-running agents
-gpt-5.1-codex-max              Codex-optimized model for deep and fast reasoning.
-gpt-5.1-codex-mini             Optimized for codex. Cheaper, faster, but less capable.
-
+gpt-6-astra                   Our most capable model for complex, demanding work.
+gpt-5.6-sol                   Reliable agentic workhorse for everyday tasks.
+gpt-5.6-terra                 Balanced agentic coding model for everyday work.
+gpt-5.6-luna                  Fast and affordable agentic coding model.
+gpt-daybreak-blue-latest      Latest frontier agentic coding model for broad defensive cybersecurity work.
+gpt-5.5                      Proven previous-generation model for coding and general work.
+gpt-5.4-mini                 Small, fast, and cost-efficient model for simpler coding tasks.
+gpt-5.3-codex-spark           Ultra-fast coding model.

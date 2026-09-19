@@ -26,7 +26,6 @@ function consumeToken(args) {
   let token =
     process.env.MCP_BEARER_TOKEN ||
     process.env.MCP_TOKEN ||
-    process.env.NOTTY_OAUTH_BOOT_TOKEN ||
     null;
 
   for (let i = 0; i < args.length; i += 1) {
@@ -97,6 +96,9 @@ function normalizeHttpUrl(rawUrl) {
   if (!['http:', 'https:'].includes(parsed.protocol)) {
     throw new Error(`Unsupported protocol "${parsed.protocol}". Use http:// or https://.`);
   }
+  if (parsed.searchParams.has('access_token')) {
+    throw new Error('Bearer tokens must use the Authorization header, not the URL query string.');
+  }
 
   return parsed;
 }
@@ -106,10 +108,6 @@ function buildSseUrl(baseUrl) {
   if (!parsed.pathname || parsed.pathname === '/') {
     parsed.pathname = '/sse';
   }
-  if (TOKEN && !parsed.searchParams.has('access_token')) {
-    parsed.searchParams.set('access_token', TOKEN);
-  }
-
   return parsed;
 }
 

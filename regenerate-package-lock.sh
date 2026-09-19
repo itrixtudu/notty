@@ -532,7 +532,7 @@ Next steps:
   2. Commit the reviewed manifest, lockfile, generator, tests, and docs.
   3. Run: ./release-audit.sh
   4. Resolve every remaining automated and applicable manual gate.
-  5. Create v0.1.0-rc.1 only when the missing tag is the sole automated failure.
+  5. Create v1.0.0 only when the missing tag is the sole automated failure.
   6. Rerun ./release-audit.sh against that exact tagged commit.
 
 No commit, release audit, or tag was created automatically.

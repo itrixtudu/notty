@@ -47,12 +47,14 @@ function createHarness(t) {
   const tmuxState = path.join(root, 'tmux-state');
   const runtimeLog = path.join(root, 'runtime.log');
   const tmuxLog = path.join(root, 'tmux.log');
+  const tmuxEnvironmentLog = path.join(root, 'tmux-environment.log');
   const ollamaRuntimeDir = path.join(root, 'runtime');
   fs.mkdirSync(workspace, { recursive: true });
   fs.mkdirSync(binDir, { recursive: true });
   fs.mkdirSync(tmuxState, { recursive: true });
   fs.writeFileSync(runtimeLog, '', 'utf8');
   fs.writeFileSync(tmuxLog, '', 'utf8');
+  fs.writeFileSync(tmuxEnvironmentLog, '', 'utf8');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const fakeTmux = path.join(binDir, 'tmux');
@@ -69,7 +71,31 @@ function createHarness(t) {
     "  const state = path.join(process.env.TMUX_STATE, args[index + 1]);",
     '  process.exit(fs.existsSync(state) ? 0 : 1);',
     '}',
+    "if (args.includes('show-environment')) {",
+    "  process.stdout.write('NOTTY_OAUTH_STALE=old-token\\nNOTTY_BASIC_AUTH_STALE=old-secret\\n');",
+    '  process.exit(0);',
+    '}',
     "if (!args.includes('new-session')) process.exit(0);",
+    "const environmentNames = [",
+    "  'TMUX_ENV_CANARY',",
+    "  'AUTHORIZATION',",
+    "  'HTTP_AUTHORIZATION',",
+    "  'MCP_BEARER_TOKEN',",
+    "  'MCP_SPAWN_OTP',",
+    "  'NOTTY_AUTH_STATE_DIR',",
+    "  'NOTTY_BASIC_AUTH_PASSWORD',",
+    "  'NOTTY_GUARD_MTLS',",
+    "  'NOTTY_LOOPBACK_PUBLICATION',",
+    "  'NOTTY_MCP_SPAWN_OTP',",
+    "  'NOTTY_MCP_SPAWN_OTP_ENABLED',",
+    "  'NOTTY_MCP_SPAWN_OTP_TTL_SECONDS',",
+    "  'NOTTY_OAUTH_ACCESS_TOKEN',",
+    "  'NOTTY_WORKSPACE_ID',",
+    "];",
+    "const environment = Object.fromEntries(environmentNames",
+    "  .filter((name) => Object.hasOwn(process.env, name))",
+    "  .map((name) => [name, process.env[name]]));",
+    "fs.appendFileSync(process.env.TMUX_ENV_LOG, `${JSON.stringify(environment)}\\n`);",
     "if (process.env.FAKE_TMUX_NEW_SESSION_FAIL === '1') {",
     "  process.stderr.write('forced tmux launch failure\\n');",
     '  process.exit(42);',
@@ -179,6 +205,7 @@ function createHarness(t) {
     SWARM_OLLAMA_RUNTIME_DIR: ollamaRuntimeDir,
     SWARM_STARTUP_PROBE_DELAY: '0',
     TMUX_LOG: tmuxLog,
+    TMUX_ENV_LOG: tmuxEnvironmentLog,
     TMUX_STATE: tmuxState,
   });
 
@@ -186,6 +213,7 @@ function createHarness(t) {
     env,
     root,
     runtimeLog,
+    tmuxEnvironmentLog,
     tmuxLog,
     tmuxState,
     ollamaRuntimeDir,
@@ -206,6 +234,63 @@ function createHarness(t) {
     },
   };
 }
+
+test('tmux server launch does not inherit server authentication or spawn OTP secrets', (t) => {
+  const harness = createHarness(t);
+  const result = harness.run([
+    '--agent', 'sanitized-tmux',
+    '--harness', 'codex',
+    '--backend', 'default',
+  ], {
+    env: {
+      AUTHORIZATION: 'Bearer authorization-secret',
+      HTTP_AUTHORIZATION: 'Basic header-secret',
+      MCP_BEARER_TOKEN: 'mcp-bearer-secret',
+      MCP_SPAWN_OTP: 'legacy-otp-secret',
+      NOTTY_AUTH_STATE_DIR: '/secret/auth-state',
+      NOTTY_BASIC_AUTH_PASSWORD: 'basic-secret',
+      NOTTY_GUARD_MTLS: 'true',
+      NOTTY_GUARD_GATEWAY_PEER_IP: '10.240.9.2',
+      NOTTY_LOOPBACK_PUBLICATION: 'true',
+      NOTTY_MCP_SPAWN_OTP: 'launcher-otp-secret',
+      NOTTY_MCP_SPAWN_OTP_ENABLED: 'true',
+      NOTTY_MCP_SPAWN_OTP_TTL_SECONDS: '3600',
+      NOTTY_OAUTH_ACCESS_TOKEN: 'oauth-secret',
+      NOTTY_WORKSPACE_ID: 'workspace-secret',
+      TMUX_ENV_CANARY: 'preserved',
+    },
+  });
+
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const [environment] = readJsonLines(harness.tmuxEnvironmentLog);
+  assert.equal(environment.TMUX_ENV_CANARY, 'preserved');
+  for (const name of [
+    'AUTHORIZATION',
+    'HTTP_AUTHORIZATION',
+    'MCP_BEARER_TOKEN',
+    'MCP_SPAWN_OTP',
+    'NOTTY_AUTH_STATE_DIR',
+    'NOTTY_BASIC_AUTH_PASSWORD',
+    'NOTTY_GUARD_MTLS',
+    'NOTTY_GUARD_GATEWAY_PEER_IP',
+    'NOTTY_LOOPBACK_PUBLICATION',
+    'NOTTY_MCP_SPAWN_OTP',
+    'NOTTY_MCP_SPAWN_OTP_ENABLED',
+    'NOTTY_MCP_SPAWN_OTP_TTL_SECONDS',
+    'NOTTY_OAUTH_ACCESS_TOKEN',
+    'NOTTY_WORKSPACE_ID',
+  ]) {
+    assert.equal(Object.hasOwn(environment, name), false, `${name} reached tmux`);
+  }
+  const tmuxCalls = readJsonLines(harness.tmuxLog);
+  for (const staleName of ['NOTTY_OAUTH_STALE', 'NOTTY_BASIC_AUTH_STALE']) {
+    assert.equal(tmuxCalls.some((args) => (
+      args.includes('set-environment')
+      && args.includes('-gu')
+      && args.includes(staleName)
+    )), true, `${staleName} was not removed from the tmux global environment`);
+  }
+});
 
 test('canonical Codex/Ollama launch exports canonical and legacy identity', (t) => {
   const harness = createHarness(t);

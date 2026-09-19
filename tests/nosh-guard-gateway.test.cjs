@@ -10,6 +10,7 @@ const test = require('node:test');
 const { pathToFileURL } = require('node:url');
 
 const appRoot = path.resolve(__dirname, '..');
+const GATEWAY_TOKEN = 'g'.repeat(43);
 
 async function importModule(relativePath) {
   return import(pathToFileURL(path.join(appRoot, relativePath)).href);
@@ -118,11 +119,13 @@ test('TLS gateway strips spoofed proxy controls and injects canonical values', a
       'x-original-url': '/admin',
       'x-nosh-guard-principal': 'spoofed',
       'x-nosh-guard-upstream-run': 'spoofed-run',
+      'x-nosh-guard-gateway-token': 'spoofed-token',
       'sec-fetch-site': 'cross-site',
     },
     { id: 'reviewed-principal', agentId: 'coding-agent' },
     { runId: 'run-exact' },
     'https://guard.example:3443',
+    GATEWAY_TOKEN,
   );
 
   assert.equal(headers.host, 'guard.example:3443');
@@ -135,6 +138,7 @@ test('TLS gateway strips spoofed proxy controls and injects canonical values', a
   assert.equal(headers['x-nosh-guard-principal'], 'reviewed-principal');
   assert.equal(headers['x-nosh-guard-agent'], 'coding-agent');
   assert.equal(headers['x-nosh-guard-upstream-run'], 'run-exact');
+  assert.equal(headers['x-nosh-guard-gateway-token'], GATEWAY_TOKEN);
   for (const stripped of [
     'connection',
     'forwarded',
@@ -174,6 +178,7 @@ test('both proxy hops enforce Host, Origin, and exact run-owned forwarding', asy
     { id: 'principal-one', agentId: 'agent-one' },
     { runId: 'run-one' },
     publicOrigin,
+    GATEWAY_TOKEN,
   );
   validatePublicRequestHeaders(outer, publicOrigin, {
     requireForwarded: true,
@@ -182,8 +187,9 @@ test('both proxy hops enforce Host, Origin, and exact run-owned forwarding', asy
     runId: 'run-one',
     publicOrigin,
   });
-  assert.equal(inner['x-nosh-guard-upstream-run'], undefined);
+  assert.equal(inner['x-nosh-guard-upstream-run'], 'run-one');
   assert.equal(inner['x-nosh-guard-principal'], 'principal-one');
+  assert.equal(inner['x-nosh-guard-gateway-token'], GATEWAY_TOKEN);
 
   for (const badHeaders of [
     { ...request.headers, host: 'attacker.example' },
@@ -226,6 +232,170 @@ test('both proxy hops enforce Host, Origin, and exact run-owned forwarding', asy
   );
 });
 
+test('runner proxy identity requires the exact run and gateway capability headers', async () => {
+  const { proxyIdentityHeaders } = await importModule(
+    'scripts/nosh-guard-egress-gateway.mjs',
+  );
+  const headers = {
+    'x-nosh-guard-principal': 'principal-one',
+    'x-nosh-guard-agent': 'agent-one',
+    'x-nosh-guard-upstream-run': 'run-one',
+    'x-nosh-guard-gateway-token': GATEWAY_TOKEN,
+  };
+  assert.deepEqual(proxyIdentityHeaders(headers), headers);
+  for (const mutation of [
+    { 'x-nosh-guard-principal': 'bad principal' },
+    { 'x-nosh-guard-upstream-run': 'bad/run' },
+    { 'x-nosh-guard-gateway-token': undefined },
+    { 'x-nosh-guard-gateway-token': 'short' },
+  ]) {
+    assert.throws(
+      () => proxyIdentityHeaders({ ...headers, ...mutation }),
+      /identity headers are invalid/,
+    );
+  }
+});
+
+test('runner HTTP and WebSocket Guard authentication require the exact peer and token', async () => {
+  const {
+    authenticateGuardGatewayRequest,
+    guardGatewayMiddleware,
+    isGuardOtpMintRequestAuthorized,
+    normalizeGuardGatewayPeerIp,
+  } = await importModule('lib/guardGatewayAuth.js');
+  const gatewayPeerIp = '10.240.9.2';
+  const env = {
+    NOTTY_GUARD_MTLS: 'true',
+    NOTTY_GUARD_GATEWAY_PEER_IP: gatewayPeerIp,
+    NOTTY_GUARD_GATEWAY_TOKEN: GATEWAY_TOKEN,
+  };
+  const headers = {
+    'x-nosh-guard-principal': 'principal-one',
+    'x-nosh-guard-agent': '',
+    'x-nosh-guard-upstream-run': 'run-one',
+    'x-nosh-guard-gateway-token': GATEWAY_TOKEN,
+  };
+  assert.deepEqual(authenticateGuardGatewayRequest({
+    headers: {},
+    socket: { remoteAddress: gatewayPeerIp },
+  }, env), {
+    ok: false,
+    guard: true,
+    code: 'guard_gateway_auth_required',
+  });
+  const authenticated = authenticateGuardGatewayRequest({
+    headers,
+    socket: { remoteAddress: gatewayPeerIp },
+  }, env);
+  assert.equal(authenticated.ok, true);
+  assert.deepEqual(authenticated.principal, {
+    kind: 'guard-mtls',
+    clientId: 'run-one',
+    subject: 'principal-one',
+    scope: '',
+    resource: '',
+    runId: 'run-one',
+    agentId: null,
+  });
+  assert.equal(
+    isGuardOtpMintRequestAuthorized(
+      {
+        headers,
+        socket: { remoteAddress: gatewayPeerIp },
+        nottyAuthPrincipal: authenticated.principal,
+      },
+      env,
+    ),
+    true,
+  );
+  const agentHeaders = { ...headers, 'x-nosh-guard-agent': 'agent-one' };
+  const agent = authenticateGuardGatewayRequest({
+    headers: agentHeaders,
+    socket: { remoteAddress: gatewayPeerIp },
+  }, env);
+  assert.equal(agent.ok, true);
+  assert.equal(
+    isGuardOtpMintRequestAuthorized(
+      { headers: agentHeaders, nottyAuthPrincipal: agent.principal },
+      env,
+    ),
+    false,
+  );
+
+  assert.equal(
+    normalizeGuardGatewayPeerIp('::ffff:10.240.9.2'),
+    gatewayPeerIp,
+  );
+  assert.equal(
+    normalizeGuardGatewayPeerIp('2001:0db8:0:0:0:0:0:2'),
+    '2001:db8::2',
+  );
+  const websocketUpgrade = authenticateGuardGatewayRequest({
+    headers: agentHeaders,
+    socket: { remoteAddress: '::ffff:10.240.9.2' },
+  }, env);
+  assert.equal(websocketUpgrade.ok, true);
+  assert.equal(websocketUpgrade.principal.agentId, 'agent-one');
+
+  for (const request of [
+    { headers },
+    { headers, socket: { remoteAddress: '10.240.9.1' } },
+    { headers, socket: { remoteAddress: 'not-an-ip' } },
+    {
+      headers: { ...headers, 'x-nosh-guard-gateway-token': 'x'.repeat(43) },
+      socket: { remoteAddress: gatewayPeerIp },
+    },
+  ]) {
+    assert.deepEqual(authenticateGuardGatewayRequest(request, env), {
+      ok: false,
+      guard: true,
+      code: 'guard_gateway_auth_required',
+    });
+  }
+
+  for (const invalidEnvironment of [
+    { ...env, NOTTY_GUARD_GATEWAY_PEER_IP: undefined },
+    { ...env, NOTTY_GUARD_GATEWAY_PEER_IP: '10.240.9.2 ' },
+    { ...env, NOTTY_GUARD_GATEWAY_PEER_IP: 'gateway.internal' },
+    { ...env, NOTTY_GUARD_GATEWAY_TOKEN: 'too-short' },
+  ]) {
+    assert.deepEqual(authenticateGuardGatewayRequest({
+      headers,
+      socket: { remoteAddress: gatewayPeerIp },
+    }, invalidEnvironment), {
+      ok: false,
+      guard: true,
+      code: 'guard_gateway_configuration_invalid',
+    });
+  }
+
+  let middlewareStatus = null;
+  let middlewareBody = null;
+  let nextCalled = false;
+  guardGatewayMiddleware({
+    NOTTY_GUARD_MTLS: 'true',
+    NOTTY_GUARD_GATEWAY_TOKEN: GATEWAY_TOKEN,
+  })(
+    { headers, socket: { remoteAddress: gatewayPeerIp } },
+    {
+      status(value) {
+        middlewareStatus = value;
+        return this;
+      },
+      json(value) {
+        middlewareBody = value;
+      },
+    },
+    () => { nextCalled = true; },
+  );
+  assert.equal(nextCalled, false);
+  assert.equal(middlewareStatus, 503);
+  assert.equal(
+    middlewareBody.error.code,
+    'guard_gateway_configuration_invalid',
+  );
+});
+
 test('WebSocket handshake metadata survives both guarded proxy hops', async () => {
   const { validatePublicRequestHeaders } = await importModule(
     'lib/guardd/proxy-contract.js',
@@ -248,6 +418,7 @@ test('WebSocket handshake metadata survives both guarded proxy hops', async () =
     { id: 'principal-one', agentId: 'agent-one' },
     { runId: 'run-one' },
     publicOrigin,
+    GATEWAY_TOKEN,
   );
   outer.connection = 'Upgrade';
   outer.upgrade = 'websocket';
@@ -269,6 +440,8 @@ test('WebSocket handshake metadata survives both guarded proxy hops', async () =
   assert.equal(inner['sec-websocket-key'], 'dGhlIHNhbXBsZSBub25jZQ==');
   assert.equal(inner['sec-websocket-version'], '13');
   assert.equal(inner['sec-websocket-protocol'], 'notty.v1');
+  assert.equal(inner['x-nosh-guard-upstream-run'], 'run-one');
+  assert.equal(inner['x-nosh-guard-gateway-token'], GATEWAY_TOKEN);
 });
 
 test('runner public environment advertises the guarded HTTPS and WSS endpoint', async () => {
@@ -279,11 +452,122 @@ test('runner public environment advertises the guarded HTTPS and WSS endpoint', 
     runnerPublicEnvironment('https://guard.example:3443'),
     {
       ALLOWED_ORIGIN: 'https://guard.example:3443',
+      NOTTY_PUBLIC_ORIGIN: 'https://guard.example:3443',
       NOTTY_PUBLIC_HOST: 'guard.example',
       NOTTY_PUBLIC_WS_URL: 'wss://guard.example:3443/ws/terminals',
       NOTTY_TRUSTED_HOSTS: 'guard.example',
     },
   );
+});
+
+test('Guard service derives stable run-scoped gateway capabilities', async () => {
+  const { GuardService } = await importModule('lib/guardd/service.js');
+  const dependencies = {
+    docker: {},
+    store: { root: '/unused' },
+    adapters: {},
+    egress: {},
+    scopedEgress: {},
+    ebpfActivations: {},
+  };
+  const service = new GuardService({
+    ...dependencies,
+    guardGatewayKey: 'k'.repeat(43),
+  });
+  const first = service.guardGatewayToken('run-one');
+  assert.match(first, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(service.guardGatewayToken('run-one'), first);
+  assert.notEqual(service.guardGatewayToken('run-two'), first);
+  assert.equal(service.guardGatewayToken(''), null);
+  assert.throws(
+    () => new GuardService({
+      ...dependencies,
+      guardGatewayKey: 'not-a-256-bit-key',
+    }),
+    /256-bit base64url secret/,
+  );
+});
+
+test('HTTP gateway fails closed without a runner token and forbids agent OTP minting', async (t) => {
+  const run = {
+    runId: 'run-live',
+    agentId: 'agent-live',
+    status: 'running',
+    containerId: 'container-live',
+  };
+  let principal = livePrincipal({ allowedPrefixes: ['/sse'] });
+  let tokenAvailable = false;
+  const principalStore = {
+    async findByFingerprint() {
+      return { ...principal };
+    },
+  };
+  const service = {
+    egress: { controlSocketPath: '/unused/runner-proxy.sock' },
+    guardGatewayToken(runId) {
+      return tokenAvailable && runId === run.runId ? GATEWAY_TOKEN : null;
+    },
+    store: {
+      async findRun(runId) {
+        return runId === run.runId ? { ...run } : null;
+      },
+      async listRuns() {
+        return [{ ...run }];
+      },
+    },
+  };
+  const { proxyHttp } = await importModule('lib/guardd/gateway.js');
+  const gateway = http.createServer((request, response) => {
+    request.socket.authorized = true;
+    request.socket.getPeerCertificate = () => ({
+      fingerprint256: principal.certificateFingerprint,
+    });
+    void proxyHttp(
+      request,
+      response,
+      principalStore,
+      service,
+      'https://guard.example:3443',
+    );
+  });
+  const address = await listen(gateway, 0, '127.0.0.1');
+  t.after(() => closeServer(gateway));
+
+  const request = (method, requestPath) => new Promise((resolve, reject) => {
+    const outgoing = http.request({
+      host: '127.0.0.1',
+      port: address.port,
+      method,
+      path: requestPath,
+      headers: {
+        host: 'guard.example:3443',
+        origin: 'https://guard.example:3443',
+      },
+    }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => resolve({
+        statusCode: response.statusCode,
+        body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+      }));
+    });
+    outgoing.once('error', reject);
+    outgoing.end();
+  });
+
+  const missing = await request('GET', '/sse');
+  assert.equal(missing.statusCode, 503);
+  assert.match(missing.body.error.message, /capability is unavailable/);
+
+  tokenAvailable = true;
+  principal = livePrincipal({
+    runId: null,
+    agentId: 'agent-live',
+    allowedPrefixes: ['/api/spawn-otps'],
+  });
+  const forbidden = await request('POST', '/api/spawn-otps');
+  assert.equal(forbidden.statusCode, 403);
+  assert.match(forbidden.body.error.message, /run-bound operator principal/);
 });
 
 test('gateway session monitor enforces an exact expiry timer and bounded polling', async () => {
@@ -370,6 +654,9 @@ test('an existing SSE proxy session closes after principal revocation', async (t
   };
   const service = {
     egress: { controlSocketPath: socketPath },
+    guardGatewayToken(runId) {
+      return runId === run.runId ? GATEWAY_TOKEN : null;
+    },
     store: {
       async findRun(runId) {
         return runId === run.runId ? { ...run } : null;
@@ -469,6 +756,9 @@ test('an existing WebSocket proxy session closes when its bound run stops', asyn
   };
   const service = {
     egress: { controlSocketPath: socketPath },
+    guardGatewayToken(runId) {
+      return runId === run.runId ? GATEWAY_TOKEN : null;
+    },
     store: {
       async findRun(runId) {
         return runId === run.runId ? { ...run } : null;

@@ -1,5 +1,6 @@
 import { getServerForRequest } from '../../../lib/mcpHttpServer.js';
 import { getHttpProtocol, getRequestIpInfo, withLogContext } from '../../../lib/terminalLogging.js';
+import { safeRequestErrorDetails } from '../../../lib/safeRequestError.js';
 
 export const config = {
   api: {
@@ -34,7 +35,7 @@ export default async function handler(req, res) {
       }
     );
   } catch (err) {
-    console.error('[mcp-http] request error:', err);
+    console.error('[mcp-http] request failed:', safeRequestErrorDetails(err));
     if (!res.headersSent) {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json');

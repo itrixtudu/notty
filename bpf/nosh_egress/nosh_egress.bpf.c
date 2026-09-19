@@ -84,12 +84,7 @@ struct nosh_dns_header {
   __be16 additionals;
 };
 
-struct nosh_dns_rr_fixed {
-  __be16 type;
-  __be16 class;
-  __be32 ttl;
-  __be16 data_length;
-};
+#include "include/nosh_egress_dns_wire.h"
 
 struct nosh_packet {
   __u32 network_length;
@@ -107,6 +102,12 @@ struct nosh_packet {
   __u8 address_known;
   __u8 source[16];
   __u8 destination[16];
+};
+
+struct nosh_packet_scratch {
+  __u32 busy;
+  struct nosh_packet packet;
+  struct nosh_egress_dns_tx_key response_key;
 };
 
 struct nosh_dns_name {
@@ -139,6 +140,15 @@ static __always_inline void clear_dns_name(struct nosh_dns_name *name)
   for (index = 0; index < sizeof(*name); index++)
     bytes[index] = 0;
 }
+
+/* Private, unpinned scratch is retained by the packet programs. The busy
+ * guard below protects all per-CPU parser scratch against nested hooks. */
+struct {
+  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+  __uint(max_entries, 1);
+  __type(key, __u32);
+  __type(value, struct nosh_packet_scratch);
+} packet_scratch SEC(".maps");
 
 struct {
   __uint(type, BPF_MAP_TYPE_ARRAY);
@@ -682,7 +692,7 @@ static __always_inline int load_bytes(struct __sk_buff *skb, __u32 offset,
                                      NOSH_EGRESS_HDR_START_NET);
 }
 
-static __always_inline int parse_packet(struct __sk_buff *skb,
+static __noinline int parse_packet(struct __sk_buff *skb,
                                         struct nosh_packet *packet)
 {
   __u8 first = 0;
@@ -977,69 +987,9 @@ static __always_inline int required_ipv6_error(
   return ipv6_address_equal(quoted.source, packet->destination);
 }
 
-static __always_inline int parse_dns_name(struct __sk_buff *skb,
-                                          __u32 *offset,
-                                          struct nosh_dns_name *name)
-{
-  int label_index;
+#include "include/nosh_egress_dns_parse.h"
 
-  clear_dns_name(name);
-#pragma clang loop unroll(disable)
-  for (label_index = 0; label_index < NOSH_EGRESS_DNS_MAX_LABELS;
-       label_index++) {
-    __u8 label_length = 0;
-    int byte_index;
-
-    if (load_bytes(skb, *offset, &label_length, 1) < 0)
-      return -1;
-    *offset += 1;
-    if (!label_length)
-      return name->length ? 0 : -1;
-    if (label_length & 0xc0 || label_length > 63)
-      return -1;
-    if (name->length) {
-      if (name->length >= NOSH_EGRESS_DOMAIN_LEN - 1)
-        return -1;
-      name->bytes[name->length++] = '.';
-    }
-#pragma clang loop unroll(disable)
-    for (byte_index = 0; byte_index < 63; byte_index++) {
-      __u8 byte;
-
-      if (byte_index >= label_length)
-        break;
-      if (name->length >= NOSH_EGRESS_DOMAIN_LEN - 1 ||
-          load_bytes(skb, *offset, &byte, 1) < 0)
-        return -1;
-      *offset += 1;
-      if (byte >= 'A' && byte <= 'Z')
-        byte += 'a' - 'A';
-      if ((byte < 'a' || byte > 'z') &&
-          (byte < '0' || byte > '9') && byte != '-' && byte != '_')
-        return -1;
-      name->bytes[name->length++] = byte;
-    }
-  }
-  return -1;
-}
-
-static __always_inline int dns_name_matches(
-    const struct nosh_dns_name *name,
-    const struct nosh_egress_dns_tx_value *transaction)
-{
-  int index;
-
-  if (name->length != transaction->question_length)
-    return 0;
-#pragma clang loop unroll(disable)
-  for (index = 0; index < NOSH_EGRESS_DOMAIN_LEN; index++) {
-    if (index >= name->length)
-      break;
-    if (name->bytes[index] != transaction->question[index])
-      return 0;
-  }
-  return 1;
-}
+#include "include/nosh_egress_dns_match.h"
 
 static __always_inline int dns_message_offset(
     struct __sk_buff *skb, const struct nosh_packet *packet, __u32 *offset)
@@ -1065,102 +1015,6 @@ static __always_inline int dns_message_offset(
     return -1;
   *offset = packet->payload_offset + 2;
   return 0;
-}
-
-static __always_inline int parse_compressed_dns_name(
-    struct __sk_buff *skb, __u32 message_offset, __u32 message_end,
-    __u32 *offset, struct nosh_dns_name *name)
-{
-  __u32 cursor = *offset;
-  __u32 next = cursor;
-  int jumped = 0;
-  int pointers = 0;
-  int label_index;
-
-  clear_dns_name(name);
-#pragma clang loop unroll(disable)
-  for (label_index = 0; label_index < NOSH_EGRESS_DNS_MAX_LABELS;
-       label_index++) {
-    __u8 length = 0;
-    int byte_index;
-
-    if (cursor >= message_end ||
-        load_bytes(skb, cursor, &length, 1) < 0)
-      return -1;
-    if (!length) {
-      if (!jumped)
-        next = cursor + 1;
-      *offset = next;
-      return name->length ? 0 : -1;
-    }
-    if ((length & 0xc0) == 0xc0) {
-      __u8 second = 0;
-      __u16 pointer;
-
-      if (cursor + 1 >= message_end ||
-          load_bytes(skb, cursor + 1, &second, 1) < 0 || pointers >= 2)
-        return -1;
-      pointer = ((__u16)(length & 0x3f) << 8) | second;
-      if (pointer < NOSH_EGRESS_DNS_HEADER_LEN ||
-          message_offset + pointer >= message_end)
-        return -1;
-      if (!jumped)
-        next = cursor + 2;
-      cursor = message_offset + pointer;
-      jumped = 1;
-      pointers++;
-      continue;
-    }
-    if (length & 0xc0 || length > 63)
-      return -1;
-    cursor++;
-    if ((__u32)length > message_end - cursor)
-      return -1;
-    if (name->length) {
-      if (name->length >= NOSH_EGRESS_DOMAIN_LEN - 1)
-        return -1;
-      name->bytes[name->length++] = '.';
-    }
-#pragma clang loop unroll(disable)
-    for (byte_index = 0; byte_index < 63; byte_index++) {
-      __u8 byte;
-
-      if (byte_index >= length)
-        break;
-      if (name->length >= NOSH_EGRESS_DOMAIN_LEN - 1 ||
-          load_bytes(skb, cursor, &byte, 1) < 0)
-        return -1;
-      cursor++;
-      if (byte >= 'A' && byte <= 'Z')
-        byte += 'a' - 'A';
-      if ((byte < 'a' || byte > 'z') &&
-          (byte < '0' || byte > '9') && byte != '-' && byte != '_')
-        return -1;
-      name->bytes[name->length++] = byte;
-    }
-    if (!jumped)
-      next = cursor;
-  }
-  return -1;
-}
-
-static __always_inline int dns_name_matches_alias(
-    const struct nosh_dns_name *name,
-    const struct nosh_egress_dns_tx_value *transaction)
-{
-  int index;
-
-  if (!transaction->alias_length ||
-      name->length != transaction->alias_length)
-    return 0;
-#pragma clang loop unroll(disable)
-  for (index = 0; index < NOSH_EGRESS_DOMAIN_LEN; index++) {
-    if (index >= name->length)
-      break;
-    if (name->bytes[index] != transaction->alias[index])
-      return 0;
-  }
-  return 1;
 }
 
 /* Return the suffix length only when the query has one non-empty first label. */
@@ -1195,15 +1049,21 @@ static __always_inline int collect_domain_rules(
   int slot;
   int index;
 
-  if (!name_length)
+  if (!name_length || name_length >= NOSH_EGRESS_DOMAIN_LEN)
     return 0;
   __builtin_memset(key, 0, sizeof(*key));
   key->generation = generation;
 #pragma clang loop unroll(disable)
   for (index = 0; index < NOSH_EGRESS_DOMAIN_LEN; index++) {
+    __u32 reverse_index;
+
     if (index >= name_length)
       break;
-    key->reversed_name[index] = name[name_length - index - 1];
+    reverse_index = (__u32)name_length - (__u32)index;
+    if (!reverse_index)
+      return 0;
+    reverse_index--;
+    key->reversed_name[index] = name[reverse_index];
   }
   key->prefixlen = 64 + (__u32)name_length * 8;
   key->wildcard = 0;
@@ -1479,13 +1339,61 @@ static __always_inline void emit_dns_answer_record(
               record_type, NULL);
 }
 
+#include "include/nosh_egress_dns_grant.h"
+#include "include/nosh_egress_dns_commit.h"
+#include "include/nosh_egress_dns_stage.h"
+
+struct nosh_dns_response_record {
+  __u64 expires;
+  __u32 metadata;
+  __u32 rule;
+  __u32 packet_length;
+};
+
+__noinline int dns_response_rejection(
+    const struct nosh_egress_config *config, const struct nosh_packet *packet,
+    __u32 metadata, __u32 packet_length)
+{
+  if (!config || !packet)
+    return 0;
+  __u8 hook = metadata >> 8;
+  __u8 reason = metadata;
+  if (reason == NOSH_EGRESS_REASON_CONFIG_INVALID)
+    return force_deny(config, hook, packet->family, packet->protocol,
+        packet->source_port, packet->destination_port, packet->source,
+        packet->destination, reason, 0, packet_length);
+  return coverage_decision(config, hook, packet->family, packet->protocol,
+      packet->source_port, packet->destination_port, packet->source,
+      packet->destination, reason, packet_length);
+}
+
+__noinline int record_dns_response(
+    const struct nosh_egress_config *config, const struct nosh_packet *packet,
+    const struct nosh_dns_name *question,
+    const struct nosh_dns_response_record *record)
+{
+  if (!config || !packet || !question || !record)
+    return -1;
+  emit_event(config, record->metadata >> 16, packet->family, packet->protocol,
+      packet->source_port, packet->destination_port, packet->source,
+      packet->destination, NOSH_EGRESS_VERDICT_ALLOW, record->metadata >> 24,
+      record->rule, record->packet_length, record->metadata, question, record->expires);
+  return 0;
+}
+
 static __noinline int handle_dns_response(
     struct __sk_buff *skb, const struct nosh_egress_config *config,
     const struct nosh_packet *packet, __u8 hook, __u32 dns_offset)
 {
+  union {
+    struct nosh_dns_stage_context stage;
+    struct nosh_dns_commit_context commit;
+    struct nosh_dns_response_record record;
+  } work;
   struct nosh_dns_header header = {};
   struct nosh_dns_name *question;
-  struct nosh_egress_dns_tx_key key = {};
+  struct nosh_egress_dns_tx_key *key;
+  struct nosh_packet_scratch *packet_storage;
   struct nosh_egress_dns_tx_value *transaction;
   struct nosh_egress_dns_tx_value *name_storage;
   struct nosh_egress_dns_response_scratch *scratch;
@@ -1496,23 +1404,22 @@ static __noinline int handle_dns_response(
   __u16 answers;
   __u16 flags;
   __u16 txid;
-  int answer_index;
-  int rule_slot;
   int grants = 0;
   int response_valid = 1;
   __u8 response_gap_reason = NOSH_EGRESS_REASON_PARSE_ERROR;
   __u32 message_end = packet->payload_offset + packet->payload_length;
 
   name_storage = bpf_map_lookup_elem(&dns_transaction_scratch, &scratch_key);
-  if (!name_storage) {
+  packet_storage = bpf_map_lookup_elem(&packet_scratch, &scratch_key);
+  if (!name_storage || !packet_storage) {
     increment_stat(NOSH_EGRESS_STAT_CONFIG_INVALID);
-    return force_deny(config, hook, packet->family, packet->protocol,
-                      packet->source_port, packet->destination_port,
-                      packet->source, packet->destination,
-                      NOSH_EGRESS_REASON_CONFIG_INVALID, 0, skb->len);
+    return dns_response_rejection(config, packet,
+        ((__u32)hook << 8) | NOSH_EGRESS_REASON_CONFIG_INVALID, skb->len) == 1;
   }
   /* The per-CPU transaction scratch is not the live transaction map value. */
   question = (struct nosh_dns_name *)name_storage;
+  key = &packet_storage->response_key;
+  __builtin_memset(key, 0, sizeof(*key));
 
   if (load_bytes(skb, dns_offset, &header, sizeof(header)) < 0)
     goto response_parse_error;
@@ -1528,13 +1435,13 @@ static __noinline int handle_dns_response(
     goto response_parse_error;
   offset += 4;
   txid = bpf_ntohs(header.transaction_id);
-  key.generation = config->policy_generation;
-  key.client_port = packet->destination_port;
-  key.transaction_id = txid;
-  key.family = packet->family;
-  key.transport = packet->protocol;
-  __builtin_memcpy(key.resolver, packet->source, 16);
-  transaction = bpf_map_lookup_elem(&dns_transactions, &key);
+  key->generation = config->policy_generation;
+  key->client_port = packet->destination_port;
+  key->transaction_id = txid;
+  key->family = packet->family;
+  key->transport = packet->protocol;
+  __builtin_memcpy(key->resolver, packet->source, 16);
+  transaction = bpf_map_lookup_elem(&dns_transactions, key);
   if (!transaction || transaction->expires_ns <= bpf_ktime_get_ns() ||
       transaction->question_type != bpf_ntohs(qtype) ||
       !dns_name_matches(question, transaction)) {
@@ -1547,195 +1454,104 @@ static __noinline int handle_dns_response(
   }
   if (flags & 0x0200) {
     increment_stat(NOSH_EGRESS_STAT_DNS_UNSUPPORTED);
-    bpf_map_delete_elem(&dns_transactions, &key);
-    return coverage_decision(config, hook, packet->family, packet->protocol,
-                             packet->source_port, packet->destination_port,
-                             packet->source, packet->destination,
-                             NOSH_EGRESS_REASON_UNSUPPORTED, skb->len);
+    bpf_map_delete_elem(&dns_transactions, key);
+    return dns_response_rejection(config, packet,
+        ((__u32)hook << 8) | NOSH_EGRESS_REASON_UNSUPPORTED, skb->len) == 1;
   }
   answers = bpf_ntohs(header.answers);
   if (answers > NOSH_EGRESS_DNS_MAX_ANSWERS) {
     increment_stat(NOSH_EGRESS_STAT_DNS_UNSUPPORTED);
-    bpf_map_delete_elem(&dns_transactions, &key);
-    return coverage_decision(config, hook, packet->family, packet->protocol,
-                             packet->source_port, packet->destination_port,
-                             packet->source, packet->destination,
-                             NOSH_EGRESS_REASON_UNSUPPORTED, skb->len);
+    bpf_map_delete_elem(&dns_transactions, key);
+    return dns_response_rejection(config, packet,
+        ((__u32)hook << 8) | NOSH_EGRESS_REASON_UNSUPPORTED, skb->len) == 1;
   }
   scratch = bpf_map_lookup_elem(&dns_response_scratch, &scratch_key);
   if (!scratch) {
     increment_stat(NOSH_EGRESS_STAT_CONFIG_INVALID);
-    bpf_map_delete_elem(&dns_transactions, &key);
-    return force_deny(config, hook, packet->family, packet->protocol,
-                      packet->source_port, packet->destination_port,
-                      packet->source, packet->destination,
-                      NOSH_EGRESS_REASON_CONFIG_INVALID, 0, skb->len);
+    bpf_map_delete_elem(&dns_transactions, key);
+    return dns_response_rejection(config, packet,
+        ((__u32)hook << 8) | NOSH_EGRESS_REASON_CONFIG_INVALID, skb->len) == 1;
   }
   __builtin_memset(scratch, 0, sizeof(*scratch));
 
-  /* First pass: validate and stage.  No dynamic grant is mutated here. */
-#pragma clang loop unroll(disable)
-  for (answer_index = 0; answer_index < NOSH_EGRESS_DNS_MAX_ANSWERS;
-       answer_index++) {
-    struct nosh_dns_rr_fixed fixed = {};
-    __u16 type;
-    __u16 data_length;
-    __u32 ttl;
-    __u8 address[16] = {};
-    __u32 data_offset;
-    int owner_authorized;
-    int owner_is_question;
-    int owner_is_alias;
-
-    if (answer_index >= answers)
-      break;
-    if (parse_compressed_dns_name(skb, dns_offset, message_end,
-                                  &offset, question) < 0 ||
-        load_bytes(skb, offset, &fixed, sizeof(fixed)) < 0) {
-      increment_stat(NOSH_EGRESS_STAT_PARSE_ERRORS);
-      response_valid = 0;
-      break;
+  /* First pass: validate and stage. No dynamic grant is mutated here. */
+  {
+    struct nosh_dns_stage_context *stage = &work.stage;
+    *stage = (struct nosh_dns_stage_context) {
+      .skb = skb,
+      .question = question,
+      .transaction = transaction,
+      .scratch = scratch,
+      .dns_offset = dns_offset,
+      .message_end = message_end,
+      .offset = offset,
+      .answers = answers,
+      .flags = flags,
+      .response_valid = 1,
+      .response_gap_reason = NOSH_EGRESS_REASON_PARSE_ERROR,
+    };
+    if (bpf_loop(NOSH_EGRESS_DNS_MAX_ANSWERS, stage_dns_answer, stage, 0) < 0) {
+      increment_stat(NOSH_EGRESS_STAT_CONFIG_INVALID);
+      bpf_map_delete_elem(&dns_transactions, key);
+      return dns_response_rejection(config, packet,
+        ((__u32)hook << 8) | NOSH_EGRESS_REASON_CONFIG_INVALID, skb->len) == 1;
     }
-    owner_is_question = dns_name_matches(question, transaction);
-    owner_is_alias = dns_name_matches_alias(question, transaction);
-    owner_authorized = owner_is_question || owner_is_alias;
-    offset += sizeof(fixed);
-    data_offset = offset;
-    type = bpf_ntohs(fixed.type);
-    data_length = bpf_ntohs(fixed.data_length);
-    ttl = bpf_ntohl(fixed.ttl);
-    if (data_offset > message_end || data_length > message_end - data_offset) {
-      increment_stat(NOSH_EGRESS_STAT_PARSE_ERRORS);
-      response_valid = 0;
-      break;
-    }
-    if (bpf_ntohs(fixed.class) == 1 && type == 5) {
-      __u32 cname_offset = data_offset;
-
-      if (parse_compressed_dns_name(skb, dns_offset, message_end,
-                                    &cname_offset, question) < 0 ||
-          cname_offset != data_offset + data_length) {
-        increment_stat(NOSH_EGRESS_STAT_PARSE_ERRORS);
-        response_valid = 0;
-        break;
-      }
-      if (owner_authorized) {
-        /* v2 supports one CNAME hop rooted at the observed question. */
-        if (!owner_is_question || scratch->cname_seen ||
-            scratch->answer_count) {
-          increment_stat(NOSH_EGRESS_STAT_DNS_UNSUPPORTED);
-          response_gap_reason = NOSH_EGRESS_REASON_UNSUPPORTED;
-          response_valid = 0;
-          break;
-        }
-        scratch->cname_seen = 1;
-        scratch->cname_ttl = ttl;
-        transaction->alias_length = question->length;
-        __builtin_memcpy(transaction->alias, question->bytes,
-                         sizeof(transaction->alias));
-      }
-    } else if (bpf_ntohs(fixed.class) == 1 && (type == 1 || type == 28)) {
-      __u8 family = type == 1 ? NOSH_EGRESS_FAMILY_IPV4 :
-        NOSH_EGRESS_FAMILY_IPV6;
-      __u16 expected_length = type == 1 ? 4 : 16;
-
-      if (data_length != expected_length ||
-          load_bytes(skb, offset, address, expected_length) < 0) {
-        increment_stat(NOSH_EGRESS_STAT_PARSE_ERRORS);
-        response_valid = 0;
-        break;
-      }
-      if (owner_authorized) {
-        struct nosh_egress_dns_answer *candidate;
-
-        if ((scratch->cname_seen && owner_is_question) ||
-            type != transaction->question_type ||
-            scratch->answer_count >= NOSH_EGRESS_DNS_ANSWER_SLOTS) {
-          increment_stat(NOSH_EGRESS_STAT_DNS_UNSUPPORTED);
-          response_gap_reason = NOSH_EGRESS_REASON_UNSUPPORTED;
-          response_valid = 0;
-          break;
-        }
-        if (!(flags & 0x000f) && ttl &&
-            (!owner_is_alias || (scratch->cname_seen && scratch->cname_ttl))) {
-          candidate = &scratch->answers[scratch->answer_count++];
-          candidate->family = family;
-          candidate->ttl = owner_is_alias && scratch->cname_ttl < ttl
-            ? scratch->cname_ttl : ttl;
-          __builtin_memcpy(candidate->address, address,
-                           sizeof(candidate->address));
-        }
-      }
-    }
-    offset += data_length;
+    response_valid = stage->response_valid;
+    response_gap_reason = stage->response_gap_reason;
   }
   if (!response_valid) {
-    bpf_map_delete_elem(&dns_transactions, &key);
-    return coverage_decision(config, hook, packet->family, packet->protocol,
-                             packet->source_port, packet->destination_port,
-                             packet->source, packet->destination,
-                             response_gap_reason, skb->len);
+    bpf_map_delete_elem(&dns_transactions, key);
+    return dns_response_rejection(config, packet,
+        ((__u32)hook << 8) | response_gap_reason, skb->len) == 1;
   }
 
-  /* Second pass: the complete answer section is known-good; commit grants. */
+  /* Second pass: validate-before-commit is complete. Delegate the bounded
+   * answer/rule iteration so the verifier does not enumerate each grant path. */
   question->length = transaction->question_length;
   __builtin_memcpy(question->bytes, transaction->question,
                    sizeof(question->bytes));
-#pragma unroll
-  for (answer_index = 0; answer_index < NOSH_EGRESS_DNS_ANSWER_SLOTS;
-       answer_index++) {
-    struct nosh_egress_dns_answer *candidate;
-
-    if (answer_index >= scratch->answer_count)
-      break;
-    candidate = &scratch->answers[answer_index];
-    emit_dns_answer_record(config, hook, packet, txid, question, candidate);
-    /* Defense in depth: only successful positive-TTL answers can grant. */
-    if ((flags & 0x000f) || !candidate->ttl)
-      continue;
-#pragma unroll
-    for (rule_slot = 0; rule_slot < NOSH_EGRESS_DOMAIN_RULE_SLOTS;
-         rule_slot++) {
-      __u64 grant_expires_ns = 0;
-
-      if (rule_slot >= transaction->rule_count)
-        break;
-      if (insert_dns_grant(config, transaction->rule_ids[rule_slot],
-                           transaction->protocols[rule_slot],
-                           transaction->ports[rule_slot], candidate->family,
-                           candidate->address, candidate->ttl,
-                           &grant_expires_ns) == 0) {
-        grants++;
-        emit_event(config, hook, candidate->family,
-                   transaction->protocols[rule_slot], 53,
-                   transaction->ports[rule_slot], packet->source,
-                   candidate->address, NOSH_EGRESS_VERDICT_ALLOW,
-                   NOSH_EGRESS_REASON_DNS_GRANT,
-                   transaction->rule_ids[rule_slot], 0, txid, question,
-                   grant_expires_ns);
-      }
+  {
+    struct nosh_dns_commit_context *commit = &work.commit;
+    *commit = (struct nosh_dns_commit_context) {
+      .config = config,
+      .packet = packet,
+      .transaction = transaction,
+      .scratch = scratch,
+      .question = question,
+      .flags = flags,
+      .txid = txid,
+      .hook = hook,
+    };
+    if (bpf_loop(NOSH_EGRESS_DNS_ANSWER_SLOTS * NOSH_EGRESS_DOMAIN_RULE_SLOTS,
+                  commit_dns_answer_rule, commit, 0) < 0) {
+      increment_stat(NOSH_EGRESS_STAT_CONFIG_INVALID);
+      bpf_map_delete_elem(&dns_transactions, key);
+      return dns_response_rejection(config, packet,
+        ((__u32)hook << 8) | NOSH_EGRESS_REASON_CONFIG_INVALID, skb->len) == 1;
     }
+    grants = commit->grants;
   }
   increment_stat(NOSH_EGRESS_STAT_DNS_RESPONSES);
-  emit_event(config, hook, packet->family, packet->protocol,
-             packet->source_port, packet->destination_port,
-             packet->source, packet->destination,
-             NOSH_EGRESS_VERDICT_ALLOW,
-             grants ? NOSH_EGRESS_REASON_DNS_GRANT :
-               NOSH_EGRESS_REASON_DNS_RESPONSE,
-             transaction->rule_count ? transaction->rule_ids[0] : 0,
-             skb->len, txid, question, transaction->expires_ns);
-  bpf_map_delete_elem(&dns_transactions, &key);
+  {
+    struct nosh_dns_response_record *record = &work.record;
+    *record = (struct nosh_dns_response_record) {
+      .expires = transaction->expires_ns,
+      .metadata = ((__u32)(grants ? NOSH_EGRESS_REASON_DNS_GRANT :
+          NOSH_EGRESS_REASON_DNS_RESPONSE) << 24) | ((__u32)hook << 16) | txid,
+      .rule = transaction->rule_count ? transaction->rule_ids[0] : 0,
+      .packet_length = skb->len,
+    };
+    record_dns_response(config, packet, question, record);
+  }
+  bpf_map_delete_elem(&dns_transactions, key);
   /* Authenticated NXDOMAIN, NODATA, and CNAME-only replies are valid DNS. */
   increment_stat(NOSH_EGRESS_STAT_ALLOWED);
   return 1;
 
 response_parse_error:
   increment_stat(NOSH_EGRESS_STAT_PARSE_ERRORS);
-  return coverage_decision(config, hook, packet->family, packet->protocol,
-                           packet->source_port, packet->destination_port,
-                           packet->source, packet->destination,
-                           NOSH_EGRESS_REASON_PARSE_ERROR, skb->len);
+  return dns_response_rejection(config, packet,
+        ((__u32)hook << 8) | NOSH_EGRESS_REASON_PARSE_ERROR, skb->len) == 1;
 }
 
 static __always_inline int decide_sock_addr(struct bpf_sock_addr *ctx,
@@ -1833,20 +1649,63 @@ static __always_inline int decide_sock_addr(struct bpf_sock_addr *ctx,
                          0, port, NULL, address, reason, rule_id, 0);
 }
 
-static __always_inline int decide_packet(struct __sk_buff *skb,
-                                         __u8 hook, int ingress)
+static __noinline int decide_packet_policy(
+    struct __sk_buff *skb, const struct nosh_egress_config *config,
+    const struct nosh_packet *packet, __u8 hook, int ingress)
 {
-  struct nosh_egress_config *config = configuration();
-  struct nosh_packet packet = {};
   struct nosh_egress_rule_value *static_rule = NULL;
   struct nosh_egress_grant_value *grant = NULL;
-  struct nosh_egress_containment_value *containment_value = NULL;
   const __u8 *remote;
   __u16 remote_port;
-  __u32 dns_offset = 0;
   int authorized = 0;
   __u8 reason = NOSH_EGRESS_REASON_DEFAULT_DENY;
   __u32 rule_id = 0;
+  remote = ingress ? packet->source : packet->destination;
+  remote_port = ingress ? packet->source_port : packet->destination_port;
+  if (config->mode == NOSH_EGRESS_MODE_LEARN)
+    return finish_decision(config, 0, hook, packet->family, packet->protocol,
+                           packet->source_port, packet->destination_port,
+                           packet->source, packet->destination,
+                           NOSH_EGRESS_REASON_DEFAULT_DENY, 0, skb->len);
+  if (packet->family == NOSH_EGRESS_FAMILY_IPV4) {
+    __u32 ipv4;
+    __builtin_memcpy(&ipv4, remote, 4);
+    static_rule = lookup_static4(config->policy_generation, packet->protocol,
+                                 remote_port, packet->icmp_type,
+                                 packet->icmp_code, ipv4);
+  } else if (packet->family == NOSH_EGRESS_FAMILY_IPV6) {
+    static_rule = lookup_static6(config->policy_generation, packet->protocol,
+                                 remote_port, packet->icmp_type,
+                                 packet->icmp_code, remote);
+  }
+  if (static_rule) {
+    authorized = 1;
+    reason = NOSH_EGRESS_REASON_STATIC;
+    rule_id = static_rule->rule_id;
+  }
+  if (!authorized) {
+    grant = lookup_grant(config->policy_generation, packet->family,
+                         packet->protocol, remote_port, remote);
+    if (grant) {
+      authorized = 1;
+      reason = NOSH_EGRESS_REASON_DNS_GRANT;
+      rule_id = grant->rule_id;
+    }
+  }
+  return finish_decision(config, authorized, hook, packet->family,
+                         packet->protocol, packet->source_port,
+                         packet->destination_port, packet->source,
+                         packet->destination, reason, rule_id, skb->len);
+}
+
+static __always_inline int decide_packet(struct __sk_buff *skb,
+                                         __u8 hook, int ingress,
+                                         struct nosh_packet *packet)
+{
+  struct nosh_egress_config *config = configuration();
+  struct nosh_egress_containment_value *containment_value = NULL;
+  const __u8 *remote;
+  __u32 dns_offset = 0;
   int parse_result;
   int required_control = 0;
 
@@ -1855,169 +1714,154 @@ static __always_inline int decide_packet(struct __sk_buff *skb,
     return force_deny(config, hook, 0, 0, 0, 0, NULL, NULL,
                       NOSH_EGRESS_REASON_CONFIG_INVALID, 0, skb->len);
   }
-  parse_result = parse_packet(skb, &packet);
-  if (parse_result == 0 && !packet.fragmented) {
-    required_control = required_ipv6_ndp(skb, &packet) ||
-      required_ipv6_error(skb, &packet, ingress);
+  parse_result = parse_packet(skb, packet);
+  if (parse_result == 0 && !packet->fragmented) {
+    required_control = required_ipv6_ndp(skb, packet) ||
+      required_ipv6_error(skb, packet, ingress);
   }
-  if (packet.address_known) {
-    remote = ingress ? packet.source : packet.destination;
+  if (packet->address_known) {
+    remote = ingress ? packet->source : packet->destination;
     containment_value = lookup_containment(config->policy_generation,
-                                           packet.family, remote);
+                                           packet->family, remote);
     if (containment_value && !containment_value_is_valid(
         containment_value, config->policy_generation)) {
       increment_stat(NOSH_EGRESS_STAT_CONFIG_INVALID);
-      return force_deny(config, hook, packet.family, packet.protocol,
-                        packet.source_port, packet.destination_port,
-                        packet.source, packet.destination,
+      return force_deny(config, hook, packet->family, packet->protocol,
+                        packet->source_port, packet->destination_port,
+                        packet->source, packet->destination,
                         NOSH_EGRESS_REASON_CONFIG_INVALID, 0, skb->len);
     }
     if (containment_value && required_control)
-      return finish_decision(config, 1, hook, packet.family,
-                             packet.protocol, packet.source_port,
-                             packet.destination_port, packet.source,
-                             packet.destination,
+      return finish_decision(config, 1, hook, packet->family,
+                             packet->protocol, packet->source_port,
+                             packet->destination_port, packet->source,
+                             packet->destination,
                              NOSH_EGRESS_REASON_IPV6_CONTROL, 0, skb->len);
     if (containment_value)
-      return containment_deny(config, hook, packet.family, packet.protocol,
-                              packet.source_port, packet.destination_port,
-                              packet.source, packet.destination,
+      return containment_deny(config, hook, packet->family, packet->protocol,
+                              packet->source_port, packet->destination_port,
+                              packet->source, packet->destination,
                               containment_value, skb->len);
   }
   if (parse_result == NOSH_EGRESS_PACKET_HIDDEN_DESTINATION) {
     increment_stat(NOSH_EGRESS_STAT_PARSE_ERRORS);
-    return force_deny(config, hook, packet.family, packet.protocol,
-                      packet.source_port, packet.destination_port,
-                      packet.source, packet.destination,
+    return force_deny(config, hook, packet->family, packet->protocol,
+                      packet->source_port, packet->destination_port,
+                      packet->source, packet->destination,
                       NOSH_EGRESS_REASON_HIDDEN_DESTINATION, 0, skb->len);
   }
   if (parse_result == NOSH_EGRESS_PACKET_UNSUPPORTED) {
     increment_stat(NOSH_EGRESS_STAT_UNSUPPORTED_PROTOCOL);
-    if (!packet.address_known)
-      return force_deny(config, hook, packet.family, packet.protocol,
-                        packet.source_port, packet.destination_port,
-                        packet.source, packet.destination,
+    if (!packet->address_known)
+      return force_deny(config, hook, packet->family, packet->protocol,
+                        packet->source_port, packet->destination_port,
+                        packet->source, packet->destination,
                         NOSH_EGRESS_REASON_UNKNOWN_DESTINATION, 0, skb->len);
-    return coverage_decision(config, hook, packet.family, packet.protocol,
-                             packet.source_port, packet.destination_port,
-                             packet.source, packet.destination,
+    return coverage_decision(config, hook, packet->family, packet->protocol,
+                             packet->source_port, packet->destination_port,
+                             packet->source, packet->destination,
                              NOSH_EGRESS_REASON_UNSUPPORTED, skb->len);
   }
   if (parse_result < 0) {
     increment_stat(NOSH_EGRESS_STAT_PARSE_ERRORS);
-    if (!packet.address_known)
+    if (!packet->address_known)
       return force_deny(config, hook, 0, 0, 0, 0, NULL, NULL,
                         NOSH_EGRESS_REASON_UNKNOWN_DESTINATION, 0, skb->len);
-    return coverage_decision(config, hook, packet.family, packet.protocol,
-                             packet.source_port, packet.destination_port,
-                             packet.source, packet.destination,
+    return coverage_decision(config, hook, packet->family, packet->protocol,
+                             packet->source_port, packet->destination_port,
+                             packet->source, packet->destination,
                              NOSH_EGRESS_REASON_PARSE_ERROR, skb->len);
   }
-  if (packet.fragmented) {
+  if (packet->fragmented) {
     increment_stat(NOSH_EGRESS_STAT_FRAGMENTS);
-    return coverage_decision(config, hook, packet.family, packet.protocol,
-                             packet.source_port, packet.destination_port,
-                             packet.source, packet.destination,
+    return coverage_decision(config, hook, packet->family, packet->protocol,
+                             packet->source_port, packet->destination_port,
+                             packet->source, packet->destination,
                              NOSH_EGRESS_REASON_FRAGMENT, skb->len);
   }
 
   if (required_control)
-    return finish_decision(config, 1, hook, packet.family, packet.protocol,
-                           packet.source_port, packet.destination_port,
-                           packet.source, packet.destination,
+    return finish_decision(config, 1, hook, packet->family, packet->protocol,
+                           packet->source_port, packet->destination_port,
+                           packet->source, packet->destination,
                            NOSH_EGRESS_REASON_IPV6_CONTROL, 0, skb->len);
 
   if (!ingress &&
-      (packet.protocol == NOSH_EGRESS_PROTOCOL_UDP ||
-       packet.protocol == NOSH_EGRESS_PROTOCOL_TCP) &&
-      packet.destination_port == 53 &&
-      resolver_allowed(config->policy_generation, packet.family,
-                       packet.destination)) {
-    if (packet.protocol == NOSH_EGRESS_PROTOCOL_TCP &&
-        !packet.payload_length)
-      return finish_decision(config, 1, hook, packet.family,
-                             packet.protocol, packet.source_port,
-                             packet.destination_port, packet.source,
-                             packet.destination,
+      (packet->protocol == NOSH_EGRESS_PROTOCOL_UDP ||
+       packet->protocol == NOSH_EGRESS_PROTOCOL_TCP) &&
+      packet->destination_port == 53 &&
+      resolver_allowed(config->policy_generation, packet->family,
+                       packet->destination)) {
+    if (packet->protocol == NOSH_EGRESS_PROTOCOL_TCP &&
+        !packet->payload_length)
+      return finish_decision(config, 1, hook, packet->family,
+                             packet->protocol, packet->source_port,
+                             packet->destination_port, packet->source,
+                             packet->destination,
                              NOSH_EGRESS_REASON_DNS_RESOLVER, 0, skb->len);
-    if (dns_message_offset(skb, &packet, &dns_offset) < 0) {
-      increment_stat(packet.protocol == NOSH_EGRESS_PROTOCOL_TCP ?
+    if (dns_message_offset(skb, packet, &dns_offset) < 0) {
+      increment_stat(packet->protocol == NOSH_EGRESS_PROTOCOL_TCP ?
                      NOSH_EGRESS_STAT_DNS_UNSUPPORTED :
                      NOSH_EGRESS_STAT_PARSE_ERRORS);
       return coverage_decision(
-        config, hook, packet.family, packet.protocol,
-        packet.source_port, packet.destination_port,
-        packet.source, packet.destination,
-        packet.protocol == NOSH_EGRESS_PROTOCOL_TCP ?
+        config, hook, packet->family, packet->protocol,
+        packet->source_port, packet->destination_port,
+        packet->source, packet->destination,
+        packet->protocol == NOSH_EGRESS_PROTOCOL_TCP ?
           NOSH_EGRESS_REASON_UNSUPPORTED : NOSH_EGRESS_REASON_PARSE_ERROR,
         skb->len);
     }
-    return handle_dns_query(skb, config, &packet, hook, dns_offset);
+    return handle_dns_query(skb, config, packet, hook, dns_offset);
   }
   if (ingress &&
-      (packet.protocol == NOSH_EGRESS_PROTOCOL_UDP ||
-       packet.protocol == NOSH_EGRESS_PROTOCOL_TCP) &&
-      packet.source_port == 53 &&
-      resolver_allowed(config->policy_generation, packet.family,
-                       packet.source)) {
-    if (packet.protocol == NOSH_EGRESS_PROTOCOL_TCP &&
-        !packet.payload_length)
-      return finish_decision(config, 1, hook, packet.family,
-                             packet.protocol, packet.source_port,
-                             packet.destination_port, packet.source,
-                             packet.destination,
+      (packet->protocol == NOSH_EGRESS_PROTOCOL_UDP ||
+       packet->protocol == NOSH_EGRESS_PROTOCOL_TCP) &&
+      packet->source_port == 53 &&
+      resolver_allowed(config->policy_generation, packet->family,
+                       packet->source)) {
+    if (packet->protocol == NOSH_EGRESS_PROTOCOL_TCP &&
+        !packet->payload_length)
+      return finish_decision(config, 1, hook, packet->family,
+                             packet->protocol, packet->source_port,
+                             packet->destination_port, packet->source,
+                             packet->destination,
                              NOSH_EGRESS_REASON_DNS_RESOLVER, 0, skb->len);
-    if (dns_message_offset(skb, &packet, &dns_offset) < 0) {
-      increment_stat(packet.protocol == NOSH_EGRESS_PROTOCOL_TCP ?
+    if (dns_message_offset(skb, packet, &dns_offset) < 0) {
+      increment_stat(packet->protocol == NOSH_EGRESS_PROTOCOL_TCP ?
                      NOSH_EGRESS_STAT_DNS_UNSUPPORTED :
                      NOSH_EGRESS_STAT_PARSE_ERRORS);
       return coverage_decision(
-        config, hook, packet.family, packet.protocol,
-        packet.source_port, packet.destination_port,
-        packet.source, packet.destination,
-        packet.protocol == NOSH_EGRESS_PROTOCOL_TCP ?
+        config, hook, packet->family, packet->protocol,
+        packet->source_port, packet->destination_port,
+        packet->source, packet->destination,
+        packet->protocol == NOSH_EGRESS_PROTOCOL_TCP ?
           NOSH_EGRESS_REASON_UNSUPPORTED : NOSH_EGRESS_REASON_PARSE_ERROR,
         skb->len);
     }
-    return handle_dns_response(skb, config, &packet, hook, dns_offset);
+    return handle_dns_response(skb, config, packet, hook, dns_offset);
   }
 
-  remote = ingress ? packet.source : packet.destination;
-  remote_port = ingress ? packet.source_port : packet.destination_port;
-  if (config->mode == NOSH_EGRESS_MODE_LEARN)
-    return finish_decision(config, 0, hook, packet.family, packet.protocol,
-                           packet.source_port, packet.destination_port,
-                           packet.source, packet.destination,
-                           NOSH_EGRESS_REASON_DEFAULT_DENY, 0, skb->len);
-  if (packet.family == NOSH_EGRESS_FAMILY_IPV4) {
-    __u32 ipv4;
-    __builtin_memcpy(&ipv4, remote, 4);
-    static_rule = lookup_static4(config->policy_generation, packet.protocol,
-                                 remote_port, packet.icmp_type,
-                                 packet.icmp_code, ipv4);
-  } else if (packet.family == NOSH_EGRESS_FAMILY_IPV6) {
-    static_rule = lookup_static6(config->policy_generation, packet.protocol,
-                                 remote_port, packet.icmp_type,
-                                 packet.icmp_code, remote);
+  return decide_packet_policy(skb, config, packet, hook, ingress);
+}
+
+/* Packet hooks cannot migrate while running, but a nested hook can use the
+ * same CPU. Claim scratch across parsing, staging, commit and evidence. */
+static __always_inline int with_packet_scratch(
+    struct __sk_buff *skb, __u8 hook, int ingress)
+{
+  __u32 key = 0;
+  struct nosh_packet_scratch *scratch = bpf_map_lookup_elem(&packet_scratch, &key);
+  int result;
+
+  if (!scratch || __sync_val_compare_and_swap(&scratch->busy, 0, 1) != 0) {
+    const struct nosh_egress_config *config = configuration();
+    increment_stat(NOSH_EGRESS_STAT_CONFIG_INVALID);
+    return force_deny(config, hook, 0, 0, 0, 0, NULL, NULL,
+                      NOSH_EGRESS_REASON_CONFIG_INVALID, 0, skb->len);
   }
-  if (static_rule) {
-    authorized = 1;
-    reason = NOSH_EGRESS_REASON_STATIC;
-    rule_id = static_rule->rule_id;
-  }
-  if (!authorized) {
-    grant = lookup_grant(config->policy_generation, packet.family,
-                         packet.protocol, remote_port, remote);
-    if (grant) {
-      authorized = 1;
-      reason = NOSH_EGRESS_REASON_DNS_GRANT;
-      rule_id = grant->rule_id;
-    }
-  }
-  return finish_decision(config, authorized, hook, packet.family,
-                         packet.protocol, packet.source_port,
-                         packet.destination_port, packet.source,
-                         packet.destination, reason, rule_id, skb->len);
+  result = decide_packet(skb, hook, ingress, &scratch->packet);
+  __sync_val_compare_and_swap(&scratch->busy, 1, 0);
+  return result;
 }
 
 SEC("cgroup/connect4")
@@ -2051,13 +1895,13 @@ int nosh_egress_sendmsg6(struct bpf_sock_addr *ctx)
 SEC("cgroup_skb/ingress")
 int nosh_egress_ingress(struct __sk_buff *skb)
 {
-  return decide_packet(skb, NOSH_EGRESS_HOOK_INGRESS, 1);
+  return with_packet_scratch(skb, NOSH_EGRESS_HOOK_INGRESS, 1);
 }
 
 SEC("cgroup_skb/egress")
 int nosh_egress_egress(struct __sk_buff *skb)
 {
-  return decide_packet(skb, NOSH_EGRESS_HOOK_EGRESS, 0);
+  return with_packet_scratch(skb, NOSH_EGRESS_HOOK_EGRESS, 0);
 }
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";

@@ -1455,6 +1455,7 @@ test('guard-ebpf authority verifies the reviewed leaf and rejects role, context,
     now: new Date('2026-08-16T12:30:00.000Z'),
   });
   assert.equal(imported.current.leafBundleDigest, projection.leaf.bundleDigest);
+  assert.equal(imported.current.decisionSetDigest, projection.policyIR.decisionSetDigest);
   assert.equal(imported.current.approvalEnvelopeDigest,
     verified.approval.envelopeDigest);
   assert.equal(imported.current.grantEnvelopeDigest, verified.grant.envelopeDigest);

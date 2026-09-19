@@ -95,3 +95,36 @@ test('catalog failures are explicit and refreshable', () => {
   assert.equal(catalog.getTarget('agy', 'default').status, 'error');
   assert.equal(catalog.getTarget('agy', 'default', { refresh: true }).status, 'ready');
 });
+
+test('catalog agent probes never receive server authentication secrets', () => {
+  const environments = [];
+  const catalog = createLaunchCatalog({
+    appRoot: path.resolve(__dirname, '..'),
+    environment: {
+      PATH: '/safe/bin',
+      SAFE_CATALOG_VALUE: 'preserved',
+      NOTTY_MCP_SPAWN_OTP: 'spawn-canary',
+      NOTTY_BASIC_AUTH_PASSWORD: 'basic-canary',
+      NOTTY_OAUTH_ACCESS_TOKEN: 'oauth-canary',
+      AUTHORIZATION: 'Bearer header-canary',
+    },
+    spawnSync: (command, _args, options) => {
+      environments.push({ command, env: options.env });
+      return command === 'agy'
+        ? { status: 0, stdout: 'gemini-test\n', stderr: '' }
+        : { status: 0, stdout: 'Claude test\n', stderr: '' };
+    },
+  });
+
+  assert.equal(catalog.getTarget('agy', 'default').status, 'ready');
+  assert.equal(catalog.getTarget('claude', 'default').status, 'ready');
+  assert.equal(environments.length, 2);
+  for (const { env } of environments) {
+    assert.equal(env.PATH, '/safe/bin');
+    assert.equal(env.SAFE_CATALOG_VALUE, 'preserved');
+    assert.equal(env.NOTTY_MCP_SPAWN_OTP, undefined);
+    assert.equal(env.NOTTY_BASIC_AUTH_PASSWORD, undefined);
+    assert.equal(env.NOTTY_OAUTH_ACCESS_TOKEN, undefined);
+    assert.equal(env.AUTHORIZATION, undefined);
+  }
+});

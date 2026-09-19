@@ -4,12 +4,53 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const os = require('node:os');
 
 async function loadReviewCore() {
   return import('../lib/guard/review/index.js');
 }
 
 const CREATED_AT = '2026-08-16T12:00:00.000Z';
+
+test('CLI decisions round-trips manual edits and refuses graph rebinding or overwrite', async (t) => {
+  const fixture = await createFixture();
+  const bundles = await import('../lib/guard/review/bundle-store.js');
+  const { commandReview } = await import('../lib/guard/review/cli.js');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'nosh-cli-decisions-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const bundle = path.join(directory, 'bundle');
+  const artifact = bundles.createReviewBundleArtifact({
+    createdAt: CREATED_AT,
+    scope: fixture.scope,
+    sources: [fixture.source],
+    basePolicyDigest: fixture.basePolicyDigest,
+    records: Object.fromEntries([
+      'nodes', 'observations', 'coverage', 'findings', 'proposals', 'diff',
+    ].map((role) => [role, fixture.graph[role]])),
+  });
+  await bundles.writeReviewBundleArtifact(bundle, artifact);
+  const draft = path.join(directory, 'draft.json');
+  const output = path.join(directory, 'decisions.json');
+  const args = ['decisions', '--bundle', bundle, '--reviewer', 'operator'];
+  assert.equal(await commandReview([...args, '--output', draft]), 0);
+  const edited = JSON.parse(fs.readFileSync(draft, 'utf8'));
+  assert.equal(edited.decisions[0].disposition, 'needs-review');
+  edited.decisions[0].disposition = 'reject';
+  edited.decisions[0].rationale = 'Deny this destination for the negative control';
+  fs.writeFileSync(draft, JSON.stringify(edited));
+  assert.equal(await commandReview([...args, '--input', draft, '--output', output]), 0);
+  const rebuilt = JSON.parse(fs.readFileSync(output, 'utf8'));
+  fixture.core.validateDecisionSet(rebuilt);
+  assert.equal(rebuilt.decisions[0].disposition, 'reject');
+  assert.notEqual(rebuilt.contentDigest, edited.contentDigest);
+  await assert.rejects(commandReview([...args, '--output', output]), /EEXIST/);
+  edited.graphContentDigest = fixture.core.sha256Digest('different graph');
+  fs.writeFileSync(draft, JSON.stringify(edited));
+  await assert.rejects(commandReview([
+    ...args, '--input', draft, '--output', path.join(directory, 'wrong.json'),
+  ]), /graphContentDigest does not match/);
+  assert.equal(fs.existsSync(path.join(directory, 'wrong.json')), false);
+});
 
 async function createFixture() {
   const core = await loadReviewCore();

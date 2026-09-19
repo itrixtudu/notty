@@ -1,6 +1,7 @@
 CLANG ?= clang
 BPFTOOL ?= bpftool
 CC ?= cc
+NODE ?= node
 PKG_CONFIG ?= pkg-config
 
 BPF_SOURCE := nosh_egress.bpf.c
@@ -42,11 +43,15 @@ ifeq ($(strip $(LIBBPF_LIBS)),)
 LIBBPF_LIBS := -lbpf -lelf -lz
 endif
 
-.PHONY: all object skeleton loader install-loader test clean
+.DELETE_ON_ERROR:
+
+.PHONY: all object skeleton loader install-loader test test-kernel clean
 
 all: loader
 
 object: $(BPF_OBJECT)
+
+skeleton: $(SKELETON)
 
 $(VMLINUX):
 	@test -r /sys/kernel/btf/vmlinux || \
@@ -57,8 +62,9 @@ $(VMLINUX):
 $(BUILD_DIR):
 	mkdir -p $@
 
-$(BPF_OBJECT): $(BPF_SOURCE) include/nosh_egress.h $(VMLINUX) | $(BUILD_DIR)
+$(BPF_OBJECT): $(BPF_SOURCE) include/nosh_egress.h include/nosh_egress_dns_commit.h include/nosh_egress_dns_parse.h include/nosh_egress_dns_stage.h include/nosh_egress_dns_match.h include/nosh_egress_dns_grant.h include/nosh_egress_dns_wire.h tests/check-bpf-object.cjs $(VMLINUX) | $(BUILD_DIR)
 	$(CLANG) $(BPF_CFLAGS) -c $(BPF_SOURCE) -o $@
+	$(NODE) tests/check-bpf-object.cjs $@
 
 $(SKELETON): $(BPF_OBJECT)
 	$(BPFTOOL) gen skeleton $(BPF_OBJECT) name nosh_egress_bpf > $@.tmp
@@ -83,6 +89,15 @@ install-loader: $(LOADER_BINARY)
 
 test:
 	bash tests/static.sh
+	$(NODE) --test tests/check-bpf-object.test.cjs
+	CC="$(CC)" bash tests/dns-commit.sh
+	CC="$(CC)" bash tests/dns-parse.sh
+	CC="$(CC)" bash tests/dns-stage.sh
+	CC="$(CC)" bash tests/loader-lifecycle.sh
+
+# Explicit opt-in: a container with BPF/PERFMON/NET_ADMIN capabilities.
+test-kernel: $(SKELETON)
+	CC="$(CC)" bash tests/kernel-packets.sh
 
 clean:
 	rm -f $(BPF_OBJECT) $(SKELETON) $(OBJECT_DIGEST_HEADER) \

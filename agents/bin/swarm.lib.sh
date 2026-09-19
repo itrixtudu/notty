@@ -525,16 +525,89 @@ swarm_agent_bootstrap_prompt() {
     local role="$2"
     local channel="$3"
     local mcp_url="$4"
-    local spawn_otp="${COLLAB_AGENT_SPAWN_OTP:-${SPAWN_OTP:-}}"
-    local otp_note=''
-
-    if [[ -n "${spawn_otp}" ]]; then
-        otp_note=' A single-use Notty terminal spawn OTP is available in MCP_SPAWN_OTP. Submit it only when spawn_terminal requests otp, and never print or report it.'
-    fi
 
     cat <<PROMPT
-You are the ${role} agent for this tmux session. Use the configured collab MCP service, set your nickname to ${agent}, coordinate in ${channel}, set_status("busy") while working, set_status("idle") when waiting or done, then call claim_pending() whenever you become idle. Follow any returned next steps and report status in lobby. Do not ask for permission for routine local commands like date.${otp_note}
+You are the ${role} agent for this tmux session. Use the configured collab MCP service, set your nickname to ${agent}, coordinate in ${channel}, set_status("busy") while working, set_status("idle") when waiting or done, then call claim_pending() whenever you become idle. Follow any returned next steps and report status in lobby. Do not ask for permission for routine local commands like date.
 PROMPT
+}
+
+swarm_collect_auth_environment_names() {
+    local destination_name="$1"
+    local -n destination="${destination_name}"
+    local name
+    destination=(
+        AUTHORIZATION
+        HTTP_AUTHORIZATION
+        MCP_BEARER_TOKEN
+        MCP_TOKEN
+        MCP_SPAWN_OTP
+        SPAWN_OTP
+        COLLAB_AGENT_SPAWN_OTP
+        NOTTY_AUTHORIZATION
+        NOTTY_AUTH_STATE_DIR
+        NOTTY_WORKSPACE_ID
+        NOTTY_MCP_AUTHORIZATION
+        NOTTY_MCP_BEARER_TOKEN
+        NOTTY_MCP_SPAWN_OTP
+        NOTTY_MCP_SPAWN_OTP_ENABLED
+        NOTTY_MCP_SPAWN_OTP_TTL_SECONDS
+        NOTTY_GUARD_MTLS
+        NOTTY_GUARD_GATEWAY_PEER_IP
+        NOTTY_GUARD_GATEWAY_TOKEN
+        NOTTY_GUARD_OTP_MINT_TOKEN
+        NOTTY_LOOPBACK_PUBLICATION
+        NOTTY_NOAUTH
+        NOTTY_NO_OAUTH
+        NOTTY_NO_OTP_AUTH
+        NOTTY_COPILOT_ACCESS_TOKEN
+        NOTTY_COPILOT_MCP_URL
+    )
+
+    while IFS= read -r name; do
+        case "${name}" in
+            NOTTY_BASIC_AUTH_*|NOTTY_OAUTH_*)
+                destination+=("${name}")
+                ;;
+        esac
+    done < <(compgen -e)
+}
+
+swarm_append_auth_environment_unsets() {
+    local destination_name="$1"
+    local -n destination="${destination_name}"
+    local -a names
+    local name
+
+    swarm_collect_auth_environment_names names
+    for name in "${names[@]}"; do
+        destination+=(-u "${name}")
+    done
+}
+
+swarm_clear_tmux_auth_environment() {
+    local -a sanitized_environment=(env)
+    local -a names
+    local line
+    local name
+
+    swarm_append_auth_environment_unsets sanitized_environment
+    if ! "${sanitized_environment[@]}" tmux list-sessions >/dev/null 2>&1; then
+        return 0
+    fi
+    swarm_collect_auth_environment_names names
+    while IFS= read -r line; do
+        name="${line%%=*}"
+        name="${name#-}"
+        case "${name}" in
+            NOTTY_BASIC_AUTH_*|NOTTY_OAUTH_*)
+                names+=("${name}")
+                ;;
+        esac
+    done < <("${sanitized_environment[@]}" tmux show-environment -g 2>/dev/null || true)
+    for name in "${names[@]}"; do
+        "${sanitized_environment[@]}" tmux set-environment -gu "${name}" \
+            >/dev/null 2>&1 || true
+    done
 }
 
 swarm_register_managed_agent() {
@@ -547,6 +620,7 @@ swarm_register_managed_agent() {
     local harness="${7:-}"
     local backend="${8:-}"
     local -a register_args
+    local -a register_environment=(env)
 
     harness="${harness:-$(swarm_harness_for_runtime "${runtime}")}" || return 1
     backend="${backend:-$(swarm_backend_for_runtime "${runtime}")}" || return 1
@@ -568,10 +642,10 @@ swarm_register_managed_agent() {
         register_args+=(--think "${think}")
     fi
 
+    swarm_append_auth_environment_unsets register_environment
     if ! (
         cd "${root}"
-        env -u NOTTY_MCP_SPAWN_OTP -u MCP_SPAWN_OTP -u COLLAB_AGENT_SPAWN_OTP \
-            node collab.cjs "${register_args[@]}" >/dev/null 2>&1
+        "${register_environment[@]}" node collab.cjs "${register_args[@]}" >/dev/null 2>&1
     ); then
         printf 'warning: unable to register managed agent %s\n' "${agent}" >&2
         return 1
@@ -602,9 +676,9 @@ swarm_launch_canonical_agent() {
     local runtime_bin
     local node_bin="${SWARM_NODE_BIN:-node}"
     local ollama_relay_path="${root}/lib/collab/ollama-codex-relay.cjs"
-    local spawn_otp="${COLLAB_AGENT_SPAWN_OTP:-${SPAWN_OTP:-}}"
     local -a command_parts
     local -a ollama_codex_args
+    local -a tmux_environment
     local ollama_catalog_config=""
     local provider_arg
     local bootstrap_prompt
@@ -682,15 +756,8 @@ swarm_launch_canonical_agent() {
         fi
     fi
 
-    command_parts=(
-        env
-        -u NOTTY_MCP_SPAWN_OTP
-        -u MCP_SPAWN_OTP
-        -u COLLAB_AGENT_SPAWN_OTP
-    )
-    if [[ -n "${spawn_otp}" ]]; then
-        command_parts+=("MCP_SPAWN_OTP=${spawn_otp}")
-    fi
+    command_parts=(env)
+    swarm_append_auth_environment_unsets command_parts
     command_parts+=(
         "MYID=${agent}"
         "COLLAB_AGENT_ID=${agent}"
@@ -797,7 +864,10 @@ swarm_launch_canonical_agent() {
         command_parts+=("${bootstrap_prompt}")
     fi
 
-    if ! tmux -u new-session -d -c "${workdir}" -s "${agent}" \
+    tmux_environment=(env)
+    swarm_append_auth_environment_unsets tmux_environment
+    swarm_clear_tmux_auth_environment
+    if ! "${tmux_environment[@]}" tmux -u new-session -d -c "${workdir}" -s "${agent}" \
         "$(swarm_shell_join "${command_parts[@]}")"; then
         if [[ "${backend}" == "ollama" ]] && ! swarm_tmux_session_exists "${agent}"; then
             swarm_remove_ollama_codex_catalog \

@@ -167,6 +167,7 @@ test('Nosh completes commands, options, and the Bash completion shell', () => {
     'review',
     'policy',
     'gateway',
+    'auth',
     'set-login-password',
     'completion',
   ]) {
@@ -174,10 +175,18 @@ test('Nosh completes commands, options, and the Bash completion shell', () => {
   }
   assert.ok(root.includes('--profile'));
   assert.ok(root.includes('--profile-list'));
+  assert.ok(root.includes('--no-oauth'));
+  assert.ok(root.includes('--no-otp-auth'));
+  assert.ok(root.includes('--no-otp'));
   assert.deepEqual(start, ['start', 'stop']);
   assert.deepEqual(options, ['--security-mode', '--security-profile-dir']);
   assert.deepEqual(complete(['nosh', 'completion', 'b']), ['bash']);
   assert.deepEqual(complete(['nosh', 'completion', 'bash', '']), []);
+  assert.deepEqual(complete(['nosh', 'auth', '']), ['otp', 'reset', '-h', '--help']);
+  assert.ok(complete(['nosh', 'auth', 'otp', '--']).includes('--workdir'));
+  assert.ok(complete(['nosh', 'auth', 'reset', '--']).includes('--workdir'));
+  assert.ok(complete(['nosh', 'auth', 'reset', '--']).includes('--secure'));
+  assert.ok(!complete(['nosh', 'auth', 'otp', '--']).includes('--secure'));
 });
 
 test('Nosh completes semantic review and policy workflow commands', () => {

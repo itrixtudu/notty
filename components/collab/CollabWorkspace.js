@@ -3,14 +3,20 @@ import {
   ChevronDown,
   ChevronUp,
   MessageSquare,
+  ExternalLink,
+  Maximize2,
+  Minimize2,
   RefreshCw,
   Square,
   ThumbsDown,
   ThumbsUp
 } from 'lucide-react';
 import TerminalConsole from '../TerminalConsole.js';
+import TerminalPaneLayout from '../terminal/TerminalPaneLayout.js';
+import { buildChatLayout } from './chatLayout.js';
 import {
   CODEX_PERMISSION_MODES,
+  collabChatsPath,
   formatAgentModel,
   nextCodexPermissionMode,
   normalizeAgentSpec,
@@ -36,12 +42,6 @@ function agentState(agent) {
     return 'running';
   }
   return 'idle';
-}
-
-function layoutClass(mode) {
-  if (mode === 'lead-grid') return styles.layoutMonitor;
-  if (mode === 'pair') return styles.layoutPair;
-  return styles.layoutGrid;
 }
 
 function sessionLayoutMode(session, layouts) {
@@ -158,6 +158,7 @@ function AgentModel({ agent }) {
 }
 
 export default function CollabWorkspace({
+  chatsOnly = false,
   session,
   config,
   views,
@@ -188,9 +189,53 @@ export default function CollabWorkspace({
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState('');
   const [ratingMessageId, setRatingMessageId] = useState('');
-  const [tileSpans, setTileSpans] = useState({});
-  const [resizingTile, setResizingTile] = useState('');
-  const resizeStateRef = useRef(null);
+  const [splitRatios, setSplitRatios] = useState({});
+  const [rosterHidden, setRosterHidden] = useState(chatsOnly);
+  const [chatColumns, setChatColumns] = useState(chatsOnly ? 2 : 0);
+  const [chatHeight, setChatHeight] = useState(360);
+  const [poppedOut, setPoppedOut] = useState(false);
+  const [popoutError, setPopoutError] = useState('');
+  const popoutRef = useRef(null);
+
+  useEffect(() => {
+    if (!poppedOut) return undefined;
+    const timer = window.setInterval(() => {
+      if (!popoutRef.current || popoutRef.current.closed) {
+        popoutRef.current = null;
+        setPoppedOut(false);
+      }
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, [poppedOut]);
+
+  const popOutChats = () => {
+    if (popoutRef.current && !popoutRef.current.closed) {
+      popoutRef.current.focus();
+      return;
+    }
+    const url = new URL(collabChatsPath(session.id), window.location.origin);
+    const popup = window.open(url.href, `collab-chats-${session.id}`, 'popup,width=1400,height=900');
+    if (!popup) {
+      setPopoutError('Pop-up blocked. Allow pop-ups for this site and try again.');
+      return;
+    }
+    popoutRef.current = popup;
+    setPopoutError('');
+    setPoppedOut(true);
+  };
+  const [maximizedPane, setMaximizedPane] = useState(null);
+  useEffect(() => {
+    if (!maximizedPane) return undefined;
+    const restore = (event) => {
+      if (event.key === 'Escape' && !event.target.closest?.('[data-terminal-selection]')) {
+        event.preventDefault();
+        event.stopPropagation();
+        setMaximizedPane(null);
+      }
+    };
+    window.addEventListener('keydown', restore, true);
+    return () => window.removeEventListener('keydown', restore, true);
+  }, [maximizedPane]);
   const agentTerminals = views?.terminals?.agents || EMPTY_AGENT_TERMINALS;
   const channelTerminal = views?.terminals?.channel || null;
   const layoutMode = sessionLayoutMode(session, config.layouts);
@@ -217,7 +262,7 @@ export default function CollabWorkspace({
       id: agent.id,
       kind: 'agent',
       label: agent.identity || agent.id,
-      subtitle: `${agent.role || agent.prompt} · ${formatAgentModel(agent)}${
+      subtitle: `${agent.role || agent.prompt} · ${formatAgentModel(agent)}${agent.resumeStatus ? ` · Resume: ${agent.resumeStatus}` : ''}${agent.resumeError ? ` · ${agent.resumeError}` : ''}${
         normalizeAgentSpec(agent).backend === 'ollama' ? ' · via Ollama' : ''
       }`,
       terminal: agentTerminals[agent.id] || agentTerminals[agent.identity],
@@ -232,70 +277,10 @@ export default function CollabWorkspace({
   }, [focusedPane, panes]);
 
   useEffect(() => {
-    setTileSpans((current) => Object.fromEntries(
-      Object.entries(current).filter(([paneId]) => panes.some((pane) => pane.id === paneId))
-    ));
-  }, [panes]);
+    if (maximizedPane && !panes.some((pane) => pane.id === maximizedPane)) setMaximizedPane(null);
+  }, [maximizedPane, panes]);
 
-  useEffect(() => () => {
-    const resizeState = resizeStateRef.current;
-    if (resizeState) {
-      window.removeEventListener('pointermove', resizeState.onPointerMove);
-      window.removeEventListener('pointerup', resizeState.onPointerUp);
-    }
-  }, []);
-
-  const resizeTileBy = useCallback((paneId, columnDelta, rowDelta) => {
-    setTileSpans((current) => {
-      const currentSpan = current[paneId] || { columns: 1, rows: 1 };
-      return {
-        ...current,
-        [paneId]: {
-          columns: Math.max(1, Math.min(3, currentSpan.columns + columnDelta)),
-          rows: Math.max(1, Math.min(3, currentSpan.rows + rowDelta))
-        }
-      };
-    });
-  }, []);
-
-  const startTileResize = useCallback((event, paneId) => {
-    if (event.button !== 0) return;
-    const tile = event.currentTarget.parentElement;
-    if (!tile) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    const rect = tile.getBoundingClientRect();
-    const startX = event.clientX;
-    const startY = event.clientY;
-    const initialSpan = tileSpans[paneId] || { columns: 1, rows: 1 };
-    const initialColumnWidth = rect.width / initialSpan.columns;
-    const initialRowHeight = rect.height / initialSpan.rows;
-    setFocusedPane(paneId);
-    setResizingTile(paneId);
-
-    const onPointerMove = (moveEvent) => {
-      const columns = Math.max(1, Math.min(3, Math.round(
-        (rect.width + moveEvent.clientX - startX) / initialColumnWidth
-      )));
-      const rows = Math.max(1, Math.min(3, Math.round(
-        (rect.height + moveEvent.clientY - startY) / initialRowHeight
-      )));
-      setTileSpans((current) => ({
-        ...current,
-        [paneId]: { columns, rows }
-      }));
-    };
-    const onPointerUp = () => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      resizeStateRef.current = null;
-      setResizingTile('');
-    };
-    resizeStateRef.current = { onPointerMove, onPointerUp };
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp, { once: true });
-  }, [tileSpans]);
+  const chatLayout = buildChatLayout(panes.map((pane) => pane.id), chatColumns, layoutMode, splitRatios);
 
   const loadStats = useCallback(async () => {
     if (!onLoadStats) return;
@@ -373,6 +358,22 @@ export default function CollabWorkspace({
         </div>
 
         <div className={styles.toolbarControls}>
+          <button type="button" onClick={() => setRosterHidden((hidden) => !hidden)}
+            aria-expanded={!rosterHidden}>{rosterHidden ? 'Show roster' : 'Hide roster'}</button>
+          <label className={styles.layoutPicker}>Columns
+            <select value={chatColumns} onChange={(event) => { setChatColumns(Number(event.target.value)); setSplitRatios({}); }}>
+              <option value={0}>Auto</option>
+              {[1, 2, 3, 4].map((count) => <option key={count} value={count}>{count}</option>)}
+            </select>
+          </label>
+          <label className={styles.layoutPicker}>Chat height
+            <input aria-label="Chat row height" type="range" min="200" max="900" step="20"
+              value={chatHeight} onChange={(event) => { setChatHeight(Number(event.target.value)); if (!chatColumns) setChatColumns(2); }} />
+          </label>
+          {!chatsOnly && <button type="button" onClick={popOutChats}>
+            <ExternalLink size={14} aria-hidden="true" /> {poppedOut ? 'Focus chats' : 'Pop out chats'}
+          </button>}
+          {poppedOut && <button type="button" onClick={() => { popoutRef.current?.close(); setPoppedOut(false); }}>Dock chats</button>}
           <span className={`${styles.eventStatus} ${styles[`event_${eventStatus}`]}`}>
             {eventStatus === 'live' ? 'events live' : eventStatus}
           </span>
@@ -421,7 +422,7 @@ export default function CollabWorkspace({
         </div>
       </header>
 
-      <section className={styles.rosterPanel} aria-label="Collaboration roster">
+      <section className={styles.rosterPanel} aria-label="Collaboration roster" hidden={rosterHidden}>
         <div className={styles.rosterToolbar}>
           <button
             type="button"
@@ -607,24 +608,27 @@ export default function CollabWorkspace({
         </div>
       )}
 
-      <section
-        className={`${styles.mosaic} ${layoutClass(layoutMode)}`}
+      {popoutError && <div role="alert" className={styles.inlineNotice}>{popoutError}</div>}
+      {poppedOut && <div className={styles.emptyState}>Chats are open in a separate window. Close it or choose Dock chats to return them here.</div>}
+      {!poppedOut && <section
+        className={styles.chatSplitLayout}
+        style={{ minHeight: Math.min(900, chatHeight) }}
         data-count={panes.length}
         aria-label="Collaboration terminals"
       >
-        {panes.map((pane) => {
+        {chatLayout && <TerminalPaneLayout layout={chatLayout} activePaneId={focusedPane}
+          onActivatePane={setFocusedPane}
+          onResizeSplit={(id, ratios) => setSplitRatios((current) => ({ ...current, [id]: ratios }))}
+          renderPane={(leaf) => {
+          const pane = panes.find((entry) => entry.id === leaf.id);
           const terminalId = resolveTerminalId(pane.terminal);
-          const span = tileSpans[pane.id];
           return (
             <div
-              className={`${styles.terminalTile}${focusedPane === pane.id ? ` ${styles.focusedTile}` : ''}`}
+              className={`${styles.terminalTile}${focusedPane === pane.id ? ` ${styles.focusedTile}` : ''}${maximizedPane === pane.id ? ` ${styles.maximizedTile}` : ''}`}
               data-kind={pane.kind}
+              inert={maximizedPane && maximizedPane !== pane.id ? true : undefined}
               key={pane.id}
               onPointerDown={() => setFocusedPane(pane.id)}
-              style={span ? {
-                gridColumn: `span ${span.columns}`,
-                gridRow: `span ${span.rows}`
-              } : undefined}
             >
               {terminalId ? (
                 <TerminalConsole
@@ -634,6 +638,16 @@ export default function CollabWorkspace({
                   compact
                   autoFocus={false}
                   updateDocumentTitle={false}
+                  copyControls
+                  transcriptControl={pane.agent && normalizeAgentSpec(pane.agent).harness === 'codex'}
+                  headerActions={
+                    <button type="button" className="terminal-reconnect" aria-label={`${maximizedPane === pane.id ? 'Restore' : 'Maximize'} ${pane.label}`}
+                      title={maximizedPane === pane.id ? 'Restore pane (Escape)' : 'Maximize pane'}
+                      aria-pressed={maximizedPane === pane.id}
+                      onClick={() => setMaximizedPane((current) => current === pane.id ? null : pane.id)}>
+                      {maximizedPane === pane.id ? <Minimize2 size={14} aria-hidden="true" /> : <Maximize2 size={14} aria-hidden="true" />}
+                    </button>
+                  }
                 />
               ) : (
                 <div className={styles.pendingTerminal}>
@@ -643,31 +657,10 @@ export default function CollabWorkspace({
                   </div>
                 </div>
               )}
-              <button
-                type="button"
-                className={`${styles.tileResizeHandle}${resizingTile === pane.id ? ` ${styles.tileResizeHandleActive}` : ''}`}
-                aria-label={`Resize ${pane.kind === 'channel' ? 'IRC' : 'agent'} frame ${pane.label}`}
-                title="Drag to resize this frame"
-                onPointerDown={(event) => startTileResize(event, pane.id)}
-                onKeyDown={(event) => {
-                  const deltas = {
-                    ArrowLeft: [-1, 0],
-                    ArrowRight: [1, 0],
-                    ArrowUp: [0, -1],
-                    ArrowDown: [0, 1]
-                  };
-                  const delta = deltas[event.key];
-                  if (!delta) return;
-                  event.preventDefault();
-                  resizeTileBy(pane.id, delta[0], delta[1]);
-                }}
-              >
-                <span aria-hidden="true" />
-              </button>
             </div>
           );
-        })}
-      </section>
+        }} />}
+      </section>}
 
       {activityOpen && (
         <aside className={styles.activityDrawer} aria-label="Session activity">

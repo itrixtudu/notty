@@ -47,7 +47,7 @@ function catalogSources(catalog, harness, backend) {
   return sources;
 }
 
-function modelOptionsFromCatalogs(catalogs, harness, backend) {
+export function modelOptionsFromCatalogs(catalogs, harness, backend) {
   const seen = new Set();
   const options = [];
   for (const catalog of catalogs) {

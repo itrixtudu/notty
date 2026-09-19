@@ -9,7 +9,6 @@ const test = require('node:test');
 
 const appRoot = path.resolve(__dirname, '..');
 const buildPath = path.join(appRoot, 'build-nosh.sh');
-const buildNoshcPath = path.join(appRoot, 'build-noshc.sh');
 
 function createFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'notty-build-nosh-'));
@@ -293,7 +292,7 @@ test('build-nosh derives tooling and UI image IDs for the automatic review hando
     '#!/usr/bin/env bash',
     'set -euo pipefail',
     'printf "Private bundle: %s\\n" "$TEST_PRIVATE_BUNDLE"',
-    `printf "Output image (informational): ${tooling}\\n"`,
+    `printf "Output image (informational): sha256:${'c'.repeat(64)}\\nOutput image config (local ID): ${tooling}\\n"`,
   ].join('\n'), { mode: 0o755 });
   fs.writeFileSync(reviewPath, [
     '#!/usr/bin/env bash',
@@ -379,30 +378,4 @@ test('build-nosh rejects incomplete network workflow names', (t) => {
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /expected `net learn`/);
-});
-
-test('build-noshc retains its cdev and noshc compatibility defaults', (t) => {
-  const fixture = createFixture(t);
-  const argumentLog = path.join(fixture.root, 'docker-argv.log');
-  const env = installArgumentLogger(
-    path.join(fixture.bin, 'docker'),
-    argumentLog,
-  );
-  const result = childProcess.spawnSync('bash', [buildNoshcPath, '--no-cache'], {
-    cwd: appRoot,
-    encoding: 'utf8',
-    env: {
-      PATH: `${fixture.bin}:${process.env.PATH}`,
-      HOME: fixture.home,
-      USER: 'fixture-user',
-      USERNAME: 'fixture-user',
-      USER_UID: '1234',
-      USER_GID: '5678',
-      ...env,
-    },
-  });
-
-  assert.equal(result.status, 0, output(result));
-  assert.match(result.stdout, /Building noshc target=cdev/);
-  assert.match(fs.readFileSync(argumentLog, 'utf8'), /cdev\n-f\nDockerfile\.nosh\n-t\nnoshc\n/);
 });

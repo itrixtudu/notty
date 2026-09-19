@@ -281,10 +281,9 @@ test('standalone IRC preserves a quoted Agy model and uses the SSE endpoint', { 
 test('standalone IRC launches Ollama Codex with MCP, thinking, and safety overrides', { timeout: 15_000 }, async (t) => {
   const harness = createIrcHarness(t);
   const model = 'ornith:9b';
-  const spawnOtp = 'ollama-agent-single-use-otp';
   const { port, result } = await runStandaloneIrc(
     harness,
-    `/create_agent --agent ollama-coder --role coder --runtime ollama --model ${model} --think high --spawn-otp ${spawnOtp}`,
+    `/create_agent --agent ollama-coder --role coder --runtime ollama --model ${model} --think high`,
   );
 
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
@@ -339,11 +338,26 @@ test('standalone IRC launches Ollama Codex with MCP, thinking, and safety overri
   assert.equal(launch.env.COLLAB_MODEL, model);
   assert.equal(launch.env.COLLAB_THINK, 'high');
   assert.equal(launch.env.COLLAB_MCP_URL, mcpUrl);
-  assert.equal(launch.env.MCP_SPAWN_OTP, spawnOtp);
+  assert.equal(launch.env.MCP_SPAWN_OTP, undefined);
   assert.equal(launch.env.NOTTY_MCP_SPAWN_OTP, undefined);
   assert.equal(launch.env.COLLAB_AGENT_SPAWN_OTP, undefined);
-  assert.equal(launch.argv.some((arg) => arg.includes(spawnOtp)), false);
-  assert.match(launch.argv.at(-1), /single-use Notty terminal spawn OTP/i);
+  assert.doesNotMatch(launch.argv.at(-1), /spawn OTP|MCP_SPAWN_OTP/i);
+});
+
+test('standalone IRC rejects attempts to deliver a spawn OTP to an agent', { timeout: 15_000 }, async (t) => {
+  const harness = createIrcHarness(t);
+  const { result } = await runStandaloneIrc(
+    harness,
+    '/create_agent --agent otp-agent --spawn-otp must-not-enter-agent-env',
+  );
+
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(`${result.stdout}\n${result.stderr}`, /Agent OTP delivery is not supported/i);
+  assert.deepEqual(readJsonLines(harness.runtimeLog), []);
+  assert.equal(
+    readJsonLines(harness.tmuxLog).some((args) => args.includes('new-session')),
+    false,
+  );
 });
 
 test('standalone IRC rejects invalid Ollama launch inputs before tmux launch', { timeout: 15_000 }, async (t) => {

@@ -389,9 +389,10 @@ test('manifest records reviewed fixed dependency constraints', () => {
   assert.equal(manifest.dependencies.next, '^16.2.12');
   assert.deepEqual(manifest.overrides, {
     '@hono/node-server': '2.0.12',
-    'fast-uri': '3.1.5',
+    'fast-uri': '3.1.6',
     hono: '4.12.34',
     postcss: '8.5.25',
+    qs: '6.16.0',
     sharp: '0.35.3',
   });
 });

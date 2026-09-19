@@ -2253,7 +2253,7 @@ test('compare profiling brackets both Buildx passes with privileged sensor sessi
   assert.equal(result.manifest.metrics.cgroup.passes.length, 2);
   assert.deepEqual(
     result.manifest.observations.network.destinations.map((entry) => entry.port),
-    [53, 443, 8443],
+    [443, 53, 8443],
   );
   assert.equal(result.manifest.observations.network.dns.queries.length, 2);
   assert.equal(result.manifest.observations.network.dns.answers.length, 4);

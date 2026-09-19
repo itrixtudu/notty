@@ -5,6 +5,7 @@ component_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source_file="$component_dir/nosh_egress.bpf.c"
 header_file="$component_dir/include/nosh_egress.h"
 loader_file="$component_dir/loader/nosh_egress_loader.c"
+stage_file="$component_dir/include/nosh_egress_dns_stage.h"
 make_file="$component_dir/Makefile"
 test_skeleton="$component_dir/tests/include/nosh_egress.skel.h"
 
@@ -87,7 +88,7 @@ require 'packet->l4_offset \+ udp_length != network_length' "$source_file" \
   'UDP length framing validation missing'
 require 'packet->payload_length != \(__u32\)message_length \+ 2' "$source_file" \
   'TCP DNS single-frame validation missing'
-require 'parse_compressed_dns_name' "$source_file" \
+require 'parse_compressed_dns_name' "$stage_file" \
   'bounded DNS CNAME parsing missing'
 require 'dns_response_scratch' "$source_file" \
   'validate-before-commit DNS response staging missing'
@@ -107,7 +108,7 @@ require 'for \(index = 0; index < sizeof\(\*name\); index\+\+\)' \
   "$source_file" 'DNS name clear helper does not initialize the full object'
 reject '__builtin_memset\(name, 0, sizeof\(\*name\)\)' "$source_file" \
   '129-byte DNS name memset is unsupported by clang 14 BPF'
-if [[ $(grep -Ec 'clear_dns_name\(name\)' "$source_file") -ne 2 ]]; then
+if [[ $(cat "$source_file" "$component_dir/include/nosh_egress_dns_parse.h" | grep -Ec 'clear_dns_name\(name\)') -ne 2 ]]; then
   printf '%s\n' \
     'nosh-egress static test: both DNS name parsers must use the safe clear helper' \
     >&2
@@ -119,11 +120,11 @@ require 'struct nosh_egress_domain_key \*\)name_storage' "$source_file" \
   'domain lookup key must use per-CPU scratch instead of the BPF stack'
 require '_Static_assert\(sizeof\(struct nosh_egress_dns_tx_value\)' \
   "$source_file" 'response scratch size guard missing'
-require 'cname_offset != data_offset \+ data_length' "$source_file" \
+require 'cname_offset != data_offset \+ data_length' "$stage_file" \
   'exact CNAME RDATA consumption missing'
-require 'type != transaction->question_type' "$source_file" \
+require 'type != context->transaction->question_type' "$stage_file" \
   'DNS answer family binding missing'
-require 'scratch->cname_ttl < ttl' "$source_file" \
+require 'scratch->cname_ttl < ttl' "$stage_file" \
   'CNAME TTL cap missing'
 require 'required_ipv6_ndp' "$source_file" \
   'narrow IPv6 Neighbor Discovery exception missing'

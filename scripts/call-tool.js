@@ -10,6 +10,8 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 const rawArgs = process.argv.slice(2);
 const TOKEN = consumeToken(rawArgs);
+const agentFlag = rawArgs.indexOf('--agent');
+const explicitAgent = agentFlag >= 0 ? rawArgs.splice(agentFlag, 2)[1] : '';
 const DEBUG = process.env.DEBUG === '1' || rawArgs.includes('--debug');
 const JSON_OUTPUT = rawArgs.includes('--json');
 
@@ -24,7 +26,6 @@ function consumeToken(args) {
   let token =
     process.env.MCP_BEARER_TOKEN ||
     process.env.MCP_TOKEN ||
-    process.env.NOTTY_OAUTH_BOOT_TOKEN ||
     null;
 
   for (let i = 0; i < args.length; i += 1) {
@@ -103,6 +104,9 @@ function normalizeHttpUrl(rawUrl) {
   if (!['http:', 'https:'].includes(parsed.protocol)) {
     throw new Error(`Unsupported protocol "${parsed.protocol}". Use http:// or https://.`);
   }
+  if (parsed.searchParams.has('access_token')) {
+    throw new Error('Bearer tokens must use the Authorization header, not the URL query string.');
+  }
 
   return parsed;
 }
@@ -112,10 +116,6 @@ function buildSseUrl(baseUrl) {
   if (!parsed.pathname || parsed.pathname === '/') {
     parsed.pathname = '/sse';
   }
-  if (TOKEN && !parsed.searchParams.has('access_token')) {
-    parsed.searchParams.set('access_token', TOKEN);
-  }
-
   return parsed;
 }
 
@@ -200,6 +200,23 @@ async function main() {
 
   try {
     ({ client, transport } = await connectViaHttp(target));
+
+    const catalog = await client.listTools();
+    const collabService = catalog.tools?.some((tool) => tool.name === 'claim_pending')
+      && catalog.tools?.some((tool) => tool.name === 'set_nickname');
+    if (collabService) {
+      const sameService = process.env.COLLAB_MCP_URL
+        && new URL(process.env.COLLAB_MCP_URL).href.replace(/\/$/, '') === new URL(target).href.replace(/\/$/, '');
+      const identity = explicitAgent || (sameService ? process.env.COLLAB_AGENT_ID : '')
+        || (toolName === 'set_nickname' ? toolArgs?.nickname : '');
+      if (!identity || !/^[a-zA-Z0-9_-]{1,128}$/.test(identity)) {
+        throw new Error('Collab calls require --agent or a matching COLLAB_AGENT_ID/COLLAB_MCP_URL environment');
+      }
+      if (toolArgs?.agent && toolArgs.agent !== identity) throw new Error('Collab agent argument conflicts with connection identity');
+      if (toolName === 'set_nickname' && toolArgs?.nickname !== identity) throw new Error('Nickname conflicts with connection identity');
+      const registration = await client.callTool({ name: 'set_nickname', arguments: { nickname: identity } });
+      if (registration.isError) throw new Error('Collab identity registration failed');
+    }
 
     const response = await client.callTool({
       name: toolName,

@@ -381,10 +381,10 @@ test('built-in Full Roster exposes the approved canonical choices', (t) => {
       runtime,
     })),
     [
-      { prompt: 'coordinator', harness: 'codex', backend: 'default', model: 'gpt-5.6-sol', think: 'high', runtime: 'codex' },
-      { prompt: 'implementer', harness: 'codex', backend: 'default', model: 'gpt-5.6-sol', think: 'medium', runtime: 'codex' },
+      { prompt: 'coordinator', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low', runtime: 'codex' },
+      { prompt: 'implementer', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low', runtime: 'codex' },
       { prompt: 'reviewer', harness: 'agy', backend: 'default', model: 'gemini-3.6-flash-medium', think: 'high', runtime: 'agy' },
-      { prompt: 'qa', harness: 'codex', backend: 'default', model: 'gpt-5.6-sol', think: 'max', runtime: 'codex' },
+      { prompt: 'qa', harness: 'codex', backend: 'default', model: 'gpt-5.3-codex-spark', think: 'low', runtime: 'codex' },
       { prompt: 'observer', harness: 'codex', backend: 'ollama', model: 'qwen3:4b', think: 'low', runtime: 'ollama' },
       { prompt: 'bofh', harness: 'claude', backend: 'default', model: 'sonnet', think: 'low', runtime: 'claude' },
     ],

@@ -716,3 +716,50 @@ test('registry recovers an identity-checked stale interprocess lock', async (t) 
     'after-stale-lock',
   );
 });
+
+test('runtime-only review binds a subject and freezes literal DNS-associated endpoints', async t => {
+  const root = tempDir(t);
+  const stateDir = path.join(root, 'state');
+  const workdir = path.join(root, 'workspace');
+  fs.mkdirSync(workdir);
+  const evidence = makeLearningEvidence(stateDir, { workspace: workdir });
+  const { createEgressCandidateBundle } = await loadStore();
+  const candidate = await createEgressCandidateBundle(candidateInput(stateDir, workdir, evidence, {
+    unresolvedObservations: [],
+    rules: [{ destination: 'api.example.test', protocol: 'tcp', ports: [443], observations: [{
+      address: '203.0.113.5', dnsNames: ['api.example.test'],
+      decision: { destinationAddress: '203.0.113.5', destinationPort: 443,
+        hook: 1, protocol: 6, decisionClass: 'would-deny' },
+    }] }],
+  }));
+  const { createBuildReviewArtifact } = await import('../lib/guard/review/review-service.js');
+  const artifact = await createBuildReviewArtifact({ runtimeCandidate: candidate.directory, requireSbom: false });
+  assert.equal(artifact.graph.scope.class, 'runtime');
+  assert.equal(artifact.graph.scope.imageDigest, evidence.imageDigest);
+  assert.ok(artifact.graph.nodes.some(node => node.id === artifact.graph.scope.subjectId));
+  assert.equal(artifact.graph.proposals[0].intent.peer.value, '203.0.113.5/32');
+  assert.equal(artifact.graph.proposals[0].intent.peer.kind, 'ipv4-cidr');
+  const endpoint = artifact.graph.nodes.find(node => node.nodeType === 'networkEndpoint');
+  assert.deepEqual(endpoint.properties.runtimeEvidence[0].dnsNames, ['api.example.test']);
+  const { writeReviewBundleArtifact } = await import('../lib/guard/review/bundle-store.js');
+  const { createDecisionSet } = await import('../lib/guard/review/documents.js');
+  const { prepareReviewSession, snapshotReviewSelection, atomicSessionJson } = await import('../lib/guard/review/session.js');
+  const sessionDir = path.join(root, 'review-session');
+  for (const directory of [sessionDir, path.join(sessionDir, 'runtime'), path.join(sessionDir, 'decisions')]) {
+    fs.mkdirSync(directory, { mode: 0o700 });
+  }
+  const bundleDir = path.join(sessionDir, 'bundle');
+  await writeReviewBundleArtifact(bundleDir, artifact);
+  const session = await prepareReviewSession({ session: sessionDir, bundle: bundleDir,
+    candidate: candidate.directory, workdir, launcher: '/repo/nosh.sh',
+    tooling: `sha256:${'a'.repeat(64)}`, context: path.join(candidate.directory, 'context.json'),
+    applyConfig: '/config/apply.json', configAvailable: 'no' });
+  assert.equal(session.runtimeCandidate, candidate.directory);
+  assert.ok(session.preflight.some(message => /SBOM/.test(message)));
+  const decisions = createDecisionSet({ graph: artifact.graph, reviewer: 'Operator',
+    decisions: artifact.graph.proposals.map(proposal => ({ proposalId: proposal.id,
+      disposition: 'accept', rationale: 'Required endpoint', targetAcknowledgements: [] })) });
+  await atomicSessionJson(path.join(sessionDir, 'decisions', 'decisions.json'), decisions);
+  await assert.rejects(snapshotReviewSelection(sessionDir, `sha256:${'f'.repeat(64)}`, path.join(root, 'apply')), /Saved decisions changed/);
+  await assert.rejects(snapshotReviewSelection(sessionDir, decisions.contentDigest, path.join(root, 'apply')), /missing.*sbom/i);
+});

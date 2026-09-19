@@ -227,21 +227,22 @@ if ((BUILD_LOADERS == 1)); then
       exit 1
     fi
   done
-  make -C "$REPOSITORY_ROOT/bpf/nosh_build" test
-  make -C "$REPOSITORY_ROOT/bpf/nosh_url" test
-  make -C "$REPOSITORY_ROOT/bpf/nosh_l4" test
-  make -C "$REPOSITORY_ROOT/bpf/nosh_egress" test
   LOADER_BUILD_ROOT="$TMPDIR/loader-source"
   install -d -m 0700 "$LOADER_BUILD_ROOT"
   cp -R "$REPOSITORY_ROOT/bpf/nosh_build" "$LOADER_BUILD_ROOT/nosh_build"
   cp -R "$REPOSITORY_ROOT/bpf/nosh_url" "$LOADER_BUILD_ROOT/nosh_url"
   cp -R "$REPOSITORY_ROOT/bpf/nosh_l4" "$LOADER_BUILD_ROOT/nosh_l4"
   cp -R "$REPOSITORY_ROOT/bpf/nosh_egress" "$LOADER_BUILD_ROOT/nosh_egress"
+  # Static checks also read repository configuration and release tooling.
+  "$NODE_REQUESTED" --test "$REPOSITORY_ROOT/bpf/nosh_build/tests/"*.test.cjs
+  make -C "$LOADER_BUILD_ROOT/nosh_url" test
+  make -C "$LOADER_BUILD_ROOT/nosh_l4" test
+  make -C "$LOADER_BUILD_ROOT/nosh_egress" test
   make -C "$LOADER_BUILD_ROOT/nosh_build" clean
   make -C "$LOADER_BUILD_ROOT/nosh_url" clean
   make -C "$LOADER_BUILD_ROOT/nosh_l4" clean
   make -C "$LOADER_BUILD_ROOT/nosh_egress" clean
-  make -C "$LOADER_BUILD_ROOT/nosh_build" CLANG=clang-14 loader
+  make -C "$LOADER_BUILD_ROOT/nosh_build" CLANG=clang-14 loader test-dns
   make -C "$LOADER_BUILD_ROOT/nosh_url" CLANG=clang-14 loader
   make -C "$LOADER_BUILD_ROOT/nosh_l4" CLANG=clang-14 loader
   make -C "$LOADER_BUILD_ROOT/nosh_egress" CLANG=clang-14 loader
@@ -305,6 +306,8 @@ install -m 0644 "$NODE_LICENSE_REQUESTED" "$PAYLOAD_ROOT/docs/NODE_LICENSE"
 }
 
 install -m 0644 "$REPOSITORY_ROOT/package.json" "$PAYLOAD_ROOT/package.json"
+install -m 0644 "$REPOSITORY_ROOT/lib/authState.js" "$PAYLOAD_ROOT/lib/authState.js"
+install -m 0644 "$REPOSITORY_ROOT/lib/guardGatewayAuth.js" "$PAYLOAD_ROOT/lib/guardGatewayAuth.js"
 cp -R "$REPOSITORY_ROOT/lib/guard" "$PAYLOAD_ROOT/lib/guard"
 cp -R "$REPOSITORY_ROOT/lib/guardd" "$PAYLOAD_ROOT/lib/guardd"
 cp -R "$REPOSITORY_ROOT/config/nosh-guard/." "$PAYLOAD_ROOT/config/nosh-guard/"

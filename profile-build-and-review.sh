@@ -56,6 +56,7 @@ REVIEW_SBOM_SOURCE_DIGEST="none"
 REVIEW_SBOM_IMAGE_DIGEST="none"
 PROFILE_ARGS=()
 EXISTING_PROFILE=""
+EXISTING_RUNTIME=""
 TEMP_DIR=""
 TEMP_DIR_IDENTITY=""
 PROFILE_WORKDIR_IDENTITY=""
@@ -110,6 +111,7 @@ makes the resulting graph eligible for signed activation.
 
 Review bundle options (before `--`):
   --build-profile PATH     Open an existing persisted build profile directly
+  --runtime-candidate PATH Open an existing verified runtime candidate directly
   --sbom-source FILE       Reviewed source SPDX JSON (mounted read-only)
   --sbom-image FILE        Reviewed exact-image SPDX JSON (mounted read-only)
 EOF
@@ -387,6 +389,29 @@ encoded_graph_url() {
   printf '%s\n' "$encoded"
 }
 
+review_image_error() {
+  printf 'profile-build-and-review: %s\n' "$*" >&2
+  cat >&2 <<'EOF'
+
+For automatic image setup, run from the repository:
+  ./build-nosh.sh net learn
+
+To run this wrapper directly, select both local images by their full IDs.
+List compatible images (the ID column must contain sha256: plus 64 hex digits):
+  docker image ls --no-trunc --filter label=io.notty.guard.policy-tooling-abi=1
+  docker image ls --no-trunc --filter label=io.notty.policy-review.ui-abi=1
+
+After choosing images you have reviewed, replace the names below with their
+local tags (or full IDs), then rerun your original command:
+  export NOSH_POLICY_TOOLING_IMAGE="$(docker image inspect --format '{{.Id}}' TOOLING_IMAGE)"
+  export NOSH_POLICY_REVIEW_UI_IMAGE="$(docker image inspect --format '{{.Id}}' REVIEW_UI_IMAGE)"
+
+Tags, shortened IDs, and registry digests are not accepted as these variables.
+If no compatible images are installed, use the automatic setup above.
+EOF
+  exit 1
+}
+
 resolve_reviewed_image() {
   local requested="$1"
   local abi_label="$2"
@@ -395,11 +420,11 @@ resolve_reviewed_image() {
   local inspection
 
   [[ "$requested" =~ ^sha256:[a-f0-9]{64}$ ]] \
-    || die "$description must be an exact local sha256 image ID"
+    || review_image_error "$description must be an exact local sha256 image ID"
   inspection="$("$DOCKER_BIN" image inspect \
     --format "{{.Id}}|{{index .Config.Labels \"$abi_label\"}}" \
     "$requested" 2>/dev/null)" \
-    || die "$description is not installed locally; this workflow never pulls reviewed images"
+    || review_image_error "$description is not installed locally; this workflow never pulls reviewed images"
   [[ "$inspection" =~ ^(sha256:[a-f0-9]{64})\|([^\|[:space:]]+)$ ]] \
     || die "could not verify $description identity and ABI"
   [[ "${BASH_REMATCH[1]}" == "$requested" ]] \
@@ -476,6 +501,11 @@ fi
 
 while (($#)); do
   case "$1" in
+    --runtime-candidate)
+      [[ -z "$EXISTING_RUNTIME" && -n "${2:-}" ]] || die '--runtime-candidate requires one path'
+      EXISTING_RUNTIME="$2"
+      shift 2
+      ;;
     --build-profile)
       [[ -z "$EXISTING_PROFILE" ]] || die "--build-profile may be specified only once"
       (($# >= 2)) || die "--build-profile requires a value"
@@ -553,7 +583,12 @@ while ((review_argument_index < ${#PROFILE_ARGS[@]})); do
   review_argument_index=$((review_argument_index + 1))
 done
 
-if [[ -z "$EXISTING_PROFILE" ]]; then
+if [[ -n "$EXISTING_RUNTIME" ]]; then
+  [[ -z "$EXISTING_PROFILE" ]] || die '--runtime-candidate cannot be combined with --build-profile'
+  [[ "$EXISTING_RUNTIME" == /* && -d "$EXISTING_RUNTIME" && ! -L "$EXISTING_RUNTIME" ]] \
+    || die '--runtime-candidate must be an absolute non-symlink directory'
+  EXISTING_RUNTIME="$(realpath -e -- "$EXISTING_RUNTIME")"
+elif [[ -z "$EXISTING_PROFILE" ]]; then
   [[ -x "$PROFILE_BIN" ]] || die "profile runner is not executable: $PROFILE_BIN"
 else
   [[ "$EXISTING_PROFILE" == /* ]] || die "--build-profile must be an absolute path"
@@ -605,7 +640,15 @@ if [[ -n "$REVIEW_SBOM_IMAGE" ]]; then
   REVIEW_SBOM_IMAGE="$TEMP_DIR/image.spdx.json"
   REVIEW_SBOM_IMAGE_DIGEST="sha256:$(sha256sum -- "$REVIEW_SBOM_IMAGE" | awk '{print $1}')"
 fi
-if [[ -n "$EXISTING_PROFILE" ]]; then
+if [[ -n "$EXISTING_RUNTIME" ]]; then
+  PROFILE_DIR="$EXISTING_RUNTIME"
+  PROFILE_ID="$(basename -- "$PROFILE_DIR")"
+  PROFILE_OUTPUT=""
+  PROFILE_STATUS=0
+  IMAGE_DIGEST=""
+  RUNTIME_CANDIDATE="$PROFILE_DIR"
+  TARGET_CONTEXT="$PROFILE_DIR/guard-ebpf-target-context.json"
+elif [[ -n "$EXISTING_PROFILE" ]]; then
   PROFILE_DIR="$EXISTING_PROFILE"
   PROFILE_ID="$(basename -- "$PROFILE_DIR")"
   PROFILE_OUTPUT=""
@@ -645,6 +688,7 @@ if [[ -n "$IMAGE_DIGEST" ]]; then
 fi
 PROFILE_DIR="$(canonical_directory 'private build profile' "$PROFILE_DIR")"
 PROFILE_EVIDENCE_FILE="$PROFILE_DIR/evidence-manifest.json"
+[[ -z "$EXISTING_RUNTIME" ]] || PROFILE_EVIDENCE_FILE="$PROFILE_DIR/manifest.json"
 trusted_private_file "$PROFILE_EVIDENCE_FILE" \
   || die "build profile evidence manifest must be a caller-owned 0600 regular file: $PROFILE_EVIDENCE_FILE"
 PROFILE_EVIDENCE_DIGEST="sha256:$(sha256sum -- "$PROFILE_EVIDENCE_FILE" | awk '{print $1}')"
@@ -683,6 +727,7 @@ if [[ -n "$RUNTIME_CANDIDATE" ]]; then
     | sha256sum | awk '{print $1}')"
 fi
 REVIEW_COMPOSITION_DIGEST="sha256:$(printf '%s\n' \
+  "review_workflow=literal-endpoints-v1" \
   "allow_missing_sbom=$REVIEW_ALLOW_MISSING_SBOM" \
   "runtime_candidate=$RUNTIME_COMPOSITION_ID" \
   "source_sbom=$REVIEW_SBOM_SOURCE_DIGEST" \
@@ -698,6 +743,12 @@ REVIEW_DIR="$SESSION_DIR/bundle"
 PROFILE_STATE="$SESSION_DIR/profile.state"
 SERVICE_STATE="$SESSION_DIR/services.state"
 install -d -m 0700 -- "$SESSION_DIR" "$RUNTIME_DIR" "$DECISIONS_DIR"
+if [[ -n "$REVIEW_SBOM_SOURCE" ]]; then
+  install -m 0600 -- "$REVIEW_SBOM_SOURCE" "$SESSION_DIR/source.spdx.json"
+fi
+if [[ -n "$REVIEW_SBOM_IMAGE" ]]; then
+  install -m 0600 -- "$REVIEW_SBOM_IMAGE" "$SESSION_DIR/image.spdx.json"
+fi
 SESSION_DIR="$(canonical_directory 'review session directory' "$SESSION_DIR")"
 RUNTIME_DIR="$(canonical_directory 'review runtime directory' "$RUNTIME_DIR")"
 private_directory_identity "$SESSION_DIR" >/dev/null \
@@ -712,10 +763,11 @@ HOST_UID="$(id -u)"
 HOST_GID="$(id -g)"
 REVIEW_LOG="$TEMP_DIR/review-bundle.log"
 declare -a REVIEW_MOUNTS=(
+  --mount "type=bind,src=$PROFILE_WORKDIR,dst=$PROFILE_WORKDIR,readonly"
   --mount "type=bind,src=$PROFILE_STORE_ROOT,dst=$PROFILE_STORE_ROOT,readonly"
   --mount "type=bind,src=$REVIEW_STATE_ROOT,dst=$REVIEW_STATE_ROOT"
 )
-if [[ -n "$RUNTIME_EXPORT_ROOT" ]]; then
+if [[ -n "$RUNTIME_EXPORT_ROOT" && "$RUNTIME_EXPORT_ROOT" != "$PROFILE_STORE_ROOT" ]]; then
   REVIEW_MOUNTS+=(--mount "type=bind,src=$RUNTIME_EXPORT_ROOT,dst=$RUNTIME_EXPORT_ROOT,readonly")
 fi
 if [[ -n "$REVIEW_SBOM_SOURCE" ]]; then
@@ -753,9 +805,10 @@ else
   printf '\n%s\n' '== Materializing frozen review bundle ==' >&2
   REVIEW_COMMAND=(
     /app/scripts/nosh-guard.mjs review bundle
-    --profile "$PROFILE_DIR"
     --output "$REVIEW_DIR"
+    --literal-endpoints
   )
+  [[ -n "$EXISTING_RUNTIME" ]] || REVIEW_COMMAND+=(--profile "$PROFILE_DIR")
   if [[ -n "$RUNTIME_CANDIDATE" ]]; then
     REVIEW_COMMAND+=(--runtime-candidate "$RUNTIME_CANDIDATE")
   fi
@@ -819,6 +872,24 @@ if ((REVIEW_STATUS == 2)); then
   printf '%s\n' \
     'profile-build-and-review: the graph has blocking coverage/findings; it is reviewable but cannot yet be activated' >&2
 fi
+
+APPLY_CONFIG="${NOSH_POLICY_APPLY_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/nosh/policy-apply.json}"
+APPLY_CONFIG_AVAILABLE=no
+[[ ! -f "$APPLY_CONFIG" ]] || APPLY_CONFIG_AVAILABLE=yes
+SESSION_COMMAND=(/app/scripts/nosh-policy-session.mjs prepare
+  --session "$SESSION_DIR" --bundle "$REVIEW_DIR"
+  --candidate "$RUNTIME_CANDIDATE" --context "$TARGET_CONTEXT"
+  --workdir "$PROFILE_WORKDIR" --launcher "$SCRIPT_DIR/nosh.sh"
+  --tooling "$POLICY_TOOLING_IMAGE_ID" --apply-config "$APPLY_CONFIG"
+  --config-available "$APPLY_CONFIG_AVAILABLE")
+[[ -z "$REVIEW_SBOM_SOURCE" ]] || SESSION_COMMAND+=(--sbom-source "$SESSION_DIR/source.spdx.json")
+[[ -z "$REVIEW_SBOM_IMAGE" ]] || SESSION_COMMAND+=(--sbom-image "$SESSION_DIR/image.spdx.json")
+"$DOCKER_BIN" run --rm --pull never --network none \
+  --user "$HOST_UID:$HOST_GID" --read-only --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --entrypoint /usr/local/bin/node "${REVIEW_MOUNTS[@]}" \
+  "$POLICY_TOOLING_IMAGE_ID" "${SESSION_COMMAND[@]}" >"$TEMP_DIR/session.json" \
+  || die 'could not prepare the managed save/apply session; rebuild the policy tooling image'
 
 EXPECTED_NETWORK_ID=""
 EXPECTED_UI_CONTAINER_ID=""
@@ -925,6 +996,8 @@ else
     --env HOME=/tmp/nosh-review-home \
     --env HOSTNAME=0.0.0.0 --env PORT=3000 \
     --env NOTTY_POLICY_REVIEW_ATTESTATION_FILE=/run/notty/policy-review-attestation.json \
+    --env NOTTY_POLICY_REVIEW_SESSION_FILE=/run/notty/review-session.json \
+    --env NOTTY_POLICY_REVIEW_GRAPH_FILE=/run/notty/review.graph.json \
     --mount "type=bind,src=$RUNTIME_DIR,dst=/run/notty,readonly" \
     --env NOTTY_POLICY_REVIEW_DECISIONS_DIR=/run/notty-decisions \
     --mount "type=bind,src=$DECISIONS_DIR,dst=/run/notty-decisions" \
@@ -1095,6 +1168,7 @@ fi
 printf '%s\n' \
   '' \
   'Review every proposal and coverage finding before exporting a complete DecisionSet JSON.' \
+  'Use Save draft to preserve partial work, Save profile for the selected policy, and Copy Apply command for the host handoff.' \
   'Opening an incomplete graph does not make it activation eligible. Stop these exact containers when review is finished with:'
 print_command "$DOCKER_BIN" stop "$GRAPH_CONTAINER_ID"
 print_command "$DOCKER_BIN" stop "$UI_CONTAINER_ID"

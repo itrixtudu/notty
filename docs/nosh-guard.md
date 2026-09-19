@@ -417,14 +417,32 @@ attestation. ABI version 1 assumes `/bin/sh`, `/bin/bash`, `node`, `sleep`,
 The runner uses the non-root UID/GID that owns the workspace. Build the
 supported image/workspace pairing with compatible ownership; the guard does
 not currently prove that the image has a matching passwd entry. It forces
-`HOME=/home/nosh-guard` and every XDG directory beneath an empty, UID/GID-owned
-`0700` tmpfs. That home and `/tmp` are `noexec`, `nosuid`, and `nodev`, and
-disappear with the container. Install executable toolchains in a reviewed
-image or workspace rather than under the ephemeral home.
+`HOME=/home/nosh-guard` and every general XDG directory beneath an empty,
+UID/GID-owned `0700` tmpfs. That home and `/tmp` are `noexec`, `nosuid`, and
+`nodev`, and disappear with the container. The sole state exception is a
+separately mounted per-workspace Guard auth directory containing private
+`auth.sqlite3` state, so OTP hashes and consumption tombstones survive runner
+recreation. Install executable toolchains in a reviewed image or workspace
+rather than under the ephemeral home.
 
-The root filesystem is read-only and the workspace is the only persistent
-writable bind. No Codex, Claude, Gemini, launcher OTP, Basic-auth, or arbitrary
-host credentials are projected. Secure profile names are role metadata only;
+Guard auth state is reset only through the root-owned daemon API. From the
+same workspace, run:
+
+```bash
+sudo nosh auth reset --secure --workdir /absolute/workspace
+```
+
+The daemon canonicalizes the workspace, derives its state directory beneath
+`/var/lib/nosh-guard/auth`, and transactionally invalidates OAuth authority and
+outstanding spawn OTPs. The caller cannot supply a database path or workspace
+ID. `--dry-run` prints the `nosh-guard auth reset` delegation without requiring
+root or contacting the socket. Without `--secure`, `nosh auth reset` continues
+to manage the invoking user's legacy XDG state.
+
+The root filesystem is read-only. The workspace and narrowly scoped Guard auth
+state are the only persistent writable binds. No Codex, Claude, Gemini,
+launcher OTP, Basic-auth, OAuth, or arbitrary host credentials are projected.
+Secure profile names are role metadata only;
 legacy profile mounts and devices are not applied. A hosted coding agent still
 needs the separately designed credential broker described under limitations.
 Do not place durable provider credentials in the workspace as a workaround.
@@ -432,16 +450,18 @@ Do not place durable provider credentials in the workspace as a workaround.
 The normal `nosh.sh`/`nosh-guard run` path constructs the runner environment;
 it does not copy the launcher's host environment wholesale. It supplies the
 mode, exact run and agent IDs, work directories, Collab switch and role names,
-forces `NOTTY_COLLAB_UNSANDBOXED=false` and
-`NOTTY_BASIC_AUTH_ENABLED=false`, and adds `NOTTY_CONFIG` only when the
+forces `NOTTY_COLLAB_UNSANDBOXED=false`,
+`NOTTY_BASIC_AUTH_ENABLED=false`, `NOTTY_GUARD_MTLS=true`, and fail-closed
+spawn OTP enforcement, and adds `NOTTY_CONFIG` only when the
 selected file resolves inside the workspace. `HOME` and the five `XDG_*`
 locations are then overwritten with the fixed ephemeral paths above. When the
 mTLS gateway is enabled, the daemon also overwrites `ALLOWED_ORIGIN`,
 `NOTTY_PUBLIC_HOST`, `NOTTY_PUBLIC_WS_URL`, and `NOTTY_TRUSTED_HOSTS` from its
 configured public origin. A direct caller of the root-only guard API is an
 administrator and can request additional non-secret environment entries;
-the daemon still strips launcher OTP and Basic-auth username/password fields
-and retains control of the fixed home and gateway-origin values.
+the daemon still strips launcher OTP, Basic-auth username/password, and
+OAuth/Authorization fields, and retains control of the fixed home,
+workspace-auth-state, and gateway-origin values.
 
 ## Installing the sensor assets
 
@@ -856,7 +876,6 @@ descendants, except `/`, which permits only the root page.
 /api/spawn-otps
 /api/terminals
 /ws/terminals
-/oauth/token
 /health
 ```
 

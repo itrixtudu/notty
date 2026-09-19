@@ -263,6 +263,8 @@ static const char *const link_names[PROGRAM_COUNT] = {
   "connect4", "connect6", "sendmsg4", "sendmsg6", "ingress", "egress",
 };
 
+/* Pinned policy ABI inventory. Private packet_scratch and events maps live
+ * through program/loader references and are not part of this inventory. */
 static const char *const map_names[MAP_COUNT] = {
   "session_config", "policy_identity", "containment", "static_v4", "static_v6",
   "domain_rules", "resolvers", "dynamic_grants", "dns_transactions",
@@ -320,13 +322,14 @@ static void usage(FILE *stream, const char *program)
   fprintf(stream,
           "Usage:\n"
           "  %s health [--cgroup ABS --cgroup-id UINT64]\n"
+          "  %s verify  (load into kernel, then close; never attach or pin)\n"
           "  %s run --cgroup ABS --cgroup-id UINT64 --mode learn|audit|enforce\\\n\n"
           "      --policy FILE --policy-digest sha256:HEX --pin-root ABS\\\n\n"
           "      [--generation UINT32] [--run-id ID] [--image-digest DIGEST]\\\n\n"
           "      [--workspace-key KEY] [--status-fd FD]\n"
           "  %s status|snapshot|detach --pin-root ABS\n"
           "  %s --version\n",
-          program, program, program, program);
+          program, program, program, program, program);
 }
 
 static int parse_u64(const char *text, __u64 *value)
@@ -438,6 +441,8 @@ static int parse_options(int argc, char **argv, struct options *options)
     return argc == 2 ? 0 : -1;
   }
   options->command = argv[1];
+  if (!strcmp(options->command, "verify"))
+    return argc == 2 ? 0 : -1;
   if (strcmp(options->command, "health") &&
       strcmp(options->command, "run") &&
       strcmp(options->command, "status") &&
@@ -1201,7 +1206,7 @@ static int map_contract_id(int fd, int index)
 }
 
 static int link_info_at(const char *root, const char *name,
-                        __u64 expected_cgroup_id,
+                        __u64 expected_cgroup_id, bool allow_detached,
                         __u32 *link_id, __u32 *program_id)
 {
   struct bpf_link_info info = {};
@@ -1218,15 +1223,29 @@ static int link_info_at(const char *root, const char *name,
     return -1;
   }
   close(fd);
-  if (info.type != BPF_LINK_TYPE_CGROUP ||
-      info.cgroup.cgroup_id != expected_cgroup_id)
+  if (!expected_cgroup_id || info.type != BPF_LINK_TYPE_CGROUP ||
+      !info.id || !info.prog_id)
     return -1;
+  /* A pinned cgroup link survives destruction of its target, but the kernel
+   * reports cgroup_id zero once detached. Only final snapshots and cleanup
+   * may accept that state; it is never evidence of live enforcement. */
+  if (info.cgroup.cgroup_id != expected_cgroup_id &&
+      !(allow_detached && info.cgroup.cgroup_id == 0)) {
+    fprintf(stderr,
+            "nosh-egress: pinned link %s has cgroup %" PRIu64
+            "; expected %" PRIu64 "%s\n",
+            path, (uint64_t)info.cgroup.cgroup_id,
+            (uint64_t)expected_cgroup_id,
+            allow_detached ? " or an already-detached link" : "");
+    return -1;
+  }
   *link_id = info.id;
   *program_id = info.prog_id;
   return 0;
 }
 
-static int validate_pinned_contract(const char *root, __u64 cgroup_id)
+static int validate_pinned_contract(const char *root, __u64 cgroup_id,
+                                    bool allow_detached)
 {
   char path[PATH_MAX];
   int index;
@@ -1235,7 +1254,7 @@ static int validate_pinned_contract(const char *root, __u64 cgroup_id)
     __u32 link_id;
     __u32 program_id;
 
-    if (link_info_at(root, link_names[index], cgroup_id,
+    if (link_info_at(root, link_names[index], cgroup_id, allow_detached,
                      &link_id, &program_id) || !link_id || !program_id)
       return -1;
   }
@@ -1295,7 +1314,7 @@ static int emit_attestation(FILE *stream, const char *status,
   for (index = 0; index < PROGRAM_COUNT; index++) {
     __u32 link_id;
     __u32 program_id;
-    if (link_info_at(root, link_names[index], config->target_cgroup_id,
+    if (link_info_at(root, link_names[index], config->target_cgroup_id, false,
                      &link_id, &program_id))
       return -1;
     fprintf(stream, "%s%u", first ? "" : ",", link_id);
@@ -1306,7 +1325,7 @@ static int emit_attestation(FILE *stream, const char *status,
   for (index = 0; index < PROGRAM_COUNT; index++) {
     __u32 link_id;
     __u32 program_id;
-    if (link_info_at(root, link_names[index], config->target_cgroup_id,
+    if (link_info_at(root, link_names[index], config->target_cgroup_id, false,
                      &link_id, &program_id))
       return -1;
     fprintf(stream, "%s%u", first ? "" : ",", program_id);
@@ -1693,7 +1712,7 @@ static int run_snapshot(const struct options *options)
 
   if (read_pinned_identity(options->pin_root, &config, &identity))
     return 1;
-  if (validate_pinned_contract(options->pin_root, config.target_cgroup_id))
+  if (validate_pinned_contract(options->pin_root, config.target_cgroup_id, true))
     return 1;
   pin_path(path, sizeof(path), options->pin_root, "maps", "stats");
   runtime.stats_fd = bpf_obj_get(path);
@@ -1729,9 +1748,14 @@ static int run_detach(const struct options *options)
 
   if (read_pinned_identity(options->pin_root, &config, &identity))
     return 1;
-  if (validate_pinned_contract(options->pin_root, config.target_cgroup_id))
+  if (validate_pinned_contract(options->pin_root, config.target_cgroup_id, true))
     return 1;
   unlink_pins(options->pin_root);
+  if (access(options->pin_root, F_OK) == 0 || errno != ENOENT) {
+    fprintf(stderr, "nosh-egress: pinned state remains after detach: %s\n",
+            options->pin_root);
+    return 1;
+  }
   printf("{\"schemaVersion\":2,\"recordKind\":\"status\","
          "\"timestampUnixNs\":\"%" PRIu64 "\",\"status\":\"detached\","
          "\"cgroupId\":\"%" PRIu64 "\",\"policyDigest\":\"%s\","
@@ -1740,7 +1764,28 @@ static int run_detach(const struct options *options)
          (uint64_t)realtime_ns(), (uint64_t)config.target_cgroup_id,
          identity.policy_digest, identity.containment_digest,
          identity.containment_count, options->pin_root);
-  return access(options->pin_root, F_OK) && errno == ENOENT ? 0 : 1;
+  return 0;
+}
+
+/* Exercise the actual kernel verifier without attaching hooks or pinning
+ * objects. Closing the skeleton releases the temporary programs and maps. */
+static int run_verify(void)
+{
+  struct nosh_egress_bpf *skeleton;
+
+  if (geteuid() != 0) {
+    fprintf(stderr, "nosh-egress verify: root is required\n");
+    return 1;
+  }
+  skeleton = nosh_egress_bpf__open_and_load();
+  if (!skeleton)
+    return 1;
+  nosh_egress_bpf__destroy(skeleton);
+  printf("{\"schemaVersion\":2,\"recordKind\":\"verification\","
+         "\"status\":\"verified\",\"objectDigest\":\"%s\","
+         "\"attachedPrograms\":0,\"pinned\":false}\n",
+         NOSH_EGRESS_OBJECT_DIGEST);
+  return 0;
 }
 
 static int run_loader(const struct options *options)
@@ -1920,6 +1965,8 @@ int main(int argc, char **argv)
            NOSH_EGRESS_MAP_ABI, NOSH_EGRESS_PROGRAM_ABI);
     return 0;
   }
+  if (!strcmp(options.command, "verify"))
+    return run_verify();
   if (!strcmp(options.command, "health"))
     return run_health(&options);
   if (!strcmp(options.command, "status"))

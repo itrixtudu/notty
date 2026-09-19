@@ -91,10 +91,6 @@ async function waitForPane(baseUrl, session, predicate) {
   throw new Error(`timed out waiting for ${session} pane:\n${pane}`);
 }
 
-function sha256(value) {
-  return crypto.createHash('sha256').update(value).digest('hex');
-}
-
 function readJsonLines(filePath) {
   return fs.readFileSync(filePath, 'utf8')
     .split('\n')
@@ -114,9 +110,7 @@ function writeFakeRuntime(filePath, runtime) {
   fs.writeFileSync(filePath, [
     `#!${process.execPath}`,
     "'use strict';",
-    "const crypto = require('node:crypto');",
     "const fs = require('node:fs');",
-    "const path = require('node:path');",
     "const readline = require('node:readline');",
     `const runtime = ${JSON.stringify(runtime)};`,
     'const args = process.argv.slice(2);',
@@ -124,24 +118,32 @@ function writeFakeRuntime(filePath, runtime) {
     "  process.stdout.write('Available models:\\nAgy Test Model\\n');",
     '  process.exit(0);',
     '}',
-    "const otpPresent = Object.hasOwn(process.env, 'MCP_SPAWN_OTP')",
-    "  && typeof process.env.MCP_SPAWN_OTP === 'string'",
-    '  && process.env.MCP_SPAWN_OTP.length > 0;',
-    "if (!otpPresent) throw new Error('MCP_SPAWN_OTP is required');",
-    "const hash = crypto.createHash('sha256').update(process.env.MCP_SPAWN_OTP).digest('hex');",
-    'const markerPath = path.join(process.env.FAKE_OTP_MARKER_DIR, hash);',
-    "const marker = fs.openSync(markerPath, 'wx');",
-    'fs.closeSync(marker);',
+    'const sensitiveEnvironmentKeys = [',
+    "  'AUTHORIZATION',",
+    "  'HTTP_AUTHORIZATION',",
+    "  'MCP_BEARER_TOKEN',",
+    "  'MCP_TOKEN',",
+    "  'MCP_SPAWN_OTP',",
+    "  'COLLAB_AGENT_SPAWN_OTP',",
+    "  'NOTTY_MCP_SPAWN_OTP',",
+    "  'NOTTY_MCP_SPAWN_OTP_ENABLED',",
+    "  'NOTTY_MCP_SPAWN_OTP_TTL_SECONDS',",
+    "  'NOTTY_BASIC_AUTH_PASSWORD',",
+    "  'NOTTY_OAUTH_CLIENT_SECRET',",
+    "  'NOTTY_GUARD_MTLS',",
+    "  'NOTTY_GUARD_GATEWAY_PEER_IP',",
+    "  'NOTTY_GUARD_GATEWAY_TOKEN',",
+    "  'NOTTY_GUARD_OTP_MINT_TOKEN',",
+    "  'NOTTY_LOOPBACK_PUBLICATION',",
+    '];',
+    'const inheritedSensitiveKeys = sensitiveEnvironmentKeys.filter((key) => Object.hasOwn(process.env, key));',
     'fs.appendFileSync(process.env.FAKE_RUNTIME_LOG, `${JSON.stringify({',
     '  runtime,',
     '  collabRuntime: process.env.COLLAB_RUNTIME,',
-    '  hash,',
     '  argv: args,',
-    '  mcpSpawnOtpPresent: otpPresent,',
-    "  nottySpawnOtpPresent: Object.hasOwn(process.env, 'NOTTY_MCP_SPAWN_OTP'),",
-    "  internalSpawnOtpPresent: Object.hasOwn(process.env, 'COLLAB_AGENT_SPAWN_OTP'),",
+    '  inheritedSensitiveKeys,',
     '})}\\n`);',
-    'process.stdout.write(`OTP_SHA256:${hash}\\nREADY:${runtime}\\n`);',
+    'process.stdout.write(`READY:${runtime}\\n`);',
     'const input = readline.createInterface({',
     '  input: process.stdin,',
     '  crlfDelay: Infinity,',
@@ -157,7 +159,6 @@ function writeFakeRuntime(filePath, runtime) {
 function createHarness(root, socketName) {
   const workspace = path.join(root, 'workspace');
   const fakeBin = path.join(root, 'bin');
-  const markerDir = path.join(root, 'otp-markers');
   const runtimeLog = path.join(root, 'runtime.jsonl');
   const configHome = path.join(root, 'config');
   const stateHome = path.join(root, 'state');
@@ -166,7 +167,7 @@ function createHarness(root, socketName) {
   const fakeAgy = path.join(fakeBin, 'agy');
   const fakeCurl = path.join(fakeBin, 'curl');
 
-  for (const dir of [workspace, fakeBin, markerDir, configHome, stateHome]) {
+  for (const dir of [workspace, fakeBin, configHome, stateHome]) {
     fs.mkdirSync(dir, { recursive: true });
   }
   fs.writeFileSync(runtimeLog, '', 'utf8');
@@ -210,11 +211,21 @@ function createHarness(root, socketName) {
     COLLAB_AGENT_SPAWN_OTP: 'inherited-internal-token-must-not-leak',
     COLLAB_TEST_REAL_TMUX: realTmux,
     COLLAB_TEST_TMUX_SOCKET: socketName,
-    FAKE_OTP_MARKER_DIR: markerDir,
     FAKE_RUNTIME_LOG: runtimeLog,
     MCP_SPAWN_OTP: 'inherited-client-otp-must-not-leak',
+    MCP_BEARER_TOKEN: 'inherited-mcp-bearer-must-not-leak',
+    MCP_TOKEN: 'inherited-mcp-token-must-not-leak',
+    NOTTY_BASIC_AUTH_PASSWORD: 'inherited-basic-secret-must-not-leak',
     NOTTY_COLLAB_UNSANDBOXED: 'false',
+    NOTTY_GUARD_MTLS: 'true',
+    NOTTY_GUARD_GATEWAY_PEER_IP: '10.240.9.2',
+    NOTTY_GUARD_GATEWAY_TOKEN: 'inherited-guard-gateway-must-not-leak',
+    NOTTY_GUARD_OTP_MINT_TOKEN: 'inherited-guard-mint-must-not-leak',
+    NOTTY_LOOPBACK_PUBLICATION: 'true',
     NOTTY_MCP_SPAWN_OTP: 'inherited-server-otp-must-not-leak',
+    NOTTY_MCP_SPAWN_OTP_ENABLED: 'true',
+    NOTTY_MCP_SPAWN_OTP_TTL_SECONDS: '3600',
+    NOTTY_OAUTH_CLIENT_SECRET: 'inherited-oauth-secret-must-not-leak',
     PATH: `${fakeBin}:${process.env.PATH}`,
     XDG_CONFIG_HOME: configHome,
     XDG_RUNTIME_DIR: path.join(root, 'runtime'),
@@ -225,14 +236,13 @@ function createHarness(root, socketName) {
 
   return {
     env,
-    markerDir,
     runtimeLog,
     workspace,
   };
 }
 
 test(
-  'HTTP-created codex, agy, and ollama agents consume isolated OTPs and answer through real tmux',
+  'HTTP-created codex, agy, and ollama agents receive no server auth or OTP secrets',
   {
     skip: realTmux ? false : 'tmux is not installed',
     timeout: 45_000,
@@ -288,35 +298,30 @@ test(
           model: 'ornith:9b',
           think: 'high',
         },
-      ].map((entry) => ({
-        ...entry,
-        otp: `spawn-${entry.runtime}-${crypto.randomUUID()}`,
-      }));
-      const expectedHashes = cases.map((entry) => sha256(entry.otp));
-      assert.equal(new Set(expectedHashes).size, cases.length);
+      ];
 
       const createResponses = [];
       const panes = [];
-      for (const [index, entry] of cases.entries()) {
+      for (const entry of cases) {
         const created = await postCommand(baseUrl, 'create-agent', {
           agent: entry.agent,
           role: 'coder',
           runtime: entry.runtime,
           model: entry.model,
           think: entry.think,
-          'spawn-otp': entry.otp,
         });
         createResponses.push(created);
         assert.equal(created.result.agent, entry.agent);
         assert.equal(created.result.runtime, entry.runtime);
         assert.equal(created.result.model, entry.model);
-        assert.equal(created.result.spawn_otp_configured, true);
+        assert.equal(Object.hasOwn(created.result, 'spawn_otp_configured'), false);
 
-        const markerLine = `OTP_SHA256:${expectedHashes[index]}`;
         await waitForPane(
           baseUrl,
           entry.agent,
-          (pane) => pane.split(/\r?\n/).map((line) => line.trim()).includes(markerLine),
+          (pane) => pane.split(/\r?\n/).map((line) => line.trim()).includes(
+            `READY:${entry.runtime === 'ollama' ? 'codex' : entry.runtime}`,
+          ),
         );
         const sent = await postCommand(baseUrl, 'tmux-send', {
           session: entry.agent,
@@ -341,14 +346,11 @@ test(
 
       const launches = readJsonLines(harness.runtimeLog);
       assert.equal(launches.length, cases.length);
-      for (const [index, entry] of cases.entries()) {
+      for (const entry of cases) {
         const launch = launches.find((candidate) => candidate.collabRuntime === entry.runtime);
         assert.ok(launch, `missing ${entry.runtime} runtime launch`);
         assert.equal(launch.runtime, entry.runtime === 'ollama' ? 'codex' : entry.runtime);
-        assert.equal(launch.hash, expectedHashes[index]);
-        assert.equal(launch.mcpSpawnOtpPresent, true);
-        assert.equal(launch.nottySpawnOtpPresent, false);
-        assert.equal(launch.internalSpawnOtpPresent, false);
+        assert.deepEqual(launch.inheritedSensitiveKeys, []);
       }
       const ollamaLaunch = launches.find((launch) => launch.collabRuntime === 'ollama');
       assert.deepEqual(ollamaLaunch.argv.slice(0, 2), ['-m', 'ornith:9b']);
@@ -365,23 +367,6 @@ test(
       assert.ok(ollamaLaunch.argv.some((arg) => arg.startsWith('model_catalog_json=')));
       assert.equal(ollamaLaunch.argv.includes('--oss'), false);
       assert.equal(ollamaLaunch.argv.includes('launch'), false);
-      assert.equal(new Set(launches.map((launch) => launch.hash)).size, cases.length);
-      assert.deepEqual(
-        fs.readdirSync(harness.markerDir).sort(),
-        [...expectedHashes].sort(),
-      );
-
-      const paneLines = panes.flatMap(
-        (pane) => pane.split(/\r?\n/).map((line) => line.trim()),
-      );
-      for (const hash of expectedHashes) {
-        assert.equal(
-          paneLines.filter((line) => line === `OTP_SHA256:${hash}`).length,
-          1,
-          `expected one exclusive pane marker for ${hash}`,
-        );
-      }
-
       const managedResponse = await postCommand(baseUrl, 'managed-agents', {});
       assert.deepEqual(
         managedResponse.result.map((entry) => entry.agent).sort(),
@@ -404,12 +389,18 @@ test(
         panes.join('\n'),
         daemonOutput,
       ].join('\n');
-      for (const entry of cases) {
-        assert.equal(
-          observableOutput.includes(entry.otp),
-          false,
-          `raw ${entry.runtime} OTP leaked into managed metadata or output`,
-        );
+      for (const secret of [
+        'inherited-internal-token-must-not-leak',
+        'inherited-client-otp-must-not-leak',
+        'inherited-mcp-bearer-must-not-leak',
+        'inherited-mcp-token-must-not-leak',
+        'inherited-server-otp-must-not-leak',
+        'inherited-basic-secret-must-not-leak',
+        'inherited-oauth-secret-must-not-leak',
+        'inherited-guard-gateway-must-not-leak',
+        'inherited-guard-mint-must-not-leak',
+      ]) {
+        assert.equal(observableOutput.includes(secret), false, `${secret} leaked to an agent or output`);
       }
     } finally {
       await stopChild(daemon);

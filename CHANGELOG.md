@@ -7,8 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-01
+
 ### Added
 
+- [Supported] Added MCP OAuth 2.1 authorization code with public dynamic client
+  registration, PKCE S256, exact resource audiences, rotating refresh tokens,
+  revocation, and Codex host-login documentation.
+- [Supported] Added the explicit loopback-only `--no-otp-auth` mode for
+  credentialless MCP access with fail-closed, single-use terminal spawn OTPs.
+- [Supported] Added `nosh auth otp` for one-time local operator minting when
+  HTTP OTP minting is disabled.
+- [Supported] Added private per-workspace SQLite auth state and `nosh auth
+  reset`, preserving clients, token revocations, OTPs, and consumption
+  tombstones across container recreation.
+- [Labs] Added `nosh auth reset --secure`, which delegates to the root-only
+  Guard management socket and resets the derived runner-owned database through
+  a privilege-dropped transactional worker.
 - [Supported] Added a Docker-only release audit that performs repository,
   dependency, test, build, advisory, and package checks without running npm,
   npx, or Node.js on the host, and writes a Markdown report for every valid
@@ -49,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- [Supported] Centralized every external PTY creation behind atomic OTP
+  consumption, removed plaintext OTP dashboards and query-string bearer
+  tokens, bound MCP sessions to their authenticated OAuth context, and scrubbed
+  server authentication material from child environments.
+- [Supported] Updated the Nosh Codex CLI pin to 0.151.0 and separated Bearer
+  authentication for MCP from Basic authentication for browser consent/UI.
 - [Supported] Moved the pinned Ollama CLI and runtime libraries into an
   explicit `ollama` Docker target. The default `local` image and the existing
   `base`, `agent`, `hardware`, `cdev`, and `full` targets no longer bundle the

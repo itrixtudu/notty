@@ -29,8 +29,8 @@ prepare_automatic_review_images() {
   local ui_image_id
 
   if [[ -z "${NOSH_POLICY_TOOLING_IMAGE:-}" ]]; then
-    output_image="$(sed -n 's/^Output image (informational): //p' "$LEARN_OUTPUT_FILE" | tail -n 1)"
-  if [[ "$output_image" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+    output_image="$(sed -n 's/^Output image config (local ID): //p' "$LEARN_OUTPUT_FILE" | tail -n 1)"
+    if [[ "$output_image" =~ ^sha256:[a-f0-9]{64}$ ]]; then
       export NOSH_POLICY_TOOLING_IMAGE="$output_image"
     fi
   fi
@@ -146,6 +146,16 @@ learn_build_network() {
       fi
     else
       printf "%s\n" "build-nosh: no persisted private bundle was reported; review was not launched" >&2
+    fi
+  fi
+  if [[ "$machine_output" == false ]]; then
+    local runtime_image
+    runtime_image="$(sed -n 's/^Output image config (local ID): //p' "$LEARN_OUTPUT_FILE" | tail -n 1)"
+    printf '\n%s\n' 'Build traffic is not a runtime policy. Learn the workload before applying an endpoint selection:'
+    if [[ "$runtime_image" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+      printf '  %q net learn --image %q\n' "$SCRIPT_DIR/nosh.sh" "$runtime_image"
+    else
+      printf '  %q net learn --image %q\n' "$SCRIPT_DIR/nosh.sh" "$IMAGE_NAME"
     fi
   fi
   cleanup_learn_output

@@ -87,7 +87,13 @@ async function runInput(t, current, overrides = {}) {
       ? {
           network: {
             destinations: [
-              { fqdn: 'registry.example.test', protocol: 'tcp', port: 443 },
+              {
+                fqdn: null,
+                ip: '203.0.113.8',
+                protocol: 'tcp',
+                port: 443,
+                source: 'nosh-l4',
+              },
             ],
             directIp: [],
             encryptedDns: [],
@@ -538,4 +544,20 @@ test('portable mirrors stay non-authoritative and outside runtime network state'
     },
   });
   assert.equal(currentMirror.receipt.runId, 'run-one');
+});
+
+test('reading a bundle performs no directory writes and rejects unsafe modes', async (t) => {
+  const { BuildProfileStore } = await storeModule();
+  const current = fixture(t);
+  const store = new BuildProfileStore({ home: current.home });
+  const result = await store.finalizeRun(await runInput(t, current));
+  const promises = require('node:fs/promises');
+  const readOnlyError = () => { throw Object.assign(new Error('read-only filesystem'), { code: 'EROFS' }); };
+  t.mock.method(promises, 'mkdir', readOnlyError);
+  t.mock.method(promises, 'chmod', readOnlyError);
+  const loaded = await store.read(current.context, 'run-one');
+  assert.equal(loaded.manifest.runId, 'run-one');
+  fs.chmodSync(result.directory, 0o755);
+  await assert.rejects(store.read(current.context, 'run-one'), /mode 0700/);
+  assert.equal(fs.statSync(result.directory).mode & 0o777, 0o755);
 });

@@ -81,10 +81,10 @@ test('Full Roster always displays Agent + model and identifies Ollama as the bac
       think: agent.think,
     })),
     [
-      { role: 'Coordinator', display: 'Codex + gpt-5.6-sol', backend: 'default', think: 'high' },
-      { role: 'Implementer', display: 'Codex + gpt-5.6-sol', backend: 'default', think: 'medium' },
+      { role: 'Coordinator', display: 'Codex + gpt-5.3-codex-spark', backend: 'default', think: 'low' },
+      { role: 'Implementer', display: 'Codex + gpt-5.3-codex-spark', backend: 'default', think: 'low' },
       { role: 'Reviewer', display: 'Agy + 3.6-flash-medium', backend: 'default', think: 'high' },
-      { role: 'QA', display: 'Codex + gpt-5.6-sol', backend: 'default', think: 'max' },
+      { role: 'QA', display: 'Codex + gpt-5.3-codex-spark', backend: 'default', think: 'low' },
       { role: 'Observer', display: 'Codex + qwen3:4b', backend: 'ollama', think: 'low' },
       { role: 'BOFH', display: 'Claude + sonnet', backend: 'default', think: 'low' },
     ],

@@ -264,12 +264,12 @@
         "questionCount": { "const": 1 },
         "answersDeclared": { "$ref": "#/$defs/uint16" },
         "answersVisited": { "type": "integer", "minimum": 0, "maximum": 16 },
-        "answersCaptured": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "answersCaptured": { "type": "integer", "minimum": 0, "maximum": 16 },
         "parseComplete": { "type": "boolean" },
         "answerLimitReached": { "type": "boolean" },
         "answers": {
           "type": "array",
-          "maxItems": 8,
+          "maxItems": 16,
           "items": { "$ref": "#/$defs/answer" }
         }
       }

@@ -79,6 +79,7 @@ Commands:
   doctor                     Check Docker, kernel, Tetragon, IG, AppArmor, and nftables
   run                        Start or manage a guarded runner
   runs                       List guarded runners
+  auth reset                 Reset one workspace's Guard OAuth and spawn-OTP state
   profile compile            Compile evidence into independent candidate artifacts
   profile approve            Approve and hash an artifact set
   profile verify             Verify an approved artifact set
@@ -138,6 +139,17 @@ Environment:
   NOSH_GUARD_PRIVILEGED_BIN   Root-owned helper used only for build sessions
   NOSH_GUARD_GATEWAY_PUBLIC_ORIGIN
                               Exact external HTTPS origin for guarded UI/API
+`;
+
+const AUTH_HELP = `Usage: nosh-guard auth reset [options]
+
+Options:
+  --workdir PATH             Workspace whose Guard auth state is reset
+  --socket PATH              Root-owned guard management socket
+  --dry-run                  Validate and print the request without changing state
+  -h, --help                 Show this help
+
+The live reset requires root and is performed transactionally by nosh-guardd.
 `;
 
 const EBPF_HELP = `Usage: nosh-guard ebpf <command> [options]
@@ -249,6 +261,7 @@ Status options:
 `;
 
 const BOOLEAN_FLAGS = new Set([
+  'review-output',
   'all',
   'allow-incomplete',
   'collab',
@@ -342,6 +355,7 @@ const BUILD_NET_LEARN_FLAGS = new Set(
 );
 const BUILD_STATUS_FLAGS = new Set(['dry-run', 'help', 'json', 'run']);
 const BUILD_SESSION_FLAGS = new Set();
+const AUTH_RESET_FLAGS = new Set(['dry-run', 'help', 'socket', 'workdir']);
 
 const NET_LAUNCH_FLAGS = [
   'agent-id',
@@ -362,7 +376,7 @@ const NET_LAUNCH_FLAGS = [
 ];
 
 const NET_FLAGS = Object.freeze({
-  learn: new Set([...NET_LAUNCH_FLAGS, 'duration', 'json']),
+  learn: new Set([...NET_LAUNCH_FLAGS, 'duration', 'json', 'review-output']),
   audit: new Set(NET_LAUNCH_FLAGS),
   enforce: new Set([...NET_LAUNCH_FLAGS, 'revision']),
   approve: new Set([
@@ -550,8 +564,12 @@ async function runRequest(options) {
     NOTTY_NOSH_PROFILES: roles.join(','),
   };
   // The runner lives on an internal network and is reachable only through the
-  // mTLS guard gateway. Do not copy host control-plane credentials into it.
+  // mTLS guard gateway. Inner OAuth and Basic are disabled, while terminal
+  // creation remains fail-closed until an mTLS-authenticated operator mints an
+  // OTP through the gateway.
   environment.NOTTY_BASIC_AUTH_ENABLED = 'false';
+  environment.NOTTY_GUARD_MTLS = 'true';
+  environment.NOTTY_MCP_SPAWN_OTP_ENABLED = 'true';
   if (configPath) {
     environment.NOTTY_CONFIG = configPath;
   }
@@ -981,6 +999,44 @@ async function commandRun(argv) {
   return executeRunRequest(request, {
     client: guardClientForOptions(options),
   });
+}
+
+export async function commandAuth(argv, dependencies = {}) {
+  const [subcommand, ...rest] = argv;
+  if (!subcommand || ['help', '--help', '-h'].includes(subcommand)) {
+    (dependencies.write || ((value) => process.stdout.write(value)))(AUTH_HELP);
+    return subcommand ? 0 : 2;
+  }
+  if (subcommand !== 'reset') {
+    throw new TypeError('auth command must be reset');
+  }
+
+  const { options, positionals } = parseFlags(rest);
+  assertKnownOptions(options, AUTH_RESET_FLAGS, 'auth reset');
+  if (options.help) {
+    (dependencies.write || ((value) => process.stdout.write(value)))(AUTH_HELP);
+    return 0;
+  }
+  if (positionals.length) {
+    throw new TypeError('auth reset does not accept positional arguments');
+  }
+
+  const workdir = path.resolve(requireOption(options, 'workdir'));
+  const printResult = dependencies.print || printJson;
+  if (options['dry-run']) {
+    printResult({
+      dryRun: true,
+      command: 'auth reset',
+      workdir,
+      socket: options.socket || process.env.NOSH_GUARD_SOCKET || DEFAULT_GUARD_SOCKET,
+    });
+    return 0;
+  }
+
+  assertRootManagement(dependencies.geteuid || process.geteuid);
+  const client = dependencies.client || guardClientForOptions(options);
+  printResult(await client.resetAuth(workdir));
+  return 0;
 }
 
 function commandDoctor(argv) {
@@ -1715,7 +1771,7 @@ function bundleReference(bundle, launchConfig, evidenceManifest) {
     rulesHash: bundle.rulesHash || null,
     evidenceManifestHash:
       bundle.profile?.spec?.evidence?.manifestHash || null,
-    evidenceManifest,
+    evidenceManifest: evidenceManifest || null,
     launchConfig,
     createdAt: bundle.profile?.metadata?.createdAt || new Date().toISOString(),
   };
@@ -1980,6 +2036,7 @@ function humanNetStatus(receipt) {
     `Scope: ${receipt.enforcementScope || 'egress-only'}`,
     `Candidate: ${candidate?.revision || 'none'}`,
     `Approved: ${approved?.revision || 'none'}`,
+    `Applied for future runs: ${receipt.activation?.learnRevision || (receipt.activation ? receipt.activation.leafBundleDigest : 'none (or not checked in user mirror)')}`,
     `Image: ${candidate?.imageDigest || approved?.imageDigest || 'unknown'}`,
     `Learned roles: ${launch.roles?.length ? launch.roles.join(', ') : 'none'}`,
     `Learned collab/start-app: ${Boolean(launch.collab)}/${Boolean(launch.startApp)}`,
@@ -2115,7 +2172,7 @@ async function commandNetLearn(options, dependencies = {}, durationSeconds = nul
         runId: stopped.runId,
         at: new Date().toISOString(),
       });
-      const reviewCandidate = options.json
+      const reviewCandidate = (options.json || options['review-output'])
         ? await readReviewCandidateSources(
             reference,
             stopped,
@@ -2125,7 +2182,7 @@ async function commandNetLearn(options, dependencies = {}, durationSeconds = nul
         : null;
       const mirrorDirectory = await updateNetMirror(registry, workdir, {
         ...dependencies,
-        requireMirror: Boolean(options.json) || dependencies.requireMirror,
+        requireMirror: Boolean(options.json || options['review-output']) || dependencies.requireMirror,
         ...(reviewCandidate ? { reviewCandidate } : {}),
       });
       const authoritativePolicy = path.join(
@@ -2221,7 +2278,7 @@ async function commandNetLearn(options, dependencies = {}, durationSeconds = nul
         }
       }
       process.stderr.write(
-        `nosh net: learned ${reference.revision}; review with nosh net status\n`,
+        `nosh net: learned ${reference.revision}; reopen with nosh net review --revision ${reference.revision}\n`,
       );
     },
     {
@@ -2412,12 +2469,23 @@ async function commandNetApprove(options, dependencies = {}) {
   return 0;
 }
 
+async function activeNetworkDeployment(options, dependencies) {
+  if (dependencies.readActiveDeployment) return dependencies.readActiveDeployment();
+  const store = new EbpfActivationStore({ stateDir: netStateDir(options) });
+  try { return (await store.readState()).current; }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+}
+
 async function commandNetEnforce(options, dependencies = {}) {
   const workdir = await canonicalWorkspace(options.workdir || process.cwd());
   const registry = dependencies.registry || netRegistry(options);
   await registry.initialize();
   const state = await registry.readWorkspace(workdir);
-  const reference = state?.latestCandidate;
+  const active = await activeNetworkDeployment(options, dependencies);
+  if (active && active.workspaceKey !== await workspaceKey(workdir)) {
+    throw new Error('The active policy belongs to another workspace. Apply this workspace\'s saved profile first.');
+  }
+  const reference = active?.launchReference || state?.latestCandidate;
   if (!reference) {
     throw new Error(
       'this workspace has no learned launch settings; run nosh net learn before signed activation',
@@ -2425,7 +2493,7 @@ async function commandNetEnforce(options, dependencies = {}) {
   }
   if (options.revision && options.revision !== reference.revision) {
     throw new Error(
-      `revision ${options.revision} is not the current learned launch-settings revision`,
+      `revision ${options.revision} is not the applied launch-settings revision ${reference.revision}`,
     );
   }
   const verifyCandidate = dependencies.verifyCandidate || verifyEgressCandidateBundle;
@@ -2513,7 +2581,12 @@ async function commandNetStatus(options, dependencies = {}) {
       options,
       dependencies,
     );
-    receipt = { ...receiptFor(workdir, state), integrity };
+    const active = await activeNetworkDeployment(options, dependencies);
+    receipt = { ...receiptFor(workdir, state), integrity,
+      activation: active?.workspaceKey === await workspaceKey(workdir) ? {
+        activatedAt: active.activatedAt, leafBundleDigest: active.leafBundleDigest,
+        imageDigest: active.imageDigest, learnRevision: active.launchReference?.revision || null,
+      } : null };
     status = integrity.ok ? 0 : 1;
     if (options.repair) {
       if (!integrity.ok) {
@@ -3092,6 +3165,7 @@ function publicEbpfActivationState(state, backendHealth) {
         previousActiveGrantSetDigest:
           state.current.previousActiveGrantSetDigest,
         leafBundleDigest: state.current.leafBundleDigest,
+        ...(state.current.decisionSetDigest ? { decisionSetDigest: state.current.decisionSetDigest } : {}),
         approvalEnvelopeDigest: state.current.approvalEnvelopeDigest,
         grantEnvelopeDigest: state.current.grantEnvelopeDigest,
         nonce: state.current.nonce,
@@ -3100,6 +3174,7 @@ function publicEbpfActivationState(state, backendHealth) {
         workspaceIdentity: structuredClone(state.current.workspaceIdentity),
         backendAbi: state.current.backendAbi,
         objectDigest: state.current.objectDigest,
+        ...(state.current.launchReference ? { learnRevision: state.current.launchReference.revision } : {}),
       }
     : null;
   return {
@@ -3148,7 +3223,7 @@ export async function commandEbpf(argv, dependencies = {}) {
     throw new TypeError(`unexpected ebpf arguments: ${positionals.join(' ')}`);
   }
   const allowed = {
-    activate: new Set(['bundle', 'help', 'target-context']),
+    activate: new Set(['bundle', 'help', 'target-context', 'learn-revision', 'workdir']),
     status: new Set(['help', 'json']),
   }[subcommand];
   if (!allowed) {
@@ -3200,10 +3275,28 @@ export async function commandEbpf(argv, dependencies = {}) {
     error.code = 'GUARD_EBPF_OBJECT_DIGEST_MISMATCH';
     throw error;
   }
+  let launchReference;
+  if (options['learn-revision']) {
+    const revision = options['learn-revision'];
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(revision)) throw new Error('Invalid learned revision');
+    const workdir = await canonicalWorkspace(requireOption(options, 'workdir'));
+    const key = await workspaceKey(workdir);
+    if (key !== validatedContext.expected.workspaceKey) throw new Error('Learned workspace does not match activation');
+    const verification = await verifyEgressCandidateBundle(path.join(netTrustedRoot({}), key, revision), {
+      trustedRoot: netTrustedRoot({}), workdir,
+    });
+    if (verification.imageDigest !== validatedContext.expected.imageDigest
+        || stableStringify(verification.workspaceIdentity) !== stableStringify(validatedContext.expected.workspaceIdentity)) {
+      throw new Error('Learned image/workspace identity does not match activation');
+    }
+    launchReference = bundleReference(verification, verification.profile.spec.launch.config,
+      verification.profile.spec.evidence.manifestPath);
+  } else if (options.workdir) throw new Error('--workdir requires --learn-revision');
   const imported = await store.importActivation(bundle, {
     sourceUid: invokingUser.uid,
     expected: validatedContext.expected,
     now: dependencies.now,
+    ...(launchReference ? { launchReference } : {}),
   });
   const status = publicEbpfActivationState(imported.state, backendHealth);
   (dependencies.print || printJson)({
@@ -3231,6 +3324,9 @@ export async function main(argv = process.argv.slice(2)) {
   }
   if (command === 'runs') {
     return commandRuns(rest);
+  }
+  if (command === 'auth') {
+    return commandAuth(rest);
   }
   if (command === 'profile') {
     return commandProfile(rest);

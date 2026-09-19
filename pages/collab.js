@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import CollabLaunchpad from '../components/collab/CollabLaunchpad.js';
 import CollabWorkspace from '../components/collab/CollabWorkspace.js';
 import {
@@ -43,6 +44,8 @@ function configFrom(payload) {
 }
 
 export default function CollabPage() {
+  const router = useRouter();
+  const chatsOnly = router.query.chats === '1';
   const [bootstrap, setBootstrap] = useState(null);
   const [config, setConfig] = useState(null);
   const [views, setViews] = useState(null);
@@ -55,6 +58,7 @@ export default function CollabPage() {
   const [eventRevision, setEventRevision] = useState(0);
   const refreshTimerRef = useRef(null);
   const refreshViewsRef = useRef(false);
+  const autoResumeAttempted = useRef(false);
 
   const loadData = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true);
@@ -71,10 +75,12 @@ export default function CollabPage() {
       };
       setBootstrap(bootstrapPayload);
       setConfig(nextConfig);
+      const savedTemplateId = bootstrapPayload.tasks?.tasks?.find((entry) => entry.id === bootstrapPayload.tasks.lastTaskId)?.launch?.templateId;
       setSelectedTemplateId((current) => (
         nextConfig.templates?.some((template) => template.id === current)
           ? current
-          : nextConfig.defaultTemplate || nextConfig.templates?.[0]?.id || ''
+          : nextConfig.templates?.some((template) => template.id === savedTemplateId)
+            ? savedTemplateId : nextConfig.defaultTemplate || nextConfig.templates?.[0]?.id || ''
       ));
       setError('');
       return bootstrapPayload;
@@ -125,6 +131,7 @@ export default function CollabPage() {
     };
     const eventNames = [
       'session.changed',
+      'session.resume-error',
       'agent.status',
       'agent.registration',
       'agent.pending',
@@ -255,6 +262,30 @@ export default function CollabPage() {
     await loadData({ quiet: true });
   });
 
+  const createTask = async (name) => {
+    let created;
+    const success = await runAction(async () => {
+      created = await jsonRequest('/api/collab/tasks', { method: 'POST', body: JSON.stringify({ name }) });
+      await loadData({ quiet: true });
+    });
+    return success ? created : false;
+  };
+  const taskSettings = (settings) => runAction(async () => {
+    await jsonRequest('/api/collab/tasks', { method: 'PATCH', body: JSON.stringify(settings) });
+    const saved = bootstrap?.tasks?.tasks?.find((entry) => entry.id === settings.taskId)?.launch;
+    if (saved?.templateId) setSelectedTemplateId(saved.templateId);
+    await loadData({ quiet: true });
+  });
+  useEffect(() => {
+    if (!router.isReady || !bootstrap || autoResumeAttempted.current) return;
+    autoResumeAttempted.current = true;
+    if (chatsOnly || bootstrap.session || !bootstrap.tasks?.autoResume) return;
+    runAction(async () => {
+      await jsonRequest('/api/collab/session', { method: 'POST', body: JSON.stringify({ autoResume: true }) });
+      await loadData({ quiet: true });
+    });
+  }, [router.isReady, bootstrap, chatsOnly]);
+
   const refreshCatalog = () => runAction(async () => {
     await jsonRequest('/api/collab/catalog/refresh', {
       method: 'POST',
@@ -336,7 +367,7 @@ export default function CollabPage() {
 
   return (
     <main className={styles.page}>
-      <header className={styles.appHeader}>
+      <header className={styles.appHeader} hidden={chatsOnly}>
         <div className={styles.brandBlock}>
           <div className={styles.brandLine}>
             <h1>Collab Operations</h1>
@@ -367,8 +398,12 @@ export default function CollabPage() {
       <div className={styles.pageBody}>
         {loading && !bootstrap ? (
           <div className={styles.loadingState}>Loading collab state…</div>
+        ) : chatsOnly && (!session || router.query.session !== session.id) ? (
+          <div className={styles.emptyState}>This collaboration session is no longer active. You can close this window.</div>
         ) : session && config ? (
           <CollabWorkspace
+            key={`${session.id}-${chatsOnly}`}
+            chatsOnly={chatsOnly}
             session={session}
             config={config}
             views={views}
@@ -388,6 +423,9 @@ export default function CollabPage() {
           />
         ) : config ? (
           <CollabLaunchpad
+            tasks={bootstrap?.tasks}
+            onCreateTask={createTask}
+            onTaskSettings={taskSettings}
             config={config}
             selectedTemplateId={selectedTemplateId}
             onSelectTemplate={setSelectedTemplateId}

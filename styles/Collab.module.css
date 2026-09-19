@@ -50,6 +50,25 @@
   color: var(--muted);
 }
 
+.page .autoResumeControl {
+  display: flex;
+  flex-direction: row;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.page .autoResumeControl input[type='checkbox'] {
+  width: auto;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.autoResumeControl span {
+  min-width: 0;
+}
+
 .appHeader {
   height: 62px;
   flex: 0 0 62px;
@@ -379,7 +398,7 @@
 .previewHeader,
 .previewRow {
   display: grid;
-  grid-template-columns: minmax(110px, 0.7fr) minmax(210px, 1.5fr) minmax(70px, 0.45fr) minmax(110px, 0.7fr);
+  grid-template-columns: minmax(110px, 0.7fr) minmax(210px, 1.5fr) minmax(70px, 0.45fr) minmax(110px, 0.7fr) minmax(100px, 0.6fr) minmax(105px, 0.5fr);
   gap: 0.8rem;
   align-items: center;
   padding: 0.55rem 0.7rem;
@@ -406,6 +425,39 @@
 
 .previewRow:last-child {
   border-bottom: 0;
+}
+
+.bulkLaunchBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 0.72rem;
+}
+.bulkLaunchBar legend { color: var(--muted); padding: 0 0.3rem; }
+.bulkLaunchBar label { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.bulkLaunchBar select { padding: 0.3rem; font-size: 0.74rem; width: 100%; }
+.bulkModelField { flex: 1 1 200px; }
+.bulkLaunchHint { flex-basis: 100%; color: var(--muted); font-size: 0.68rem; }
+
+.previewRow:nth-child(even) { background: rgba(120, 155, 150, 0.08); }
+.previewRow:nth-child(odd) { background: rgba(0, 0, 0, 0.12); }
+.agentTimeout { display: grid; gap: 5px; min-width: 0; }
+.agentTerminate { display: flex; align-items: center; justify-content: center; }
+.page .agentTerminate input[type='checkbox'] { width: auto; flex: 0 0 auto; margin: 0; }
+.agentTimeout input[type='number'] { min-width: 0; padding: 5px; }
+.launchSelectors { display: flex; gap: 0.35rem; min-width: 0; }
+.launchSelectors select:first-child { flex: 0 0 110px; }
+.launchSelectors select:last-child { flex: 1; min-width: 0; }
+.previewRow select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.72rem;
 }
 
 .previewRow strong {
@@ -456,11 +508,60 @@
   white-space: nowrap;
 }
 
-.launchFields {
-  min-height: 185px;
+.launchBody {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(220px, 0.7fr);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  align-items: start;
   gap: 0.9rem;
+}
+
+.launchBody .agentPreview {
+  min-width: 0;
+}
+
+.launchBody .previewHeader,
+.launchBody .previewRow {
+  min-width: 620px;
+}
+
+.launchFields {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.9rem;
+}
+
+.taskField,
+.taskField > label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.35rem;
+}
+
+.taskLaunchActions { display: flex; gap: 0.5rem; }
+.taskLaunchActions > button { flex: 1; min-width: 0; }
+.taskPicker { position: relative; display: grid; gap: 6px; min-width: 0; }
+.taskPickerInput { display: flex; min-width: 0; }
+.taskPickerInput input { flex: 1; min-width: 0; border-radius: 6px 0 0 6px; }
+.taskPickerInput button { flex: 0 0 32px; border-radius: 0 6px 6px 0; }
+.taskPickerOptions {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 20;
+  max-height: 220px; overflow-y: auto; margin: 4px 0 0; padding: 4px;
+  list-style: none; border: 1px solid #46625c; border-radius: 6px;
+  background: #14201e; box-shadow: 0 6px 18px #0008;
+}
+.taskPickerOptions li { padding: 8px; overflow-wrap: anywhere; cursor: pointer; }
+.taskPickerOptions li[aria-selected="true"] { background: #285044; }
+
+.taskField small {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
+.taskField .launchButton,
+.bulkLaunchBar .launchButton {
+  margin-top: 0;
 }
 
 .taskField textarea {
@@ -483,6 +584,7 @@
 .launchOptions legend,
 .launchOptions label > span,
 .taskField > span,
+.taskField > label > span,
 .editorForm label > span,
 .agentRow label > span,
 .requirements > span {
@@ -919,6 +1021,11 @@
   flex-direction: column;
   overflow: hidden;
 }
+
+.appHeader[hidden], .rosterPanel[hidden] { display: none; }
+.mosaic[data-custom='true'] > [data-kind='channel'] { grid-row: auto; }
+.mosaic[data-custom='true'] > .terminalTile { display: flex; height: auto; min-height: 0; }
+.layoutPicker input[type='range'] { width: 90px; padding: 0; }
 
 .workspaceToolbar {
   min-height: 54px;
@@ -1471,6 +1578,33 @@
   width: 100%;
 }
 
+.chatSplitLayout .terminalTile.maximizedTile {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: #080a08;
+}
+
+.chatSplitLayout {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 0.5rem;
+  display: flex;
+  background: #080a08;
+}
+.chatSplitLayout > :global(.terminal-split),
+.chatSplitLayout > :global(.terminal-pane) { flex: 1; }
+.chatSplitLayout .terminalTile { display: flex; width: 100%; height: 100%; }
+.chatSplitLayout :global(.terminal-pane) { display: flex; min-height: 0; }
+
+.mosaic[data-custom='true'] .tileResizeHandle { display: flex; opacity: 0.85; }
+.mosaic .tileResizeHandle[hidden] { display: none; }
+
 .tileResizeHandle {
   position: absolute;
   right: 3px;
@@ -1685,6 +1819,10 @@
 }
 
 @media (max-width: 1100px) {
+  .launchBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .mosaic {
     display: block;
   }
@@ -1751,10 +1889,6 @@
 
   .profileHeader {
     min-height: 62px;
-  }
-
-  .launchFields {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .taskField textarea {

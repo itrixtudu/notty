@@ -16,6 +16,23 @@ async function waitFor(predicate, timeoutMs = 2000) {
   return true;
 }
 
+test('trusted Collab viewer deadlines block input without consuming a spawn OTP', async () => {
+  const manager = await import('../lib/terminalManager.js');
+  const expiresAt = Date.now() - 1;
+  const terminal = manager.spawnTrustedTerminal({ shell: 'bash', args: ['--noprofile', '--norc'] }, {
+    inputAccess: { purpose: 'collab-viewer', createdAt: expiresAt - 1000, expiresAt },
+  });
+  try {
+    assert.equal(terminal.inputAccess.expiresAt, expiresAt);
+    assert.throws(() => manager.renewTerminalInputAccess(terminal.id),
+      (error) => error.code === 'COLLAB_VIEWER_RENEWAL_UNSUPPORTED');
+    assert.throws(() => manager.writeToTerminal(terminal.id, 'echo should-not-run\n'),
+      (error) => error.code === 'TERMINAL_INPUT_EXPIRED');
+  } finally {
+    manager.killTerminal(terminal.id);
+  }
+});
+
 test('Zsh integration restores startup state and replays zshenv before zshrc', () => {
   const script = fs.readFileSync(
     `${__dirname}/../scripts/shell-integration/.zshrc`,
@@ -49,6 +66,7 @@ test('terminal dimensions use nullish defaults and reject non-positive values', 
     onTerminalExit,
     resizeTerminal,
     spawnTerminal,
+    spawnTrustedTerminal,
   } = await import('../lib/terminalManager.js');
 
   assert.throws(
@@ -64,7 +82,7 @@ test('terminal dimensions use nullish defaults and reject non-positive values', 
     /cols and rows must be integers/,
   );
 
-  const session = spawnTerminal({ shell: 'bash', cols: null, rows: undefined });
+  const session = spawnTrustedTerminal({ shell: 'bash', cols: null, rows: undefined });
   assert.equal(session.cols, 80);
   assert.equal(session.rows, 30);
 
@@ -96,12 +114,12 @@ test('terminal input and heuristic command events preserve actor and binding iso
     getTerminalInteractionState,
     killTerminal,
     onTerminalExit,
-    spawnTerminal,
+    spawnTrustedTerminal,
     subscribeToTerminalCommand,
     subscribeToTerminalInput,
     writeToTerminal,
   } = await import('../lib/terminalManager.js');
-  const session = spawnTerminal({
+  const session = spawnTrustedTerminal({
     shell: 'bash',
     shellIntegration: false,
     cols: 80,
@@ -193,12 +211,12 @@ test('live Bash integration strips private markers and reports exact compound co
     getTerminalInteractionState,
     killTerminal,
     onTerminalExit,
-    spawnTerminal,
+    spawnTrustedTerminal,
     subscribeToTerminal,
     subscribeToTerminalCommand,
     writeToTerminal,
   } = await import('../lib/terminalManager.js');
-  const session = spawnTerminal({ shell: 'bash', terminalType: 'xterm' });
+  const session = spawnTrustedTerminal({ shell: 'bash', terminalType: 'xterm' });
   assert.doesNotMatch(JSON.stringify(session), /nonce/i);
   const output = [];
   const commands = [];
@@ -298,11 +316,11 @@ test('heuristic shells recover completion feedback without authorizing terminal 
     getTerminalInteractionState,
     killTerminal,
     onTerminalExit,
-    spawnTerminal,
+    spawnTrustedTerminal,
     subscribeToTerminalCommand,
     writeToTerminal,
   } = await import('../lib/terminalManager.js');
-  const session = spawnTerminal({
+  const session = spawnTrustedTerminal({
     shell: 'bash',
     args: ['--norc'],
     terminalType: 'xterm',

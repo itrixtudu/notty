@@ -28,3 +28,17 @@ export function getNextSessionTabIndex(currentIndex, sessionCount, key) {
   }
   return safeIndex;
 }
+
+export function getSessionIdAfterClose(sessions, closedSessionId, activeSessionId) {
+  if (!Array.isArray(sessions) || !sessions.length) {
+    return null;
+  }
+  if (closedSessionId !== activeSessionId) {
+    return activeSessionId;
+  }
+  const closedIndex = sessions.findIndex((session) => session.id === closedSessionId);
+  if (closedIndex < 0) {
+    return activeSessionId;
+  }
+  return sessions[closedIndex + 1]?.id ?? sessions[closedIndex - 1]?.id ?? null;
+}
