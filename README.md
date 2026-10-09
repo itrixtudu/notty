@@ -1,6 +1,6 @@
 # Notty
 
-![Bubble BAI arriving at the QEMU dock in a bubble-wrap suit](imgs/bai2.png)
+![Bubble BAI arriving at the QEMU dock in a bubble-wrap suit](imgs/awe0.png)
 
 Notty is a local-first browser terminal workspace with MCP access, optional
 terminal copilots, Docker-based development through Nosh, and experimental
@@ -55,7 +55,7 @@ sessions rather than maintaining separate terminal implementations.
 
 ## Containment and security
 
-![The Great QEMU Containment Incident comic and containment architecture](imgs/bai3.jpg)
+![The Great QEMU Containment Incident comic and containment architecture](imgs/awecomic.jpg)
 
 *The QEMU containment incident is project lore. Current Nosh isolation is
 Docker-based; Nosh Guard adds Linux cgroup/eBPF controls where the host meets
@@ -460,7 +460,7 @@ useful for reviewing incomplete evidence even when activation is not eligible.
 
 ## Alcatrazbox: the deeper systems layer
 
-![Bubble BAI Alcatrazbox feature and lore overview](imgs/bai4.png)
+![Bubble BAI Alcatrazbox feature and lore overview](imgs/awecomic2.png)
 
 *Alcatrazbox is the visual language for the containment work: policy walls,
 blocked ghosts, verifier limits, and agents testing the edges. It is lore, not
@@ -544,10 +544,7 @@ kind to all yourselves. ^.^
 
 ## ANSI after dark
 
-![Wicked Warlock ANSI scene commanding agents and little processes](imgs/bai1.png)
-
-*Wicked Warlock of the West, capturing souls, sockets, agents, and little
-processes. The ANSI/CP437 side of the project lives under [`ansi/`](ansi/).*
+The ANSI/CP437 side of the project lives under [`ansi/`](ansi/).
 
 Notty is available under the [0BSD license](LICENSE).
 
