@@ -523,3 +523,17 @@ test('privileged build helper is constrained to lifecycle RPCs and invoking-user
   assert.match(invokerContract, /\['--', guardBin, 'build-session', action\]/);
   assert.doesNotMatch(invokerContract, /--socket|NOSH_GUARD_SOCKET|options\.socket/);
 });
+
+test('private build failure output retains artifact paths while redacted output stays private', async (t) => {
+  const { executeBuildCommand } = await importModule('scripts/nosh-guard.mjs');
+  const context = tempBuildContext(t);
+  for (const options of [{ 'private-json': true }, { json: true }]) {
+    const { output } = await captureStdout(async () => {
+      await assert.rejects(executeBuildCommand('net-learn', options, context, [], {
+        async executeProfile() { throw Object.assign(new Error('collector failed'), { bundleDir: '/private/failed-capture' }); },
+      }), /collector failed/);
+    });
+    if (options.json) assert.equal(output, '');
+    else assert.deepEqual(JSON.parse(output), { kind: 'NoshBuildCaptureFailure', bundleDir: '/private/failed-capture', portableBundleDir: '/private/failed-capture/portable' });
+  }
+});

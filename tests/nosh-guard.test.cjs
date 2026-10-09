@@ -691,11 +691,11 @@ test('runner gate uses a non-login shell and defers the app until release', asyn
   assert.equal(runner.spec.Cmd.length, 1);
   const gate = runner.spec.Cmd[0];
   const gateEntered = "printf '%s\\n' 'nosh-guard: phase=gate-entered'";
-  const makeRuntimeDirs = 'mkdir -p "$XDG_CONFIG_HOME"';
-  const secureRuntimeDirs = 'chmod 0700 "$HOME"';
+  const makeRuntimeDirs = '/bin/mkdir -p "$XDG_CONFIG_HOME"';
+  const secureRuntimeDirs = '/bin/chmod 0700 "$HOME"';
   const gateReady = "printf '%s\\n' 'nosh-guard: phase=gate-ready'";
   const releaseWait =
-    'while [ ! -e /run/nosh-guard/release ]; do sleep 0.05; done';
+    'while [ ! -e /run/nosh-guard/release ]; do /bin/sleep 0.05; done';
   const commandExport = 'export NOSH_GUARD_COMMAND_B64=';
   assert.ok(gate.includes(gateEntered));
   assert.ok(gate.indexOf(gateEntered) < gate.indexOf(makeRuntimeDirs));
@@ -780,20 +780,20 @@ test('scoped egress mode contract activates only the intended evidence adapter',
       .map((input) => input.name)
       .sort();
 
-  assert.deepEqual(requiredFor('egress-learn'), ['nosh-egress']);
-  assert.deepEqual(requiredFor('egress-audit'), ['nosh-egress']);
-  assert.deepEqual(requiredFor('egress-enforce'), ['nosh-egress']);
+  assert.deepEqual(requiredFor('egress-learn'), ['nosh-egress', 'nosh-exec']);
+  assert.deepEqual(requiredFor('egress-audit'), ['nosh-egress', 'nosh-exec']);
+  assert.deepEqual(requiredFor('egress-enforce'), ['nosh-egress', 'nosh-exec']);
   assert.deepEqual(
     contract.modes['egress-learn'].requiredEvidence,
-    ['nosh-egress'],
+    ['nosh-egress', 'nosh-exec'],
   );
   assert.deepEqual(
     contract.modes['egress-audit'].requiredEvidence,
-    ['nosh-egress'],
+    ['nosh-egress', 'nosh-exec'],
   );
   assert.deepEqual(
     contract.modes['egress-enforce'].requiredEvidence,
-    ['nosh-egress'],
+    ['nosh-egress', 'nosh-exec'],
   );
   for (const mode of ['egress-learn', 'egress-audit', 'egress-enforce']) {
     assert.deepEqual(
@@ -2508,6 +2508,10 @@ test('watchdog quarantines runtime and managed-policy drift before detaching', a
   const { GuardService } = await importModule('lib/guardd/service.js');
   const store = new GuardStateStore(path.join(root, 'state'));
   const docker = {
+    async containerLogs() {
+      operations.push('logs');
+      return { text: 'live runner output', truncated: false };
+    },
     async inspectContainer() {
       operations.push('inspect');
       return {
@@ -2618,6 +2622,7 @@ test('watchdog quarantines runtime and managed-policy drift before detaching', a
   assert.equal(quarantined.status, 'quarantined');
   assert.equal(quarantined.containerRemoved, true);
   assert.equal(quarantined.evidenceComplete, false);
+  assert.equal(operations.includes('logs'), false);
   assert.ok(
     operations.indexOf('remove') < operations.indexOf('detach'),
     `expected removal before detach, got ${operations.join(', ')}`,
@@ -2626,6 +2631,87 @@ test('watchdog quarantines runtime and managed-policy drift before detaching', a
     quarantined.quarantine.failures.map((failure) => failure.name),
     ['runtime-identity', 'managed-egress-policy'],
   );
+});
+
+test('quarantine retains stopped-runner diagnostics before removal', async (t) => {
+  for (const trigger of ['watchdog', 'attach']) {
+    for (const capture of ['available', 'unavailable', 'unsupported']) {
+      await t.test(`${trigger}: logs ${capture}`, async (t) => {
+        const root = tempDir(t);
+        const operations = [];
+        const { GuardStateStore } = await importModule('lib/guardd/state-store.js');
+        const { GuardService } = await importModule('lib/guardd/service.js');
+        const store = new GuardStateStore(path.join(root, 'state'));
+        const docker = {
+          async inspectContainer() {
+            return {
+              Id: 'container-crash',
+              State: { Running: false, ExitCode: 1, OOMKilled: false, Pid: 0 },
+            };
+          },
+          async pauseContainer() {
+            operations.push('pause');
+            throw new Error('container is not running');
+          },
+          async removeContainer() { operations.push('remove'); },
+        };
+        if (capture !== 'unsupported') {
+          docker.containerLogs = async (id, options) => {
+            operations.push('logs');
+            assert.equal(id, 'container-crash');
+            assert.deepEqual(options, {
+              tailLines: 40, maxWireBytes: 32 * 1024,
+              maxTextBytes: 8 * 1024, timeoutMs: 2_000,
+            });
+            assert.equal(operations.includes('remove'), false);
+            if (capture === 'unavailable') throw new Error('log request timed out');
+            return { text: 'startup failed\u001b[31m\nAuthorization: Bearer secret-token', truncated: false };
+          };
+        }
+        const service = new GuardService({
+          store, docker, healthProvider: healthyHost,
+          adapters: {
+            async runtimeHealth() { return []; },
+            async detach() { operations.push('detach'); return []; },
+          },
+          egress: {
+            async initialize() {},
+            async health() { return { ok: true, containerId: 'gateway-crash' }; },
+            async snapshotRun() { return {}; },
+          },
+        });
+        await service.initialize();
+        const evidenceDir = store.evidencePath('run-crash');
+        fs.mkdirSync(evidenceDir, { recursive: true });
+        await store.writeRun({
+          runId: 'run-crash', name: 'crash', status: 'running', mode: 'enforce',
+          containerId: 'container-crash', adapters: [], evidenceDir,
+          egress: { gatewayContainerId: 'gateway-crash' },
+        });
+        if (trigger === 'watchdog') {
+          await service.watchdogTick();
+        } else {
+          await assert.rejects(service.runAction('crash', 'attach'), {
+            code: 'GUARD_ATTACH_REVALIDATION_FAILED',
+          });
+        }
+        const saved = await store.readRun('run-crash');
+        assert.equal(saved.status, 'quarantined');
+        assert.equal(saved.containerRemoved, true);
+        assert.equal(saved.quarantine.failures[0].runtimeState.ExitCode, 1);
+        assert.equal(saved.quarantine.failures[0].runtimeState.OOMKilled, false);
+        assert.equal('Pid' in saved.quarantine.failures[0].runtimeState, false);
+        assert.ok(operations.indexOf('remove') < operations.indexOf('detach'));
+        if (capture === 'available') {
+          assert.match(saved.quarantine.runtimeLogTail.text, /startup failed/);
+          assert.doesNotMatch(saved.quarantine.runtimeLogTail.text, /\u001b|secret-token/);
+        } else {
+          assert.equal(saved.quarantine.runtimeLogTail, undefined);
+        }
+        assert.equal(saved.quarantine.emergencyRemovalError, null);
+      });
+    }
+  }
 });
 
 test('watchdog keeps enforcement attached when emergency containment fails', async (t) => {
@@ -3345,7 +3431,7 @@ test('public build CLI scopes and validates HTTP capture before delegation', (t)
   const root = tempDir(t);
   const context = path.join(root, 'context');
   const home = path.join(root, 'home');
-  const launcher = path.join(appRoot, 'nosh.sh');
+  const launcher = path.join(appRoot, 'scripts/nosh.sh');
   fs.mkdirSync(context, { mode: 0o700 });
   fs.mkdirSync(home, { mode: 0o700 });
   fs.writeFileSync(path.join(context, 'Dockerfile'), 'FROM scratch\n', {

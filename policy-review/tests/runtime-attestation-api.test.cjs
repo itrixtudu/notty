@@ -90,6 +90,32 @@ test('runtime attestation API fails closed and no-store while a configured file 
   assert.match(response.body, /unavailable/);
 });
 
+test('private Docker ranges still require the exact attested UI host', async (t) => {
+  const directory = privateDirectory(t);
+  const previous = process.env.NOTTY_POLICY_REVIEW_ATTESTATION_FILE;
+  t.after(() => {
+    if (previous === undefined) delete process.env.NOTTY_POLICY_REVIEW_ATTESTATION_FILE;
+    else process.env.NOTTY_POLICY_REVIEW_ATTESTATION_FILE = previous;
+  });
+  const { default: handler } = await apiModule;
+  for (const prefix of ['192.168.16', '10.20.0']) {
+    const graphOrigin = `http://${prefix}.3:43117`;
+    process.env.NOTTY_POLICY_REVIEW_ATTESTATION_FILE = writeAttestation(directory, {
+      uiOrigin: `http://${prefix}.2:3000`, graphOrigin,
+    });
+    const accepted = await callHandler(handler, { host: `${prefix}.2:3000` });
+    assert.equal(accepted.statusCode, 200);
+    assert.deepEqual(JSON.parse(accepted.body), { schemaVersion: 1, graphOrigin });
+    assert.equal(accepted.headers.get('cache-control'), 'no-store');
+    assert.equal(accepted.headers.has('access-control-allow-origin'), false);
+    for (const host of [`${prefix}.4:3000`, `${prefix}.2:3001`]) {
+      const foreign = await callHandler(handler, { host });
+      assert.equal(foreign.statusCode, 403);
+      assert.match(foreign.body, /does not match/);
+    }
+  }
+});
+
 test('runtime attestation reader rejects non-private files and hard links', async (t) => {
   const directory = privateDirectory(t);
   const { readPolicyReviewRuntimeAttestation } = await apiModule;

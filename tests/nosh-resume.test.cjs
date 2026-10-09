@@ -4,7 +4,7 @@ const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
 function run(args) {
-  return spawnSync('bash', [path.join(__dirname, '../nosh.sh'), ...args, '--dry-run'], {
+  return spawnSync('bash', [path.join(__dirname, '../scripts/nosh.sh'), ...args, '--dry-run'], {
     encoding: 'utf8', env: { ...process.env, NOTTY_COLLAB_ENABLED: 'false' },
   });
 }

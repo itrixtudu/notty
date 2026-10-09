@@ -10,12 +10,13 @@ const isPlainObject = value => (
 );
 
 const isDockerBridgeIpv4 = value => {
-    const match = /^(172)\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$/.exec(value);
+    const match = /^(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$/.exec(value);
     if (!match) return false;
     const octets = match.slice(1).map(Number);
-    return octets[1] >= 16
-        && octets[1] <= 31
-        && octets.slice(2).every(octet => octet >= 0 && octet <= 255);
+    return octets.every(octet => octet <= 255)
+        && (octets[0] === 10
+            || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
+            || (octets[0] === 192 && octets[1] === 168));
 };
 
 const parseUrl = (input, label) => {

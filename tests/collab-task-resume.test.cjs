@@ -88,3 +88,24 @@ test('startup orchestration precedes role guidance and forbids idle exploration'
   assert.match(prompt, /Do not explore the repository/);
   assert.match(prompt, /report one clear connection failure and stop/);
 });
+
+test('dangerous bypass omits sandbox advice but keeps outcome guidance', () => {
+  const options = {
+    prompts: { qa: { instructions: 'Review assigned work.' } },
+    workspaceRoot: '/work',
+    channel: 'lobby',
+    sessionId: 'session',
+    mcpUrl: 'http://localhost/mcp',
+  };
+  const managed = buildAgentPrompt({
+    role: 'qa', identity: 'qa', prompt: 'qa', permissionMode: 'workspace-write',
+  }, options);
+  const bypass = buildAgentPrompt({
+    role: 'qa', identity: 'qa', prompt: 'qa', permissionMode: 'danger-full-access',
+  }, options);
+
+  assert.match(managed, /approval or sandbox barriers/);
+  assert.doesNotMatch(bypass, /approval or sandbox barriers/);
+  assert.match(bypass, /Task complete/);
+  assert.match(bypass, /Human help needed/);
+});

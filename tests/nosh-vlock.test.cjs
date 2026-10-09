@@ -8,7 +8,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const appRoot = path.resolve(__dirname, '..');
-const noshPath = path.join(appRoot, 'nosh.sh');
+const noshPath = path.join(appRoot, 'scripts/nosh.sh');
 
 function createFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'notty-nosh-vlock-'));

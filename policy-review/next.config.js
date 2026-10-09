@@ -43,10 +43,10 @@ const nextConfig = {
     ...configuredAllowedDevOrigins,
   ])],
   async headers() {
-    return [{
-      source: '/policy-review',
+    return ['/policy-review', '/tool-review', '/setup'].map(source => ({
+      source,
       headers: POLICY_REVIEW_RESPONSE_HEADERS,
-    }];
+    }));
   },
   turbopack: {
     root: __dirname,

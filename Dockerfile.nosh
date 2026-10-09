@@ -48,6 +48,7 @@ RUN --mount=type=secret,id=nosh-http-ca \
     gawk \
     g++ \
     git \
+    kitty-terminfo \
     lftp \
     libnspr4 \
     libnss3 \
@@ -62,6 +63,7 @@ RUN --mount=type=secret,id=nosh-http-ca \
     procps \
     python3 \
     ripgrep \
+    jq \
     tmux \
     tree \
     vim \
@@ -132,7 +134,6 @@ COPY scripts /app/scripts/
 COPY styles /app/styles/
 COPY agents/bin /app/agents/bin/
 COPY ansi/dd /opt/durdraw/
-COPY entrypoint.sh /app/
 COPY --chown=${USERNAME}:${USERNAME} tmux.conf /home/${USERNAME}/.tmux.conf
 
 RUN ln -s /opt/durdraw/start-durdraw /usr/local/bin/durdraw \
@@ -150,7 +151,7 @@ RUN echo "alias ls='ls --color=yes'" >> "/home/$USERNAME/.bashrc" \
     && echo "export LANG=C.UTF-8" >> "/home/$USERNAME/.bashrc" \
     && echo "export LC_ALL=C.UTF-8" >> "/home/$USERNAME/.bashrc" \
     && echo "export LC_CTYPE=C.UTF-8" >> "/home/$USERNAME/.bashrc" \
-    && echo "export TERM=screen-256color" >> "/home/$USERNAME/.bashrc" \
+    && echo 'if [[ "${TERM:-}" != "xterm-kitty" ]]; then export TERM=screen-256color; fi' >> "/home/$USERNAME/.bashrc" \
     && echo "export COLORTERM=truecolor" >> "/home/$USERNAME/.bashrc" \
     && { \
         printf '%s\n' ''; \

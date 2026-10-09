@@ -117,7 +117,7 @@ test('host installation documentation uses the supported bundle and adapter path
 test('release package audit requires the build profiling host assets', () => {
   const audit = read('scripts/release-audit-container.sh');
   for (const required of [
-    'build-nosh.sh',
+    'scripts/build-nosh.sh',
     'Dockerfile.guard',
     'Dockerfile.nosh-guard-host-bundle',
     'bpf/nosh_build/Makefile',
@@ -148,9 +148,9 @@ test('release package audit requires the build profiling host assets', () => {
     'lib/guardd/http-evidence.js',
     'lib/guardd/install-layout.js',
     'lib/guardd/build-session-service.js',
-    'profile-build-and-review.sh',
-    'reset-nosh-guard.sh',
-    'setup-nosh.sh',
+    'scripts/profile-build-and-review.sh',
+    'scripts/reset-nosh-guard.sh',
+    'scripts/setup-nosh.sh',
     'scripts/build-nosh-guard-host-bundle.sh',
     'scripts/build-nosh-guard-host-bundle-container.sh',
     'scripts/install-nosh-guard-host-bundle.sh',

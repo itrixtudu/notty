@@ -59,7 +59,7 @@
           "minimum": 0,
           "maximum": 7
         },
-        "collectionDepth": { "enum": ["balanced", "policy", "deep"] },
+        "collectionDepth": { "enum": ["process", "balanced", "policy", "deep"] },
         "policyCollectionEnabled": { "type": "boolean" },
         "deepCollectionSupported": { "const": false },
         "message": { "$ref": "#/$defs/nullableString" },

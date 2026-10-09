@@ -237,7 +237,7 @@ test('Nosh secure reset delegates without mutating legacy XDG state', (t) => {
   };
 
   const secure = childProcess.spawnSync('bash', [
-    path.join(repository, 'nosh.sh'),
+    path.join(repository, 'scripts/nosh.sh'),
     'auth',
     'reset',
     '--secure',
@@ -253,7 +253,7 @@ test('Nosh secure reset delegates without mutating legacy XDG state', (t) => {
   assert.equal(fs.existsSync(stateHome), false);
 
   const legacy = childProcess.spawnSync('bash', [
-    path.join(repository, 'nosh.sh'),
+    path.join(repository, 'scripts/nosh.sh'),
     'auth',
     'reset',
     '--workdir', workspace,
@@ -264,7 +264,7 @@ test('Nosh secure reset delegates without mutating legacy XDG state', (t) => {
   assert.equal(fs.existsSync(stateHome), false);
 
   const otp = childProcess.spawnSync('bash', [
-    path.join(repository, 'nosh.sh'),
+    path.join(repository, 'scripts/nosh.sh'),
     'auth',
     'otp',
     '--secure',

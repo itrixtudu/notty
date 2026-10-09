@@ -8,7 +8,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const appRoot = path.resolve(__dirname, '..');
-const noshPath = path.join(appRoot, 'nosh.sh');
+const noshPath = path.join(appRoot, 'scripts/nosh.sh');
 
 function createFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'notty-nosh-durdraw-'));
@@ -48,6 +48,29 @@ function runNosh(fixture, profiles = []) {
   return { ...result, output, dockerRun };
 }
 
+function runNoshWithArgs(fixture, args = []) {
+  return childProcess.spawnSync('bash', [
+    noshPath,
+    'start',
+    '--dry-run',
+    '--noauth',
+    '--otp',
+    'fixed-test-otp',
+    '--no-start-app',
+    '--workdir',
+    fixture.workspace,
+    ...args,
+  ], {
+    cwd: fixture.workspace,
+    encoding: 'utf8',
+    env: {
+      PATH: process.env.PATH,
+      HOME: fixture.home,
+      XDG_CONFIG_HOME: path.join(fixture.home, '.config'),
+    },
+  });
+}
+
 test('Nosh durdraw profile enables the toolset and persists user configuration', (t) => {
   const fixture = createFixture(t);
   const result = runNosh(fixture, ['durdraw']);
@@ -75,6 +98,21 @@ test('Nosh keeps the full MCP toolset when the durdraw profile is not selected',
   assert.equal(result.status, 0, result.output);
   assert.doesNotMatch(result.dockerRun, /NOTTY_MCP_TOOLSET=/);
   assert.doesNotMatch(result.dockerRun, /NOTTY_NOSH_PROFILES=durdraw/);
+});
+
+test('Nosh MCP enforcement is opt-in and forwards a repeated allowlist', (t) => {
+  const fixture = createFixture(t);
+  const unfiltered = runNoshWithArgs(fixture);
+  assert.equal(unfiltered.status, 0, unfiltered.stderr);
+  assert.doesNotMatch(unfiltered.stdout, /NOTTY_MCP_ALLOWED_TOOLS=/);
+
+  const filtered = runNoshWithArgs(fixture, [
+    '--allow-mcp-tool', 'read_terminal',
+    '--allow-mcp-tool=list_terminals',
+  ]);
+  assert.equal(filtered.status, 0, filtered.stderr);
+  assert.match(filtered.stdout, /NOTTY_MCP_ALLOWED_TOOLS=read_terminal,list_terminals/);
+  assert.match(filtered.stderr, /MCP tool filter active: read_terminal,list_terminals/);
 });
 
 test('Nosh help advertises the durdraw profile', () => {

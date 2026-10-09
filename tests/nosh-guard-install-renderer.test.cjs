@@ -136,6 +136,10 @@ test('renderer emits the exact prefix-specific deployment inventory', (t) => {
 
   const guardAdapters = readJson(output, 'config/nosh-guard/adapters.json');
   assert.equal(
+    adapter(guardAdapters, 'nosh-exec').attach.command,
+    '/opt/notty/libexec/nosh-build/nosh-build-loader',
+  );
+  assert.equal(
     adapter(guardAdapters, 'nosh-l4').health.command,
     '/opt/notty/libexec/nosh-guard/nosh-l4-loader',
   );

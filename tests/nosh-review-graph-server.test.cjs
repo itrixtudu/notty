@@ -69,15 +69,22 @@ async function reviewBundle(t) {
 
 test('wildcard graph binding auto-advertises the one Docker bridge address', async () => {
   const { cli } = await modules();
-  assert.deepEqual(cli.resolveReviewGraphHosts({
-    host: '0.0.0.0',
-    advertiseHost: 'auto',
-  }, {
-    networkInterfaces: bridgeInterfaces('172.23.0.7'),
-  }), {
-    listenHost: '0.0.0.0',
-    advertiseHost: '172.23.0.7',
-  });
+  for (const address of ['10.0.0.2', '10.255.255.254', '172.16.0.2',
+    '172.23.0.7', '172.31.255.254', '192.168.16.2', '192.168.255.254']) {
+    assert.deepEqual(cli.resolveReviewGraphHosts({
+      host: '0.0.0.0',
+      advertiseHost: 'auto',
+    }, {
+      networkInterfaces: bridgeInterfaces(address),
+    }), {
+      listenHost: '0.0.0.0',
+      advertiseHost: address,
+    });
+    assert.deepEqual(cli.resolveReviewGraphHosts({ host: address }), {
+      listenHost: address,
+      advertiseHost: address,
+    });
+  }
 });
 
 test('automatic graph advertisement fails closed on missing or ambiguous addresses', async () => {
@@ -85,7 +92,8 @@ test('automatic graph advertisement fails closed on missing or ambiguous address
   for (const [addresses, expected] of [
     [[], /found 0/],
     [['172.20.0.3', '172.21.0.4'], /found 2/],
-    [['192.168.1.3'], /found 0/],
+    [['192.168.16.2', '10.0.0.2'], /found 2/],
+    [['192.169.1.3'], /found 0/],
   ]) {
     assert.throws(() => cli.resolveReviewGraphHosts({
       host: '0.0.0.0',
@@ -106,11 +114,23 @@ test('automatic graph advertisement fails closed on missing or ambiguous address
   }), /requires automatic Docker bridge advertisement/);
 });
 
+test('graph addresses reject public, link-local, and noncanonical IPv4', async () => {
+  const { cli } = await modules();
+  for (const address of ['9.255.255.254', '11.0.0.2', '172.15.255.254',
+    '172.32.0.2', '192.167.255.254', '192.169.0.2', '169.254.1.2',
+    '100.64.0.2', '10.1.2.256', '10.01.2.3', '10.1.2', '10.1.2.3.']) {
+    assert.throws(() => cli.resolveReviewGraphHosts({ host: address }), /IPv4|Docker bridge/);
+    assert.throws(() => cli.resolveReviewGraphHosts({
+      host: '0.0.0.0', advertiseHost: 'auto',
+    }, { networkInterfaces: bridgeInterfaces(address) }), /found 0/);
+  }
+});
+
 test('wildcard graph service keeps token access, no-store, and exact-origin CORS', async (t) => {
   const bundle = await reviewBundle(t);
   const { cli } = await modules();
   const token = 'a'.repeat(64);
-  const origin = 'http://172.23.0.2:3000';
+  const origin = 'http://192.168.16.2:3000';
   const running = await cli.listenReviewGraph({
     bundle,
     port: 0,
@@ -119,7 +139,7 @@ test('wildcard graph service keeps token access, no-store, and exact-origin CORS
     origin,
     token,
   }, {
-    networkInterfaces: bridgeInterfaces('172.23.0.7'),
+    networkInterfaces: bridgeInterfaces('192.168.16.7'),
   });
   t.after(async () => {
     await new Promise((resolve, reject) => running.server.close((error) => (
@@ -128,7 +148,7 @@ test('wildcard graph service keeps token access, no-store, and exact-origin CORS
   });
 
   const advertised = new URL(running.url);
-  assert.equal(advertised.hostname, '172.23.0.7');
+  assert.equal(advertised.hostname, '192.168.16.7');
   const localUrl = `http://127.0.0.1:${advertised.port}${advertised.pathname}`;
   const accepted = await fetch(localUrl, { headers: { Origin: origin } });
   assert.equal(accepted.status, 200);
@@ -137,7 +157,7 @@ test('wildcard graph service keeps token access, no-store, and exact-origin CORS
   await accepted.text();
 
   const foreign = await fetch(localUrl, {
-    headers: { Origin: 'http://172.23.0.99:3000' },
+    headers: { Origin: 'http://192.168.16.99:3000' },
   });
   assert.equal(foreign.status, 403);
   assert.equal(foreign.headers.get('access-control-allow-origin'), null);

@@ -57,6 +57,17 @@ const jsonArtifacts = Object.freeze([
     mode: 0o644,
     topLevelKeys: ['adapters', 'schemaVersion'],
     transform(document, prefix) {
+      const exec = findNamedAdapter(document, 'nosh-exec', this.source);
+      for (const operation of ['health', 'attach']) {
+        replaceJsonString(
+          exec,
+          [operation, 'command'],
+          `${DEFAULT_PREFIX}/libexec/nosh-build/nosh-build-loader`,
+          `${prefix}/libexec/nosh-build/nosh-build-loader`,
+          this.source,
+        );
+      }
+
       const egress = findNamedAdapter(document, 'nosh-egress', this.source);
       for (const operation of ['health', 'attach']) {
         replaceJsonString(

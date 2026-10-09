@@ -35,6 +35,43 @@ function tempDir(t) {
   return directory;
 }
 
+function writeCleanNoshExec(filePath, targetCgroupId = '42') {
+  const counters = Object.fromEntries([
+    'ringbufDrops', 'syscallMapFull', 'inflightMapFull', 'configMissing',
+    'cgroupFilterErrors', 'dnsParseErrors', 'dnsCompressedNames',
+    'dnsTruncatedNames', 'dnsTruncatedResponses', 'dnsAnswerLimitReached',
+    'dnsUnsupportedAnswers', 'dnsCorrelationMissing',
+    'dnsQueryObservations', 'dnsResponseObservations', 'dnsNamePointers',
+    'fileMapFull', 'filePathErrors', 'fileOpenObservations',
+  ].map((name) => [name, '0']));
+  const records = [
+    {
+      schemaVersion: 2,
+      recordKind: 'capabilities',
+      timestampUnixNs: '1',
+      collectionDepth: 'process',
+      availableSources: ['process-exec'],
+      unavailableSources: [],
+    },
+    {
+      schemaVersion: 2,
+      recordKind: 'stats',
+      timestampUnixNs: '2',
+      targetCgroupId,
+      final: true,
+      eventsSeen: '0',
+      decoderErrors: '0',
+      inflightSyscalls: '0',
+      counters,
+      fileSummaryRecords: '0',
+    },
+  ];
+  fs.writeFileSync(
+    filePath,
+    `${records.map((record) => JSON.stringify(record)).join('\n')}\n`,
+  );
+}
+
 test('guard renders one canonical collision-checked nosh-egress manifest', async () => {
   const {
     normalizeEbpfCidr,
@@ -555,7 +592,9 @@ test('nosh-egress evidence requires one last monotonic loss-free stats record', 
   const root = tempDir(t);
   const evidenceDir = path.join(root, 'evidence');
   const logPath = path.join(evidenceDir, 'nosh-egress.jsonl');
+  const execLogPath = path.join(evidenceDir, 'nosh-exec.jsonl');
   fs.mkdirSync(evidenceDir);
+  writeCleanNoshExec(execLogPath);
   const policyDigest = `sha256:${'3'.repeat(64)}`;
   const objectDigest = `sha256:${'4'.repeat(64)}`;
   const counters = (overrides = {}) => ({
@@ -643,18 +682,34 @@ test('nosh-egress evidence requires one last monotonic loss-free stats record', 
     evidenceDir,
     evidenceComplete: true,
     createdAt: '2026-08-21T00:00:00.000Z',
-    adapters: [{
-      name: 'nosh-egress',
-      logPath,
-      required: true,
-      evidence: true,
-      readiness: {
-        attestation: {
-          ...readiness.attestation,
-          mode,
+    adapters: [
+      {
+        name: 'nosh-egress',
+        logPath,
+        required: true,
+        evidence: true,
+        readiness: {
+          attestation: {
+            ...readiness.attestation,
+            mode,
+          },
         },
       },
-    }],
+      {
+        name: 'nosh-exec',
+        logPath: execLogPath,
+        required: true,
+        evidence: true,
+        readiness: {
+          schemaVersion: 2,
+          recordKind: 'status',
+          status: 'ready',
+          collectionDepth: 'process',
+          attachedPrograms: 1,
+          cgroupId: '42',
+        },
+      },
+    ],
     detachResults: [],
     egress: {
       backend: 'nosh-egress',

@@ -34,7 +34,7 @@
 #define CGROUP2_SUPER_MAGIC 0x63677270
 #endif
 
-#define NOSH_BUILD_LOADER_VERSION "4"
+#define NOSH_BUILD_LOADER_VERSION "5"
 #define NOSH_BUILD_DEFAULT_STATS_INTERVAL_MS 5000
 #define NOSH_BUILD_MIN_STATS_INTERVAL_MS 100
 #define NOSH_BUILD_MAX_STATS_INTERVAL_MS 3600000
@@ -103,6 +103,7 @@ struct loader_context {
   __u64 dns_name_pointers;
   __u64 file_summaries_emitted;
   bool policy_depth;
+  bool process_depth;
   bool output_failed;
 };
 
@@ -480,14 +481,14 @@ static void usage(FILE *stream, const char *program)
   fprintf(stream,
           "Usage:\n"
           "  %s health [--cgroup ABSOLUTE_PATH] [--cgroup-id UINT64]"
-          " [--depth balanced|policy|deep]\n"
-          "  %s verify [--depth balanced|policy|deep]\n"
+          " [--depth process|balanced|policy|deep]\n"
+          "  %s verify [--depth process|balanced|policy|deep]\n"
           "  %s run --cgroup ABSOLUTE_PATH [--cgroup-id UINT64]\\\n"
-          "      [--depth balanced|policy|deep]"
+          "      [--depth process|balanced|policy|deep]"
           " [--stats-interval-ms 0|%d..%d] [--status-fd FD]\n"
           "  %s --version\n\n"
-          "Policy adds capability-gated file-open summaries; deep fails "
-          "preflight.\n",
+          "Process records successful cgroup-descendant execs only. Policy "
+          "adds capability-gated file-open summaries; deep fails preflight.\n",
           program, program, program, NOSH_BUILD_MIN_STATS_INTERVAL_MS,
           NOSH_BUILD_MAX_STATS_INTERVAL_MS, program);
 }
@@ -582,7 +583,8 @@ static int parse_options(int argc,
     }
     if (!strcmp(argument, "--depth")) {
       if (++index >= argc ||
-          (strcmp(argv[index], "balanced") &&
+          (strcmp(argv[index], "process") &&
+           strcmp(argv[index], "balanced") &&
            strcmp(argv[index], "policy") &&
            strcmp(argv[index], "deep")))
         return -1;
@@ -833,7 +835,8 @@ static int run_health(const struct loader_options *options)
   bool cgroup_v2_ok = path_is_cgroup_v2("/sys/fs/cgroup");
   bool target_ok = true;
   bool policy_requested = !strcmp(options->depth, "policy");
-  bool depth_ok = !strcmp(options->depth, "balanced") ||
+  bool depth_ok = !strcmp(options->depth, "process") ||
+    !strcmp(options->depth, "balanced") ||
     (policy_requested && policy_kernel_ok && bpf_lsm_ok);
   bool healthy;
 
@@ -910,19 +913,34 @@ static int emit_capabilities(struct loader_context *context,
           "\"collectionDepth\":",
           (uint64_t)realtime_ns());
   write_json_string(context->event_stream, depth, strlen(depth));
-  fputs(
-          ",\"availableSources\":[\"process-exec\",\"process-exit\","
+  if (context->process_depth) {
+    fputs(",\"availableSources\":[\"process-exec\"],"
+          "\"unavailableSources\":["
+          "{\"name\":\"process-exit\",\"reason\":"
+          "\"process depth records successful exec transitions only\"},"
+          "{\"name\":\"syscall-summary\",\"reason\":"
+          "\"disabled by process-only collection\"},"
+          "{\"name\":\"udp-dns-query\",\"reason\":"
+          "\"disabled by process-only collection\"},"
+          "{\"name\":\"udp-dns-response\",\"reason\":"
+          "\"disabled by process-only collection\"},"
+          "{\"name\":\"file-operations\",\"reason\":"
+          "\"disabled by process-only collection\"},",
+          context->event_stream);
+  } else {
+    fputs(",\"availableSources\":[\"process-exec\",\"process-exit\","
           "\"syscall-summary\",\"udp-dns-query\","
           "\"udp-dns-response\"",
           context->event_stream);
-  if (!strcmp(depth, "policy"))
-    fputs(",\"file-operations\"", context->event_stream);
-  fputs("],\"unavailableSources\":[",
-        context->event_stream);
-  if (strcmp(depth, "policy"))
-    fputs("{\"name\":\"file-operations\",\"reason\":"
-          "\"requires --depth policy and an enabled BPF LSM\"},",
+    if (!strcmp(depth, "policy"))
+      fputs(",\"file-operations\"", context->event_stream);
+    fputs("],\"unavailableSources\":[",
           context->event_stream);
+    if (strcmp(depth, "policy"))
+      fputs("{\"name\":\"file-operations\",\"reason\":"
+            "\"requires --depth policy and an enabled BPF LSM\"},",
+            context->event_stream);
+  }
   fputs(
           "{\"name\":\"tcp-dns\",\"reason\":"
           "\"DNS-over-TCP reassembly is not implemented\"},"
@@ -1872,6 +1890,32 @@ static void set_memlock_limit(FILE *status_stream)
                     "with memcg-based BPF accounting");
 }
 
+static int configure_program_autoload(struct nosh_build_bpf *skeleton,
+                                      const char *depth)
+{
+  bool process_requested = !strcmp(depth, "process");
+  bool policy_requested = !strcmp(depth, "policy");
+
+  if (!policy_requested &&
+      bpf_program__set_autoload(
+        skeleton->progs.nosh_build_file_open, false) != 0)
+    return -1;
+  if (!process_requested)
+    return 0;
+  if (bpf_program__set_autoload(
+        skeleton->progs.nosh_build_process_exit, false) != 0 ||
+      bpf_program__set_autoload(
+        skeleton->progs.nosh_build_sys_enter, false) != 0 ||
+      bpf_program__set_autoload(
+        skeleton->progs.nosh_build_sys_exit, false) != 0 ||
+      bpf_program__set_autoload(
+        skeleton->progs.nosh_build_dns_egress, false) != 0 ||
+      bpf_program__set_autoload(
+        skeleton->progs.nosh_build_dns_ingress, false) != 0)
+    return -1;
+  return 0;
+}
+
 /*
  * Exercise the real kernel verifier without attaching any program. `health`
  * intentionally remains a read-only prerequisite probe; this command closes
@@ -1922,11 +1966,9 @@ static int run_verifier_probe(const struct loader_options *options)
     emit_status(stdout, "error", NULL, 0, options->depth, error_message);
     goto cleanup;
   }
-  if (!policy_requested &&
-      bpf_program__set_autoload(
-        skeleton->progs.nosh_build_file_open, false) != 0) {
+  if (configure_program_autoload(skeleton, options->depth) != 0) {
     emit_status(stdout, "error", NULL, 0, options->depth,
-                "cannot disable the policy file program for balanced mode");
+                "cannot configure programs for the requested depth");
     goto cleanup;
   }
   {
@@ -2064,11 +2106,9 @@ static int run_loader(const struct loader_options *options,
                 error_message);
     goto cleanup;
   }
-  if (!strcmp(options->depth, "balanced") &&
-      bpf_program__set_autoload(
-        skeleton->progs.nosh_build_file_open, false) != 0) {
+  if (configure_program_autoload(skeleton, options->depth) != 0) {
     emit_status(status_stream, "error", &target, 0, options->depth,
-                "cannot disable the policy file program for balanced mode");
+                "cannot configure programs for the requested depth");
     goto cleanup;
   }
   {
@@ -2114,6 +2154,7 @@ static int run_loader(const struct loader_options *options,
   context.possible_cpus = libbpf_num_possible_cpus();
   context.target_cgroup_id = target.id;
   context.policy_depth = !strcmp(options->depth, "policy");
+  context.process_depth = !strcmp(options->depth, "process");
   if (context.stats_map_fd < 0 || context.syscall_map_fd < 0 ||
       context.inflight_map_fd < 0 || context.file_map_fd < 0 ||
       context.possible_cpus <= 0 ||
@@ -2147,51 +2188,53 @@ static int run_loader(const struct loader_options *options,
                      attached_programs, options->depth) != 0)
     goto cleanup;
   attached_programs++;
-  if (attach_program(skeleton->progs.nosh_build_process_exit, &links[1],
-                     "process-exit", status_stream, &target,
-                     attached_programs, options->depth) != 0)
-    goto cleanup;
-  attached_programs++;
-  if (attach_program(skeleton->progs.nosh_build_sys_enter, &links[2],
-                     "sys-enter", status_stream, &target,
-                     attached_programs, options->depth) != 0)
-    goto cleanup;
-  attached_programs++;
-  if (attach_program(skeleton->progs.nosh_build_sys_exit, &links[3],
-                     "sys-exit", status_stream, &target,
-                     attached_programs, options->depth) != 0)
-    goto cleanup;
-  attached_programs++;
+  if (!context.process_depth) {
+    if (attach_program(skeleton->progs.nosh_build_process_exit, &links[1],
+                       "process-exit", status_stream, &target,
+                       attached_programs, options->depth) != 0)
+      goto cleanup;
+    attached_programs++;
+    if (attach_program(skeleton->progs.nosh_build_sys_enter, &links[2],
+                       "sys-enter", status_stream, &target,
+                       attached_programs, options->depth) != 0)
+      goto cleanup;
+    attached_programs++;
+    if (attach_program(skeleton->progs.nosh_build_sys_exit, &links[3],
+                       "sys-exit", status_stream, &target,
+                       attached_programs, options->depth) != 0)
+      goto cleanup;
+    attached_programs++;
 
-  links[4] = bpf_program__attach_cgroup(
-    skeleton->progs.nosh_build_dns_egress, target.fd);
-  link_error = links[4] ? libbpf_get_error(links[4]) :
-    -(errno ? errno : EINVAL);
-  if (link_error) {
-    links[4] = NULL;
-    snprintf(error_message, sizeof(error_message),
-             "cannot attach UDP DNS program: %s",
-             strerror((int)-link_error));
-    emit_status(status_stream, "error", &target, attached_programs,
-                options->depth, error_message);
-    goto cleanup;
-  }
-  attached_programs++;
+    links[4] = bpf_program__attach_cgroup(
+      skeleton->progs.nosh_build_dns_egress, target.fd);
+    link_error = links[4] ? libbpf_get_error(links[4]) :
+      -(errno ? errno : EINVAL);
+    if (link_error) {
+      links[4] = NULL;
+      snprintf(error_message, sizeof(error_message),
+               "cannot attach UDP DNS program: %s",
+               strerror((int)-link_error));
+      emit_status(status_stream, "error", &target, attached_programs,
+                  options->depth, error_message);
+      goto cleanup;
+    }
+    attached_programs++;
 
-  links[5] = bpf_program__attach_cgroup(
-    skeleton->progs.nosh_build_dns_ingress, target.fd);
-  link_error = links[5] ? libbpf_get_error(links[5]) :
-    -(errno ? errno : EINVAL);
-  if (link_error) {
-    links[5] = NULL;
-    snprintf(error_message, sizeof(error_message),
-             "cannot attach UDP DNS response program: %s",
-             strerror((int)-link_error));
-    emit_status(status_stream, "error", &target, attached_programs,
-                options->depth, error_message);
-    goto cleanup;
+    links[5] = bpf_program__attach_cgroup(
+      skeleton->progs.nosh_build_dns_ingress, target.fd);
+    link_error = links[5] ? libbpf_get_error(links[5]) :
+      -(errno ? errno : EINVAL);
+    if (link_error) {
+      links[5] = NULL;
+      snprintf(error_message, sizeof(error_message),
+               "cannot attach UDP DNS response program: %s",
+               strerror((int)-link_error));
+      emit_status(status_stream, "error", &target, attached_programs,
+                  options->depth, error_message);
+      goto cleanup;
+    }
+    attached_programs++;
   }
-  attached_programs++;
 
   if (context.policy_depth) {
     if (attach_program(skeleton->progs.nosh_build_file_open, &links[6],
@@ -2205,6 +2248,8 @@ static int run_loader(const struct loader_options *options,
       emit_stats_json(&context, false) != 0 ||
       emit_status(status_stream, "ready", &target, attached_programs,
                   options->depth,
+                  context.process_depth ?
+                    "process observer attached; successful execs are recorded without argv" :
                   context.policy_depth ?
                     "policy process, syscall, UDP DNS query/response, and file programs attached" :
                     "balanced process, syscall, and UDP DNS query/response programs attached")
@@ -2278,11 +2323,13 @@ static int run_loader(const struct loader_options *options,
     } while (consume_result > 0 && !context.output_failed);
     if (consume_result < 0 && consume_result != -EINTR)
       runtime_error = -consume_result;
-    if (!runtime_error &&
-        (emit_syscall_summaries(&context) != 0 ||
-         emit_file_summaries(&context) != 0 ||
-         emit_stats_json(&context, true) != 0))
-      runtime_error = EIO;
+    if (!runtime_error) {
+      if ((!context.process_depth &&
+           (emit_syscall_summaries(&context) != 0 ||
+            emit_file_summaries(&context) != 0)) ||
+          emit_stats_json(&context, true) != 0)
+        runtime_error = EIO;
+    }
   } else if (context.output_failed && !runtime_error) {
     runtime_error = EIO;
   }
@@ -2297,6 +2344,8 @@ static int run_loader(const struct loader_options *options,
   } else {
     int status_result = emit_status(
       status_stream, "stopped", &target, 0, options->depth,
+      context.process_depth ?
+        "final process-observer stats emitted; link detached" :
       context.policy_depth ?
         "syscall and file summaries plus final stats emitted; links detached" :
         "syscall summaries and final stats emitted; links detached");
@@ -2334,7 +2383,7 @@ int main(int argc, char **argv)
     return 0;
   }
   if (!strcmp(options.command, "version")) {
-    printf("nosh-build-loader %s schema %d balanced policy udp-dns file-open\n",
+    printf("nosh-build-loader %s schema %d process balanced policy udp-dns file-open\n",
            NOSH_BUILD_LOADER_VERSION, NOSH_BUILD_SCHEMA_VERSION);
     return 0;
   }

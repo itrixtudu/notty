@@ -37,7 +37,7 @@ if [[ -e "$REPORT_PATH" || -L "$REPORT_PATH" ]]; then
 fi
 
 audit_status=0
-"$REPO_ROOT/release-audit.sh" --report "$REPORT_PATH" || audit_status=$?
+"$REPO_ROOT/scripts/release-audit.sh" --report "$REPORT_PATH" || audit_status=$?
 
 if (( audit_status == 0 || audit_status == 1 )) &&
    [[ ! -f "$REPORT_PATH" || -L "$REPORT_PATH" ]]

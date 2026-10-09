@@ -45,7 +45,7 @@ test('balanced BPF ABI is versioned and uses bounded maps', () => {
   assert.match(header, /NOSH_BUILD_EVENT_DNS_RESPONSE = 4/);
   assert.match(header, /#define NOSH_BUILD_DNS_MAX_ANSWERS 16\b/);
   assert.match(header, /#define NOSH_BUILD_DNS_MAX_VISITED_ANSWERS 16\b/);
-  assert.match(loader, /#define NOSH_BUILD_LOADER_VERSION "4"/);
+  assert.match(loader, /#define NOSH_BUILD_LOADER_VERSION "5"/);
   assert.match(loader, /sizeof\(struct nosh_build_dns_wire_event\) <= UINT16_MAX/);
   assert.match(source, /__uint\(type, BPF_MAP_TYPE_RINGBUF\)/);
   assert.match(source, /} events SEC\("\.maps"\);/);
@@ -61,6 +61,28 @@ test('balanced BPF ABI is versioned and uses bounded maps', () => {
   assert.match(source, /__uint\(type, BPF_MAP_TYPE_PERCPU_ARRAY\)/);
   assert.match(source, /} stats SEC\("\.maps"\);/);
   assert.match(source, /} session_config SEC\("\.maps"\);/);
+});
+
+test('process depth loads only successful exec observation and records no argv', () => {
+  assert.match(loader, /bool process_depth;/);
+  assert.match(loader, /!strcmp\(options->depth, "process"\)/);
+  assert.ok(loader.includes('\\"availableSources\\":[\\"process-exec\\"]'));
+  for (const program of [
+    'nosh_build_process_exit',
+    'nosh_build_sys_enter',
+    'nosh_build_sys_exit',
+    'nosh_build_dns_egress',
+    'nosh_build_dns_ingress',
+  ]) {
+    assert.match(
+      loader,
+      new RegExp(`skeleton->progs\\.${program}, false`),
+    );
+  }
+  assert.ok(!loader.includes('\\"argv\\"'));
+  assert.ok(!loader.includes('\\"arguments\\"'));
+  assert.match(loader, /if \(!context\.process_depth\) \{/);
+  assert.match(loader, /final process-observer stats emitted/);
 });
 
 test('global tracepoints fail closed through the kernel cgroup descendant filter', () => {
@@ -242,7 +264,11 @@ test('normalized schemas expose loss and contain no packet or command payload', 
   assert.ok(syscallSchema.properties.syscallNumber.maximum > 0);
   assert.deepEqual(
     capabilitiesSchema.properties.collectionDepth.enum,
-    ['balanced', 'policy'],
+    ['process', 'balanced', 'policy'],
+  );
+  assert.ok(
+    capabilitiesSchema.properties.unavailableSources.items
+      .properties.name.enum.includes('process-exit'),
   );
   assert.equal(fileSchema.properties.recordKind.const, 'file-summary');
   assert.equal(fileSchema.properties.metadataOnly.const, true);
@@ -469,7 +495,7 @@ test('live BuildKit runs require an immutable deployment digest', () => {
     'sha256:0168606be2315b7c807a03b3d8aa79beefdb31c98740cebdffdfeebf31190c9f',
   );
   assert.equal(versions.buildkit.requireDeploymentDigest, true);
-  assert.equal(versions.noshBuild.loaderVersion, '4');
+  assert.equal(versions.noshBuild.loaderVersion, '5');
   assert.equal(versions.noshBuild.evidenceSchemaVersion, 2);
   assert.equal(
     versions.supplyChain.requireImmutableBuildkitDigestForLiveRuns,

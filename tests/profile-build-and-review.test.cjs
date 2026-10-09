@@ -8,7 +8,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const appRoot = path.resolve(__dirname, '..');
-const wrapper = path.join(appRoot, 'profile-build-and-review.sh');
+const wrapper = path.join(appRoot, 'scripts/profile-build-and-review.sh');
 
 const uiContainerId = '1'.repeat(64);
 const graphContainerId = '2'.repeat(64);
@@ -17,8 +17,8 @@ const graphContentDigest = `sha256:${'4'.repeat(64)}`;
 const networkId = '5'.repeat(64);
 const foreignContainerId = '6'.repeat(64);
 const graphToken = '8'.repeat(64);
-const uiAddress = '172.29.7.11';
-const graphAddress = '172.29.7.23';
+const uiAddress = '172.29.7.2';
+const graphAddress = '172.29.7.3';
 const graphPort = '8765';
 
 function executable(file, source) {
@@ -74,6 +74,7 @@ function fixture(t) {
     'printf "profile\\t" >>"$TEST_LOG"',
     'printf "%q " "$@" >>"$TEST_LOG"',
     'printf "\\n" >>"$TEST_LOG"',
+    'if [[ -n "${TEST_REPLACE_NETWORK_HELPER:-}" ]]; then cp -- "$TEST_REPLACEMENT_HELPER" "$TEST_REPLACE_NETWORK_HELPER"; fi',
     'printf "%s\\n" \\',
     '  "Nosh build profile: profile-1" \\',
     '  "Private bundle: $TEST_BUILD_PROFILE" \\',
@@ -82,6 +83,33 @@ function fixture(t) {
     '  "Guard eBPF target context: $TEST_TARGET_CONTEXT"',
     'exit "${TEST_PROFILE_STATUS:-0}"',
   ].join('\n'));
+
+  const networkHelper = path.join(bin, 'network-helper.py');
+  fs.writeFileSync(networkHelper, `import json, os, sys
+args = sys.argv[1:]
+env = os.environ
+digest = env.get('TEST_NETWORK_CONFIG_DIGEST', 'sha256:' + 'c' * 64)
+if args[0] == 'status':
+    if env.get('TEST_NETWORK_CONFIG_MISSING') == 'true': sys.exit(3)
+    print(digest)
+    sys.exit(0)
+if args[0] == 'endpoint':
+    if env.get('TEST_NETWORK_ENDPOINT_FAIL') == 'true': sys.exit(1)
+    print('unix:///var/run/docker.sock')
+    sys.exit(0)
+with open(env['TEST_LOG'], 'a') as log: log.write('network-helper\\t' + '\\t'.join(args) + '\\n')
+if args[0] == 'select':
+    if env.get('TEST_NETWORK_SELECT_FAIL') == 'true': sys.exit(1)
+    print('172.29.7.0/29\\t172.29.7.1\\t' + env.get('TEST_NETWORK_SELECTED_DIGEST', digest))
+elif args[0] == 'verify':
+    if env.get('TEST_NETWORK_VERIFY_FAIL') == 'true': sys.exit(1)
+    with open(os.path.join(env['TEST_DOCKER_STATE'], 'state.json')) as state_file:
+        network = json.load(state_file)['network']
+    if args[args.index('--subnet') + 1] != network['subnet']: sys.exit(1)
+    if args[args.index('--gateway') + 1] != network['gateway']: sys.exit(1)
+    print(digest)
+else: sys.exit(2)
+`);
 
   const docker = path.join(bin, 'docker');
   executable(docker, [
@@ -130,6 +158,7 @@ function fixture(t) {
     "  write(`${env[resolvedName] || requested}|${env[abiName] || '1'}`);",
     '}',
     "if (args[0] === 'image' && args[1] === 'inspect') {",
+    "  if (env.TEST_LOG_IMAGE_INSPECTIONS === 'true') record();",
     '  const requested = args.at(-1);',
     '  if (requested === env.TEST_TOOLING_IMAGE) {',
     "    exactImage(requested, 'TEST_TOOLING_INSPECT_FAIL', 'TEST_TOOLING_RESOLVED_ID', 'TEST_TOOLING_ABI');",
@@ -141,6 +170,16 @@ function fixture(t) {
     '  process.exit(0);',
     '}',
     'record();',
+    "if (args[0] === 'container' && args[1] === 'ls') {",
+    "  for (const component of ['ui', 'graph']) if (state[component]) write(state[component].id);",
+    '  process.exit(0);',
+    '}',
+    "if (args[0] === 'container' && args[1] === 'inspect') {",
+    "  const selected = [state.ui, state.graph].find(item => item && item.id === args.at(-1));",
+    '  if (!selected) fail(96);',
+    '  write(JSON.stringify([{ Id: selected.id, Image: selected.image, Config: { Labels: selected.labels } }]));',
+    '  process.exit(0);',
+    '}',
     "if (args[0] === 'run') {",
     "  if (!has('--detach')) {",
     "    if (has('/app/scripts/nosh-policy-session.mjs')) {",
@@ -181,6 +220,10 @@ function fixture(t) {
     '  process.exit(0);',
     '}',
     "if (args[0] === 'network') {",
+    "  if (args[1] === 'ls') {",
+    '    if (state.network) write(state.network.id);',
+    '    process.exit(0);',
+    '  }',
     "  if (args[1] === 'create') {",
     '    const selectedLabels = labels();',
     '    state.network = {',
@@ -188,16 +231,34 @@ function fixture(t) {
     '      name: args.at(-1),',
     "      driver: after('--driver'),",
     "      internal: has('--internal'),",
+    "      subnet: after('--subnet'),",
+    "      gateway: after('--gateway'),",
     '      labels: selectedLabels,',
     '    };',
     '    save();',
     '    write(state.network.id);',
     '    process.exit(0);',
     '  }',
+    "  if (args[1] === 'rm') {",
+    '    if (!state.network || args.at(-1) !== state.network.id || state.ui || state.graph) fail(94);',
+    '    state.network = null; save(); process.exit(0);',
+    '  }',
     "  if (args[1] !== 'inspect' || !state.network) fail(94);",
     '  const target = args.at(-1);',
     '  if (target !== state.network.name && target !== state.network.id) fail(94);',
     "  const format = after('--format');",
+    '  if (!format) {',
+    '    const attachments = {};',
+    "    for (const component of ['ui', 'graph']) if (state[component]) attachments[state[component].id] = {};",
+    '    write(JSON.stringify([{ Id: state.network.id, Name: state.network.name, Driver: state.network.driver,',
+    '      Internal: state.network.internal, EnableIPv6: false, Labels: state.network.labels, Containers: attachments,',
+    '      IPAM: { Config: [{ Subnet: state.network.subnet, Gateway: state.network.gateway }] } }]));',
+    '    process.exit(0);',
+    '  }',
+    "  if (format === '{{len .Containers}}') {",
+    '    write(Number(Boolean(state.ui)) + Number(Boolean(state.graph)) + Number(env.TEST_EXTRA_NETWORK_ENDPOINTS || 0));',
+    '    process.exit(0);',
+    '  }',
     "  if (format === '{{.Id}}') {",
     '    write(env.TEST_FOUND_NETWORK_ID || state.network.id);',
     '    process.exit(0);',
@@ -214,6 +275,7 @@ function fixture(t) {
     "    env.TEST_NETWORK_EVIDENCE_ATTESTATION || selectedLabels['io.notty.policy-review.profile-evidence-digest'],",
     "    env.TEST_NETWORK_GRAPH_ATTESTATION || selectedLabels['io.notty.policy-review.graph-digest'],",
     "    env.TEST_NETWORK_CONTENT_ATTESTATION || selectedLabels['io.notty.policy-review.graph-content-digest'],",
+    "    env.TEST_NETWORK_CONFIG_ATTESTATION || selectedLabels['io.notty.policy-review.network-config-digest'],",
     "  ].join('|'));",
     '  process.exit(0);',
     '}',
@@ -243,7 +305,7 @@ function fixture(t) {
     '    process.exit(0);',
     '  }',
     "  if (format.includes('io.notty.policy-review.profile-evidence-digest')) {",
-    '    write([',
+    '    const fields = [',
     "      env[`${prefix}CONTAINER_ID_ATTESTATION`] || selected.id,",
     "      env[`${prefix}IMAGE_ATTESTATION`] || selected.image,",
     "      env[`${prefix}MANAGED_ATTESTATION`] || selected.labels['io.notty.policy-review.managed'],",
@@ -253,8 +315,9 @@ function fixture(t) {
     "      env[`${prefix}GRAPH_ATTESTATION`] || selected.labels['io.notty.policy-review.graph-digest'],",
     "      env[`${prefix}CONTENT_ATTESTATION`] || selected.labels['io.notty.policy-review.graph-content-digest'],",
     "      `/${selected.name}`,",
-    "      env[`${prefix}RUNNING_ATTESTATION`] || 'true',",
-    "    ].join('|'));",
+    '    ];',
+    "    if (format.includes('.State.Running')) fields.push(env[`${prefix}RUNNING_ATTESTATION`] || 'true');",
+    "    write(fields.join('|'));",
     '    process.exit(0);',
     '  }',
     "  if (format.includes('NetworkSettings.Networks')) {",
@@ -268,7 +331,7 @@ function fixture(t) {
     '    process.exit(0);',
     '  }',
     "  if (format.includes('.State.Running')) {",
-    "    write(env[`${prefix}STATE_RUNNING`] || 'true');",
+    "    write(env[`${prefix}RUNNING_ATTESTATION`] || env[`${prefix}STATE_RUNNING`] || 'true');",
     '    process.exit(0);',
     '  }',
     '  fail(95);',
@@ -285,6 +348,10 @@ function fixture(t) {
     '  process.exit(0);',
     '}',
     "if (args[0] === 'stop') {",
+    "  for (const component of ['ui', 'graph']) {",
+    '    if (state[component] && state[component].id === args.at(-1)) state[component] = null;',
+    '  }',
+    '  save();',
     '  process.exit(0);',
     '}',
     "process.stderr.write(`unexpected fake Docker command: ${args.join(' ')}\\n`);",
@@ -310,6 +377,7 @@ function fixture(t) {
     log,
     profile,
     docker,
+    networkHelper,
     xdg,
     policyToolingImage,
     policyReviewUiImage,
@@ -340,6 +408,7 @@ function fixture(t) {
       NOSH_POLICY_REVIEW_UI_IMAGE: policyReviewUiImage,
       NOSH_PROFILE_REVIEW_PROFILE_BIN: profile,
       NOSH_PROFILE_REVIEW_DOCKER_BIN: docker,
+      NOSH_PROFILE_REVIEW_NETWORK_HELPER: networkHelper,
       NOSH_PROFILE_REVIEW_XDG_OPEN_BIN: xdg,
       NOSH_PROFILE_REVIEW_WORKDIR: workdir,
       NOSH_PROFILE_REVIEW_STATE_ROOT: reviewRoot,
@@ -409,7 +478,7 @@ test('materializes and serves a review on distinct discovered bridge addresses',
   const events = eventsOf(selected);
   assert.match(events[0], /^profile\t/);
   const dockerRuns = events.filter((line) => line.startsWith('docker\trun\t'));
-  assert.equal(dockerRuns.length, 4, events.join('\n'));
+  assert.equal(dockerRuns.length, 5, events.join('\n'));
   const bundleRun = dockerRuns.find((line) => /\treview\tbundle\t/.test(line));
   assert.ok(bundleRun.includes(`type=bind,src=${selected.workdir},dst=${selected.workdir},readonly`));
   const uiRun = dockerRuns.find((line) => line.includes('\tio.notty.policy-review.component=ui\t'));
@@ -439,6 +508,7 @@ test('materializes and serves a review on distinct discovered bridge addresses',
   const networkCreate = events.find((line) => line.startsWith('docker\tnetwork\tcreate\t'));
   assert.ok(networkCreate);
   assert.match(networkCreate, /\t--driver\tbridge\t--internal\t/);
+  assert.match(networkCreate, /\t--subnet\t172\.29\.7\.0\/29\t--gateway\t172\.29\.7\.1\t/);
   assert.match(networkCreate, /\tio\.notty\.policy-review\.component=network\t/);
   assert.ok(events.some((line) => line.startsWith('docker\tnetwork\tinspect\t')));
 
@@ -464,6 +534,15 @@ test('materializes and serves a review on distinct discovered bridge addresses',
   assert.match(output, /Review every proposal and coverage finding/);
 });
 
+test('prepare-only verifies the session without starting UI, graph service or network', (t) => {
+  const selected = fixture(t);
+  const result = launch(selected, ['--prepare-only']);
+  assert.equal(result.status, 0, outputOf(result));
+  const events = eventsOf(selected).join('\n');
+  assert.match(events, /nosh-policy-session\.mjs\tcheck\t--session/);
+  assert.doesNotMatch(events, /docker\tnetwork\tcreate|docker\trun\t--detach|xdg\t/);
+});
+
 test('loads approved service image IDs from the private setup configuration', (t) => {
   const selected = fixture(t);
   const imageConfig = path.join(selected.root, 'policy-review-images.conf');
@@ -479,7 +558,60 @@ test('loads approved service image IDs from the private setup configuration', (t
     NOSH_PROFILE_REVIEW_IMAGE_CONFIG: imageConfig,
   });
   assert.equal(result.status, 0, outputOf(result));
-  assert.match(outputOf(result), /Policy Review: http:\/\/172\.29\.7\.11:3000/);
+  assert.match(outputOf(result), new RegExp(`Policy Review: http://${escaped(uiAddress)}:3000`));
+});
+
+test('wizard-created tooling configuration supports the managed UI supplied by the launcher', (t) => {
+  const selected = fixture(t);
+  const imageConfig = path.join(selected.root, 'policy-review-images.conf');
+  const saved = childProcess.spawnSync('python3', [path.join(appRoot, 'scripts/nosh-save-tooling.py'),
+    '--image', selected.policyToolingImage], { encoding: 'utf8',
+    env: { ...selected.env, NOSH_PROFILE_REVIEW_IMAGE_CONFIG: imageConfig } });
+  assert.equal(saved.status, 0, outputOf(saved));
+  const result = launch(selected, ['--prepare-only'], {
+    NOSH_POLICY_TOOLING_IMAGE: '', NOSH_PROFILE_REVIEW_IMAGE_CONFIG: imageConfig,
+    NOSH_POLICY_REVIEW_UI_IMAGE: selected.policyReviewUiImage,
+  });
+  assert.equal(result.status, 0, outputOf(result));
+  assert.match(eventsOf(selected).join('\n'), new RegExp(`\\t${escaped(selected.policyToolingImage)}\\t`));
+  assert.doesNotMatch(eventsOf(selected).join('\n'), /docker\trun\t--detach/);
+});
+
+test('wizard tooling updates preserve and load an existing pinned UI and comments', (t) => {
+  const selected = fixture(t);
+  const imageConfig = path.join(selected.root, 'policy-review-images.conf');
+  fs.writeFileSync(imageConfig, ['# Explicitly reviewed service images', 'SCHEMA_VERSION=1', '',
+    `NOSH_POLICY_TOOLING_IMAGE=sha256:${'b'.repeat(64)}`,
+    `NOSH_POLICY_REVIEW_UI_IMAGE=${selected.policyReviewUiImage}`, '# Retain this UI', ''].join('\n'), { mode: 0o600 });
+  const saved = childProcess.spawnSync('python3', [path.join(appRoot, 'scripts/nosh-save-tooling.py'),
+    '--image', selected.policyToolingImage], { encoding: 'utf8',
+    env: { ...selected.env, NOSH_PROFILE_REVIEW_IMAGE_CONFIG: imageConfig } });
+  assert.equal(saved.status, 0, outputOf(saved));
+  assert.match(fs.readFileSync(imageConfig, 'utf8'), /# Retain this UI/);
+  const result = launch(selected, ['--prepare-only'], {
+    NOSH_POLICY_TOOLING_IMAGE: '', NOSH_POLICY_REVIEW_UI_IMAGE: '',
+    NOSH_PROFILE_REVIEW_IMAGE_CONFIG: imageConfig,
+  });
+  assert.equal(result.status, 0, outputOf(result));
+  assert.match(fs.readFileSync(imageConfig, 'utf8'), new RegExp(`NOSH_POLICY_REVIEW_UI_IMAGE=${escaped(selected.policyReviewUiImage)}`));
+});
+
+test('comment support preserves strict configuration schema and key validation', (t) => {
+  const selected = fixture(t);
+  const imageConfig = path.join(selected.root, 'policy-review-images.conf');
+  const base = ['# Reviewed images', 'SCHEMA_VERSION=1',
+    `NOSH_POLICY_TOOLING_IMAGE=${selected.policyToolingImage}`, 'NOSH_POLICY_REVIEW_UI_IMAGE='];
+  for (const [lines, expected] of [
+    [[...base, 'UNKNOWN=value'], /unknown Policy Review image configuration key/],
+    [[...base, 'SCHEMA_VERSION=1'], /duplicate Policy Review image configuration key/],
+    [base.filter(line => !line.startsWith('SCHEMA_VERSION=')), /incomplete Policy Review image configuration/],
+    [base.map(line => line === 'SCHEMA_VERSION=1' ? 'SCHEMA_VERSION=2' : line), /incomplete Policy Review image configuration/],
+  ]) {
+    fs.writeFileSync(imageConfig, lines.join('\n') + '\n', { mode: 0o600 });
+    const result = launch(selected, ['--prepare-only'], { NOSH_PROFILE_REVIEW_IMAGE_CONFIG: imageConfig });
+    assert.notEqual(result.status, 0, outputOf(result));
+    assert.match(outputOf(result), expected);
+  }
 });
 
 test('an existing incomplete profile remains reviewable when bundle exits 2', (t) => {
@@ -568,6 +700,183 @@ test('reuses only the attested network, containers, graph, and token', (t) => {
   assert.match(output, /Reusing attested Policy Review UI/);
   assert.match(output, /Reusing attested tokenized review graph server/);
   assert.match(output, new RegExp(`Policy Review: ${escaped(expectedOpenUrl())}`));
+});
+
+test('starts and reuses services on Docker bridges across private IPv4 ranges', (t) => {
+  for (const [ui, graph] of [
+    ['192.168.16.2', '192.168.16.3'],
+    ['10.42.0.2', '10.42.0.3'],
+    ['172.16.0.2', '172.16.0.3'],
+    ['172.31.255.2', '172.31.255.3'],
+  ]) {
+    const selected = fixture(t);
+    const overrides = { TEST_UI_IP: ui, TEST_GRAPH_IP: graph };
+    const first = launch(selected, [], overrides);
+    assert.equal(first.status, 0, outputOf(first));
+    const attestation = JSON.parse(fs.readFileSync(
+      path.join(onlySession(selected), 'runtime', 'policy-review-attestation.json'),
+    ));
+    assert.equal(attestation.uiOrigin, `http://${ui}:3000`);
+    assert.equal(attestation.graphOrigin, `http://${graph}:${graphPort}`);
+    const second = launch(selected, [], overrides);
+    assert.equal(second.status, 0, outputOf(second));
+    assert.match(outputOf(second), /Reusing attested Policy Review UI/);
+    assert.equal(eventsOf(selected).filter(line => line.startsWith('docker\trun\t--detach\t')).length, 2);
+  }
+});
+
+test('rejects invalid or non-private service addresses and cleans up only its created UI', (t) => {
+  for (const address of [
+    '192.169.16.2', '172.15.0.2', '172.32.0.2', '127.0.0.1',
+    '169.254.1.2', '10.256.0.2', '192.168.016.2', '172.29.7.11.',
+  ]) {
+    const selected = fixture(t);
+    const result = launch(selected, [], { TEST_UI_IP: address });
+    assert.notEqual(result.status, 0, address);
+    assert.match(outputOf(result), /reviewed Policy Review UI ownership or identity did not attest/);
+    assert.deepEqual(eventsOf(selected).filter(line => line.startsWith('docker\tstop\t')), [
+      `docker\tstop\t--time\t3\t${uiContainerId}`,
+    ]);
+    assert.equal(fs.existsSync(path.join(onlySession(selected), 'services.state')), false);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(selected.dockerState, 'state.json'))).ui, null);
+  }
+});
+
+test('failed startup cleans up exact created identities and permits a clean retry', (t) => {
+  for (const overrides of [
+    { TEST_UI_IP_ATTESTATION: '8.8.8.8' },
+    { TEST_UI_RUNNING_ATTESTATION: 'false' },
+    { TEST_UI_NETWORK_ID_ATTESTATION: foreignContainerId },
+    { TEST_GRAPH_CREATE_FAIL: 'true' },
+    { TEST_GRAPH_IP_ATTESTATION: '127.0.0.1' },
+  ]) {
+    const selected = fixture(t);
+    const failed = launch(selected, [], overrides);
+    assert.notEqual(failed.status, 0, outputOf(failed));
+    const stops = eventsOf(selected).filter(line => line.startsWith('docker\tstop\t'));
+    assert.ok(stops.includes(`docker\tstop\t--time\t3\t${uiContainerId}`));
+    assert.deepEqual(stops, overrides.TEST_GRAPH_IP_ATTESTATION ? [
+      `docker\tstop\t--time\t3\t${graphContainerId}`,
+      `docker\tstop\t--time\t3\t${uiContainerId}`,
+    ] : [`docker\tstop\t--time\t3\t${uiContainerId}`]);
+    const retried = launch(selected);
+    assert.equal(retried.status, 0, outputOf(retried));
+    assert.match(outputOf(retried), /Verifying persisted frozen review bundle/);
+    assert.ok(fs.existsSync(path.join(onlySession(selected), 'services.state')));
+    assert.equal(eventsOf(selected).filter(line => /\treview\tbundle\t/.test(line)).length, 1);
+  }
+});
+
+test('cleanup refuses a changed created-container identity', (t) => {
+  const selected = fixture(t);
+  const failed = launch(selected, [], { TEST_UI_IMAGE_ATTESTATION: `sha256:${'a'.repeat(64)}` });
+  assert.notEqual(failed.status, 0, outputOf(failed));
+  assert.ok(eventsOf(selected).every(line => !line.startsWith('docker\tstop\t')));
+  const retry = launch(selected);
+  assert.notEqual(retry.status, 0, outputOf(retry));
+  assert.match(outputOf(retry), /unattested network occupies the managed review name/);
+  assert.ok(eventsOf(selected).every(line => !line.startsWith('docker\tstop\t')));
+  assert.ok(eventsOf(selected).every(line => !line.startsWith('docker\tnetwork\trm\t')));
+});
+
+test('allocation prerequisites fail before network creation without an automatic pool fallback', (t) => {
+  for (const overrides of [
+    { TEST_NETWORK_CONFIG_MISSING: 'true' },
+    { TEST_NETWORK_ENDPOINT_FAIL: 'true' },
+    { TEST_NETWORK_SELECT_FAIL: 'true' },
+    { TEST_NETWORK_SELECTED_DIGEST: `sha256:${'d'.repeat(64)}` },
+  ]) {
+    const selected = fixture(t);
+    const result = launch(selected, [], overrides);
+    assert.notEqual(result.status, 0, outputOf(result));
+    assert.ok(eventsOf(selected).every(line => !line.startsWith('docker\tnetwork\tcreate\t')));
+    assert.ok(eventsOf(selected).every(line => !line.startsWith('docker\trun\t--detach\t')));
+  }
+});
+
+test('remote or container-context refusal precedes even Docker image inspection', (t) => {
+  const selected = fixture(t);
+  const result = launch(selected, [], { TEST_NETWORK_ENDPOINT_FAIL: 'true', TEST_LOG_IMAGE_INSPECTIONS: 'true' });
+  assert.notEqual(result.status, 0, outputOf(result));
+  assert.ok(eventsOf(selected).every(line => !line.startsWith('docker\t')));
+});
+
+test('profiling cannot replace host network control code after the launch snapshot', (t) => {
+  const selected = fixture(t);
+  const liveHelper = path.join(selected.workdir, 'network-helper.py');
+  const replacement = path.join(selected.root, 'replacement.py');
+  const marker = path.join(selected.root, 'executed-untrusted-code');
+  fs.copyFileSync(selected.networkHelper, liveHelper);
+  fs.writeFileSync(replacement, `from pathlib import Path\nPath(${JSON.stringify(marker)}).write_text('executed')\nraise SystemExit(99)\n`);
+  const result = launch(selected, [], {
+    NOSH_PROFILE_REVIEW_NETWORK_HELPER: liveHelper,
+    TEST_REPLACE_NETWORK_HELPER: liveHelper,
+    TEST_REPLACEMENT_HELPER: replacement,
+  });
+  assert.equal(result.status, 0, outputOf(result));
+  assert.equal(fs.readFileSync(liveHelper, 'utf8'), fs.readFileSync(replacement, 'utf8'));
+  assert.equal(fs.existsSync(marker), false);
+  const cleanupHelper = path.join(onlySession(selected), 'stop-review.py');
+  assert.equal(fs.statSync(cleanupHelper).mode & 0o777, 0o600);
+  assert.equal(fs.readFileSync(cleanupHelper, 'utf8'), fs.readFileSync(path.join(appRoot, 'scripts/nosh-review-stop.py'), 'utf8'));
+});
+
+test('post-create allocation failure removes the exact empty network before any UI starts', (t) => {
+  const selected = fixture(t);
+  const failed = launch(selected, [], { TEST_NETWORK_VERIFY_FAIL: 'true' });
+  assert.notEqual(failed.status, 0, outputOf(failed));
+  assert.match(outputOf(failed), /subnet, gateway, or host overlap check failed/);
+  const events = eventsOf(selected);
+  assert.deepEqual(events.filter(line => line.startsWith('docker\tnetwork\trm\t')), [
+    `docker\tnetwork\trm\t${networkId}`,
+  ]);
+  assert.ok(events.every(line => !line.startsWith('docker\trun\t--detach\t')));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(selected.dockerState, 'state.json'))).network, null);
+  const retry = launch(selected);
+  assert.equal(retry.status, 0, outputOf(retry));
+});
+
+test('failure cleanup preserves a network that gained an unrelated endpoint', (t) => {
+  const selected = fixture(t);
+  const result = launch(selected, [], { TEST_UI_CREATE_FAIL: 'true', TEST_EXTRA_NETWORK_ENDPOINTS: '1' });
+  assert.notEqual(result.status, 0, outputOf(result));
+  assert.ok(eventsOf(selected).every(line => !line.startsWith('docker\tnetwork\trm\t')));
+});
+
+test('saved network IPAM is rechecked before reused review services are accepted', (t) => {
+  const selected = fixture(t);
+  assert.equal(launch(selected).status, 0);
+  const stateFile = path.join(selected.dockerState, 'state.json');
+  const state = JSON.parse(fs.readFileSync(stateFile));
+  state.network.subnet = '192.168.16.0/20';
+  fs.writeFileSync(stateFile, JSON.stringify(state));
+  const result = launch(selected);
+  assert.notEqual(result.status, 0, outputOf(result));
+  assert.match(outputOf(result), /subnet, gateway, or host overlap check failed/);
+  assert.ok(eventsOf(selected).every(line => !line.startsWith('docker\tnetwork\trm\t')));
+  assert.ok(eventsOf(selected).every(line => !line.startsWith('docker\tstop\t')));
+});
+
+test('review teardown releases the subnet, retains the frozen review, and allows reopening', (t) => {
+  const selected = fixture(t);
+  const first = launch(selected);
+  assert.equal(first.status, 0, outputOf(first));
+  const session = onlySession(selected);
+  const decisions = '{"saved":"review fixture"}\n';
+  fs.writeFileSync(path.join(session, 'decisions/decisions.json'), decisions, { mode: 0o600 });
+  const stopped = childProcess.spawnSync('python3', ['-I', '-S', path.join(session, 'stop-review.py'),
+    '--session', session, '--docker-bin', selected.docker], {
+    encoding: 'utf8', env: { ...selected.env, DOCKER_HOST: 'unix:///var/run/docker.sock', DOCKER_CONTEXT: '' },
+  });
+  assert.equal(stopped.status, 0, outputOf(stopped));
+  assert.equal(JSON.parse(stopped.stdout).networkRemoved, true);
+  assert.equal(fs.existsSync(path.join(session, 'services.state')), false);
+  assert.equal(fs.readFileSync(path.join(session, 'decisions/decisions.json'), 'utf8'), decisions);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(selected.dockerState, 'state.json'))).network, null);
+  const reopened = launch(selected);
+  assert.equal(reopened.status, 0, outputOf(reopened));
+  assert.match(outputOf(reopened), /Verifying persisted frozen review bundle/);
+  assert.equal(eventsOf(selected).filter(line => /\treview\tbundle\t/.test(line)).length, 1);
 });
 
 test('rejects stale or foreign named containers without stopping them', (t) => {
@@ -690,4 +999,31 @@ test('ignores a TMPDIR inside the workspace and rejects overlapping review state
   });
   assert.notEqual(rejected.status, 0);
   assert.match(rejected.stderr, /review state root overlaps profile workdir/);
+});
+
+test('updated UI uses isolated services and preserves the matching saved review', t => {
+  const selected = fixture(t);
+  const first = launch(selected);
+  assert.equal(first.status, 0, outputOf(first));
+  const original = onlySession(selected);
+  const draft = '{"saved":"draft fixture"}\n';
+  const decisions = '{"saved":"decision fixture"}\n';
+  fs.writeFileSync(path.join(original, 'decisions/draft.json'), draft, { mode: 0o600 });
+  fs.writeFileSync(path.join(original, 'decisions/decisions.json'), decisions, { mode: 0o600 });
+  const originalServices = fs.readFileSync(path.join(original, 'services.state'), 'utf8');
+  const image = `sha256:${'6'.repeat(64)}`;
+  const reopened = launch(selected, [], {
+    NOSH_POLICY_REVIEW_UI_IMAGE: image, TEST_UI_IMAGE: image,
+  });
+  assert.equal(reopened.status, 0, outputOf(reopened));
+  assert.match(outputOf(reopened), /Reopening saved review with updated service images/);
+  const sessions = fs.readdirSync(selected.reviewRoot).map(name => path.join(selected.reviewRoot, name));
+  assert.equal(sessions.length, 2);
+  const replacement = sessions.find(directory => directory !== original);
+  assert.equal(fs.readFileSync(path.join(replacement, 'decisions/draft.json'), 'utf8'), draft);
+  assert.equal(fs.readFileSync(path.join(replacement, 'decisions/decisions.json'), 'utf8'), decisions);
+  assert.equal(fs.readFileSync(path.join(original, 'services.state'), 'utf8'), originalServices);
+  assert.ok(eventsOf(selected).every(line => !line.startsWith('docker\tstop\t')));
+  assert.equal(eventsOf(selected).filter(line => /\treview\tbundle\t/.test(line)).length, 1);
+  assert.equal(eventsOf(selected).filter(line => line.startsWith('docker\tnetwork\tcreate\t')).length, 2);
 });

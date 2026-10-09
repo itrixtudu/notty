@@ -1362,6 +1362,8 @@ export const createDecisionSetPreview = ({
         basePolicyDigest: graph.basePolicyDigest,
         scopeDigest: graph.scope.scopeDigest,
         intendedTarget,
+        decisionsComplete: Boolean(graph.frozen && reviewerAcknowledged && reviewerValid
+            && intendedTargetValid && !unresolved.length && !acknowledgementBlockers.length),
         reviewState: readyForCliApproval ? 'complete' : 'draft',
         reviewerAcknowledged: Boolean(reviewerAcknowledged),
         decisions: normalizedDecisions,
@@ -1476,6 +1478,7 @@ export const materializeDecisionSet = async ({
     reviewer,
     reviewerAcknowledged = false,
     createdAt = new Date().toISOString(),
+    allowBlockedReview = false,
 }) => {
     await verifySemanticGraphContentDigest(graph);
     const preview = createDecisionSetPreview({
@@ -1485,7 +1488,7 @@ export const materializeDecisionSet = async ({
         reviewer,
         reviewerAcknowledged,
     });
-    if (preview.reviewState !== 'complete') {
+    if (preview.reviewState !== 'complete' && !(allowBlockedReview && preview.decisionsComplete)) {
         throw new Error(`DecisionSet is still a draft: ${preview.blockers.join(', ')}`);
     }
     assertDateTime(createdAt, 'createdAt');

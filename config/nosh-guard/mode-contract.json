@@ -16,6 +16,7 @@
       "purpose": "Collect representative evidence and compile an unapproved candidate.",
       "tetragonPolicyMode": "monitor",
       "requiredEvidence": [
+        "nosh-exec",
         "tetragon-events",
         "ig-dns",
         "ig-syscalls",
@@ -32,6 +33,7 @@
       "purpose": "Evaluate one exact candidate artifact set without activating candidate denies.",
       "tetragonPolicyMode": "monitor",
       "requiredEvidence": [
+        "nosh-exec",
         "tetragon-events",
         "ig-dns",
         "ig-syscalls",
@@ -66,6 +68,7 @@
       "standaloneAdmission": "disabled-until-a-complete-ingress-backend-is-integrated",
       "tetragonPolicyMode": "enforce-approved-only",
       "requiredEvidence": [
+        "nosh-exec",
         "tetragon-events",
         "nosh-l4",
         "managed_dns",
@@ -84,7 +87,8 @@
       "profileScope": "egress-only",
       "tetragonPolicyMode": "none",
       "requiredEvidence": [
-        "nosh-egress"
+        "nosh-egress",
+        "nosh-exec"
       ],
       "trainingEligible": true,
       "fullProfileArtifactsLoaded": false,
@@ -98,7 +102,8 @@
       "profileScope": "egress-only",
       "tetragonPolicyMode": "none",
       "requiredEvidence": [
-        "nosh-egress"
+        "nosh-egress",
+        "nosh-exec"
       ],
       "trainingEligible": false,
       "evidenceUse": "diagnostic-only",
@@ -127,7 +132,8 @@
         "network-policy.yaml"
       ],
       "requiredEvidence": [
-        "nosh-egress"
+        "nosh-egress",
+        "nosh-exec"
       ],
       "trainingEligible": false,
       "evidenceUse": "diagnostic-only",
@@ -176,6 +182,7 @@
     "egress-audit and egress-enforce evidence is diagnostic-only and cannot train a wider replacement allowlist.",
     "Legacy local net approve records are historical review receipts and never authorize egress-enforce; only the current root-owned signed guard-ebpf activation can do so.",
     "Scoped egress uses an ordinary per-run Docker bridge for routing and NAT; nosh-egress is the sole scoped allow/deny decision point.",
-    "egress-learn DNS and L4 decisions are emitted by one eBPF backend; loss, truncation, parser errors, map exhaustion, and ambiguous correlations invalidate candidate promotion."
+    "egress-learn DNS and L4 decisions are emitted by one eBPF backend; loss, truncation, parser errors, map exhaustion, and ambiguous correlations invalidate candidate promotion.",
+    "nosh-exec attaches before runner release to the runner cgroup and observes successful descendant exec transitions without argv; it is inventory evidence only and never command authorization."
   ]
 }

@@ -7,46 +7,6 @@
           "target": "$HOME/.codex",
           "mode": "rw",
           "required": false
-        },
-        {
-          "source": "~/.codex/auth.json",
-          "target": "$HOME/.codex/auth.json",
-          "mode": "ro",
-          "required": false
-        },
-        {
-          "source": "~/.codex/config.toml",
-          "target": "$HOME/.codex/config.toml",
-          "mode": "ro",
-          "required": false
-        },
-        {
-          "source": "~/.codex/history.jsonl",
-          "target": "$HOME/.codex/history.jsonl",
-          "mode": "rw",
-          "required": false,
-          "create": "file"
-        },
-        {
-          "source": "~/.codex/sessions",
-          "target": "$HOME/.codex/sessions",
-          "mode": "rw",
-          "required": false,
-          "create": "directory"
-        },
-        {
-          "source": "~/.codex/archived_sessions",
-          "target": "$HOME/.codex/archived_sessions",
-          "mode": "rw",
-          "required": false,
-          "create": "directory"
-        },
-        {
-          "source": "~/.codex/log",
-          "target": "$HOME/.codex/log",
-          "mode": "rw",
-          "required": false,
-          "create": "directory"
         }
       ]
     },
@@ -78,6 +38,12 @@
           "target": "$HOME/.claude",
           "mode": "rw",
           "required": false
+        },
+        {
+          "source": "~/.claude.json",
+          "target": "$HOME/.claude.json",
+          "mode": "rw",
+          "required": false
         }
       ]
     },
@@ -86,6 +52,12 @@
         {
           "source": "~/.claude",
           "target": "$HOME/.claude",
+          "mode": "rw",
+          "required": false
+        },
+        {
+          "source": "~/.claude.json",
+          "target": "$HOME/.claude.json",
           "mode": "rw",
           "required": false
         }
@@ -98,46 +70,6 @@
           "target": "$HOME/.codex",
           "mode": "rw",
           "required": false
-        },
-        {
-          "source": "~/.codex/auth.json",
-          "target": "$HOME/.codex/auth.json",
-          "mode": "ro",
-          "required": false
-        },
-        {
-          "source": "~/.codex/config.toml",
-          "target": "$HOME/.codex/config.toml",
-          "mode": "ro",
-          "required": false
-        },
-        {
-          "source": "~/.codex/history.jsonl",
-          "target": "$HOME/.codex/history.jsonl",
-          "mode": "rw",
-          "required": false,
-          "create": "file"
-        },
-        {
-          "source": "~/.codex/sessions",
-          "target": "$HOME/.codex/sessions",
-          "mode": "rw",
-          "required": false,
-          "create": "directory"
-        },
-        {
-          "source": "~/.codex/archived_sessions",
-          "target": "$HOME/.codex/archived_sessions",
-          "mode": "rw",
-          "required": false,
-          "create": "directory"
-        },
-        {
-          "source": "~/.codex/log",
-          "target": "$HOME/.codex/log",
-          "mode": "rw",
-          "required": false,
-          "create": "directory"
         },
         {
           "source": "~/.gemini",
@@ -157,6 +89,12 @@
           "mode": "rw",
           "required": false,
           "create": "directory"
+        },
+        {
+          "source": "~/.claude.json",
+          "target": "$HOME/.claude.json",
+          "mode": "rw",
+          "required": false
         }
       ]
     },

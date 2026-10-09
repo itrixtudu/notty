@@ -38,6 +38,54 @@
       "longRunning": true
     },
     {
+      "name": "nosh-exec",
+      "requiredModes": [
+        "learn",
+        "audit",
+        "enforce",
+        "egress-learn",
+        "egress-audit",
+        "egress-enforce"
+      ],
+      "health": {
+        "command": "/usr/local/libexec/nosh-build/nosh-build-loader",
+        "args": [
+          "health",
+          "--depth",
+          "process"
+        ]
+      },
+      "attach": {
+        "command": "/usr/local/libexec/nosh-build/nosh-build-loader",
+        "args": [
+          "run",
+          "--cgroup",
+          "{cgroupPath}",
+          "--cgroup-id",
+          "{cgroupId}",
+          "--depth",
+          "process"
+        ]
+      },
+      "detach": {
+        "command": "true",
+        "args": []
+      },
+      "readiness": {
+        "stream": "stderr",
+        "match": {
+          "recordKind": "status",
+          "status": "ready"
+        },
+        "timeoutMs": 10000
+      },
+      "outputFile": "nosh-exec.jsonl",
+      "stderrFile": "nosh-exec.status.jsonl",
+      "cleanupCritical": true,
+      "requireCleanExit": true,
+      "longRunning": true
+    },
+    {
       "name": "nosh-egress",
       "requiredModes": [
         "egress-learn",

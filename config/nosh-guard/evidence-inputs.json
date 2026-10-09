@@ -21,6 +21,34 @@
       ]
     },
     {
+      "name": "nosh-exec",
+      "path": "{evidenceDir}/nosh-exec.jsonl",
+      "format": "ndjson",
+      "producer": "nosh-build-loader 5 process depth",
+      "requiredModes": [
+        "learn",
+        "audit",
+        "enforce",
+        "egress-learn",
+        "egress-audit",
+        "egress-enforce"
+      ],
+      "authority": "kernel-observation",
+      "sensitiveFields": [
+        "process.pid",
+        "process.ppid",
+        "process.uid",
+        "process.gid",
+        "executable"
+      ],
+      "limitations": [
+        "The observer records successful exec transitions and exact cgroup descendants; it does not record argv.",
+        "The executable field is the bounded kernel tracepoint filename and may preserve caller-supplied relative spelling; a maximum-length value makes the run incomplete as potentially truncated.",
+        "Executable observations and review classifications never authorize commands.",
+        "Unknown executables are allowed and retained for review; executable deny enforcement is not implemented."
+      ]
+    },
+    {
       "name": "ig-dns",
       "path": "{evidenceDir}/ig-dns.jsonl",
       "format": "ndjson",

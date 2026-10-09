@@ -10,6 +10,8 @@ Ownership is intentionally narrow:
 
 - Tetragon provides runtime evidence and enforces only an explicitly approved
   Tetragon artifact.
+- `nosh-exec` provides a first-party, cgroup-scoped successful-exec inventory.
+  Its records are observation-only and never command authorization.
 - The Nosh profile compiler owns normalization, candidate generation,
   validation, reporting, and promotion provenance.
 - `tetragon.yaml`, `seccomp.json`, `apparmor.profile`, `docker.json`, and
@@ -95,6 +97,14 @@ requires an external container/network manager integration that applies and
 attests both directions, plus a corresponding admission integration; the
 current standalone daemon must be extended or replaced for that deployment.
 
+The attachment point must live in the kernel that owns the runner cgroup. For
+ordinary Docker this is the Docker host. For Docker running inside QEMU, Guard
+and `nosh-exec` run inside the guest because the host kernel cannot observe
+guest process exec transitions. A bubblewrap layer inside the runner remains a
+descendant of the same outer cgroup and needs no separate attachment. This
+topology rule is more important than the tool name through which a command was
+requested.
+
 ## Implementation gates
 
 Treat this as a staged security project, not as a one-shot learned allowlist.
@@ -102,9 +112,10 @@ The contracts, compiler, standalone supervisor, gateway, sensor source, and
 test fixtures can be reviewed independently, but production enforcement is
 ready only when all of these gates are closed:
 
-1. A privileged userspace loader attaches `bpf/nosh_l4` to the exact runner
-   cgroup and publishes its events, map snapshots, build identity, and loss
-   counters.
+1. Privileged userspace loaders attach `bpf/nosh_l4` and the process-only
+   `bpf/nosh_build` depth to the exact runner cgroup before release, and publish
+   events, identity, final stats, and loss counters. The process collector
+   records successful exec metadata without argv.
 2. The manager normalizes Tetragon, Inspektor Gadget, `nosh_l4`, DNS, and
    gateway records into one per-run manifest and rejects missing, lossy, stale,
    or identity-mismatched inputs.
@@ -143,7 +154,7 @@ The intended evidence-to-control mapping is:
 | Layer | Learn/audit evidence | Enforce with |
 | --- | --- | --- |
 | Admission identity | authenticated launcher principal, requested agent/role, image digest | daemon authorization, image digest and approved profile binding |
-| Process and syscall | Tetragon lifecycle/tracing events; reviewed IG seccomp advice | Docker seccomp, capability drop, no-new-privileges, narrow Tetragon actions |
+| Process and syscall | `nosh-exec` successful descendant exec inventory, Tetragon lifecycle/tracing events, and reviewed IG seccomp advice | Docker seccomp, capability drop, no-new-privileges, narrow Tetragon actions; no executable allowlist is claimed |
 | Files, mounts, namespaces | Tetragon file/LSM and high-risk syscall events | read-only root, bounded mounts, AppArmor, private namespaces |
 | Network and DNS | `nosh_l4`, managed resolver logs, gateway decisions | per-run internal network plus DNS-aware nftables gateway, or Cilium |
 | Resources and devices | Docker/cgroup state and runtime measurements | PID, CPU, memory, tmpfs, device, publish, and namespace limits |
@@ -155,6 +166,69 @@ agents need different authority, give them distinct runner cgroups, image-bound
 profiles, network identities, and authenticated management principals. Do not
 attempt to authorize a process solely because its executable is named
 `codex`, `claude`, or similar.
+
+The same rule applies to tool calls. `exec`, `exec_command`, a shell, a package
+script, and a generated `exec.js` can converge on the same `execve` capability.
+Tool-call policy is useful for UX, intent review, and correlation, but the
+cgroup/container boundary and its containment controls are the security seam;
+kernel process observations audit what crossed the exec boundary.
+
+Each completed run writes `executable-inventory.json` beside its evidence
+manifest. The inventory is bound to the canonical workspace and exact image
+digest, contains no argv, and classifies kernel-reported executable references
+against the active reviewed baseline. An absent baseline simply makes every
+observed reference unknown. Unknown references remain allowed and are surfaced
+for review; collection loss or possible reference truncation makes the run
+incomplete. In this artifact, `allow-and-alert` means a review flag in the
+finalized inventory; it is not a real-time notification or deny decision.
+Because argv is intentionally absent, a baseline entry for `/usr/bin/node`
+cannot distinguish a reviewed program from a generated `exec.js`; filesystem,
+credential, syscall, and network containment must still bound that interpreter.
+
+A root operator can activate a separately reviewed baseline and inspect it:
+
+```sh
+sudo nosh-guard executables activate \
+  --workdir "$WORKSPACE" \
+  --image-digest sha256:EXACT_IMAGE_DIGEST \
+  --baseline ./reviewed-executable-baseline.json \
+  --baseline-digest sha256:EXACT_FILE_DIGEST
+
+sudo nosh-guard executables status \
+  --workdir "$WORKSPACE" \
+  --image-digest sha256:EXACT_IMAGE_DIGEST \
+  --json
+```
+
+Activation reads the input as the invoking sudo user, verifies its exact file
+digest, validates the review acknowledgement, and copies it atomically into
+root-owned Guard state. The active document is an observation baseline, not an
+executable permission list. In particular, it cannot grant authority that the
+container, filesystem, credential, or network controls do not already provide.
+The reviewed file has this strict shape; copy the workspace, image, and source
+inventory digests from `executable-inventory.json`, and keep `executables`
+sorted with no duplicates:
+
+```json
+{
+  "schemaVersion": 1,
+  "apiVersion": "notty.dev/v1alpha1",
+  "kind": "NoshExecutableBaseline",
+  "createdAt": "2026-10-07T00:00:00.000Z",
+  "reviewedAt": "2026-10-07T00:05:00.000Z",
+  "reviewer": "operator identity",
+  "acknowledged": true,
+  "workspaceKey": "64 lowercase hex characters",
+  "imageDigest": "sha256:64-lowercase-hex-characters",
+  "sourceInventoryDigest": "sha256:64-lowercase-hex-characters",
+  "mode": "observe-and-alert",
+  "enforcing": false,
+  "executables": [
+    "/usr/bin/git",
+    "/usr/bin/node"
+  ]
+}
+```
 
 ## Container-manager decision
 
@@ -235,6 +309,7 @@ The daemon and CLI use:
 | --- | --- |
 | Configuration | `/etc/nosh-guard` |
 | Durable state | `/var/lib/nosh-guard` |
+| Executable observation baselines | `/var/lib/nosh-guard/executable-baselines/<workspace-key>/<image-digest>.json` |
 | Daemon exclusion lock | `/var/lib/nosh-guard/guardd.lock` |
 | Guard socket | `/run/nosh-guardd.sock` |
 | Tetragon socket | `/run/nosh-guard/tetragon/tetragon.sock` |
@@ -442,8 +517,9 @@ to manage the invoking user's legacy XDG state.
 The root filesystem is read-only. The workspace and narrowly scoped Guard auth
 state are the only persistent writable binds. No Codex, Claude, Gemini,
 launcher OTP, Basic-auth, OAuth, or arbitrary host credentials are projected.
-Secure profile names are role metadata only;
-legacy profile mounts and devices are not applied. A hosted coding agent still
+Secure `--profile` names remain role metadata; arbitrary legacy mount presets
+and devices are not applied. Dev workloads separately support validated,
+persistent agent-home mounts; see [workload profiles](nosh-workloads.md). A hosted coding agent still
 needs the separately designed credential broker described under limitations.
 Do not place durable provider credentials in the workspace as a workaround.
 
@@ -472,7 +548,7 @@ domains and revision with the result of reviewed learning runs. It documents
 and validates manager behavior; per-run enforcement consumes the approved
 `network-policy.yaml` artifact, not this example file directly.
 
-First run `./setup-nosh.sh` as the account that will use Nosh. It creates the
+First run `./scripts/setup-nosh.sh` as the account that will use Nosh. It creates the
 user `nosh` and development `nosh-guard` links plus a strict mode-`0600` path
 record; it never invokes sudo. If the privileged Guard is absent, setup prints
 the reviewed bundle recipe below. `--guard-prefix /opt/notty` records a custom
@@ -557,7 +633,7 @@ The normal runner can still be built as the invoking, non-root workspace user
 so its UID/GID matches that user's projects:
 
 ```bash
-./build-nosh.sh
+./scripts/build-nosh.sh
 test "$(
   docker image inspect \
     --format '{{ index .Config.Labels "io.notty.guard.runner-abi" }}' \
@@ -771,7 +847,7 @@ To rebuild from the reviewed checkout and refresh the existing installation
 in place, run the reset wrapper as the Docker-authorized user:
 
 ```bash
-./reset-nosh-guard.sh
+./scripts/reset-nosh-guard.sh
 ```
 
 It selects the installed prefix from the protected layout receipt (or accepts
@@ -783,7 +859,7 @@ managed egress image and its gateway container; use the reviewed replacement
 procedure above when that host/gateway contract changes. It fails closed if a
 bundle-authoritative adapter or version file differs. After reviewing an
 intentional collector-contract upgrade, use
-`./reset-nosh-guard.sh --replace-config`; that option replaces only the
+`./scripts/reset-nosh-guard.sh --replace-config`; that option replaces only the
 bundle-authoritative adapter/version files, never the operator-managed network
 contract, state, or evidence. The wrapper never uninstalls or passes
 purge/force options.
@@ -1045,20 +1121,22 @@ redact before presentation.
 
 ## Evidence and fixtures
 
-[evidence-inputs.json](../config/nosh-guard/evidence-inputs.json) declares six
+[evidence-inputs.json](../config/nosh-guard/evidence-inputs.json) declares eight
 independent inputs:
 
 - `tetragon-events`;
+- `nosh-exec`;
 - `ig-dns`;
 - `ig-syscalls`;
+- `nosh-egress`;
 - `nosh-l4`;
 - `managed_dns`; and
 - `managed_gateway`.
 
 The hyphenated identifiers name adapters and per-run files. After parsing,
 events use the stable producer kinds in the event schema (`tetragon`, `ig`,
-`nosh_l4`, `managed_dns`, and `managed_gateway`); do not infer policy authority
-from a filename alone.
+`nosh_exec`, `nosh_l4`, `nosh_egress`, `managed_dns`, and `managed_gateway`);
+do not infer policy authority from a filename alone.
 
 Every normalized event follows
 [evidence-event.schema.json](../config/nosh-guard/schemas/evidence-event.schema.json):
@@ -1285,10 +1363,10 @@ The `nosh net` command family is the short path for learning and applying one
 outbound allowlist per canonical workspace:
 
 ```bash
-./setup-nosh.sh \
+./scripts/setup-nosh.sh \
   --policy-tooling-image sha256:<approved-64-hex-tooling-image-id> \
   --policy-review-ui-image sha256:<approved-64-hex-review-ui-image-id>
-./profile-build-and-review.sh --cache-mode cold
+./scripts/profile-build-and-review.sh --cache-mode cold
 ```
 
 The wrapper builds and learns, exports an immutable runtime candidate plus
@@ -1495,7 +1573,8 @@ This scope is deliberately separate from `--security-mode enforce`:
 - `egress-learn`, `egress-audit`, and `egress-enforce` do not load candidate
   Tetragon, seccomp, AppArmor, Docker, or ingress artifacts;
 - the usual non-root user, dropped capabilities, read-only root filesystem,
-  private namespaces, resource limits, one workspace mount, isolated network,
+  private namespaces, resource limits, a workspace mount plus selected dev
+  agent-home mounts, isolated network,
   and no published ports remain active;
 - inbound traffic has baseline isolation only, not compiled ingress-policy
   enforcement; and
@@ -1509,7 +1588,8 @@ profiles and moving a checkout requires relearning. Scoped runs also capture
 the workspace directory device/inode before container creation, verify the
 live bind mount against that identity before release, and record the identity
 in finalized evidence. Each learning run creates
-an immutable revision. The registry's legacy approved pointer is historical
+an immutable revision. Dev and run maintain separate registry pointers, mirrors,
+and applied activation slots for each workspace. The registry's legacy approved pointer is historical
 and is never consulted as policy authority by `net enforce`. An optional
 `--revision` selects only the exact current learned launch-settings revision;
 it cannot select or activate a policy. Without a TTY, enforce leaves the
@@ -1571,13 +1651,13 @@ evidence, then removal releases the run name. A non-interactive start prints
 the run JSON and leaves it active regardless of `--persist`.
 
 ```bash
-sudo ./nosh.sh start \
+sudo ./scripts/nosh.sh start \
   --security-mode learn \
   --image nosh \
   --workdir /absolute/path/to/project \
   --persist
 
-sudo ./nosh.sh stop \
+sudo ./scripts/nosh.sh stop \
   --security-mode learn \
   --image nosh \
   --workdir /absolute/path/to/project
@@ -1585,7 +1665,7 @@ sudo ./nosh.sh stop \
 sudo nosh-guard runs
 
 # After recording the evidenceManifest path:
-sudo ./nosh.sh rm \
+sudo ./scripts/nosh.sh rm \
   --security-mode learn \
   --image nosh \
   --workdir /absolute/path/to/project
@@ -1621,7 +1701,7 @@ independently validates the candidate artifact set and snapshots it beneath
 the run's evidence directory before releasing the gate:
 
 ```bash
-sudo ./nosh.sh start \
+sudo ./scripts/nosh.sh start \
   --security-mode audit \
   --security-profile-dir \
     /var/lib/nosh-guard/profiles/node-agent-v1-audit-input \
@@ -1629,7 +1709,7 @@ sudo ./nosh.sh start \
   --workdir /absolute/path/to/project \
   --persist
 
-sudo ./nosh.sh stop \
+sudo ./scripts/nosh.sh stop \
   --security-mode audit \
   --image nosh \
   --workdir /absolute/path/to/project
@@ -1637,7 +1717,7 @@ sudo ./nosh.sh stop \
 sudo nosh-guard runs
 
 # After recording the evidenceManifest path:
-sudo ./nosh.sh rm \
+sudo ./scripts/nosh.sh rm \
   --security-mode audit \
   --image nosh \
   --workdir /absolute/path/to/project
@@ -1687,7 +1767,7 @@ sudo nosh-guard profile verify \
 The following standalone launch is intentionally unavailable today:
 
 ```bash
-sudo ./nosh.sh start \
+sudo ./scripts/nosh.sh start \
   --security-mode enforce \
   --security-profile-dir /var/lib/nosh-guard/profiles/node-agent-v1-reviewed \
   --image nosh \
@@ -1837,6 +1917,17 @@ requests the final gateway counter snapshot, finalizes incomplete evidence,
 and force-removes the container. Failed critical cleanup remains in run state
 and blocks reuse. Graceful daemon shutdown takes the same path for every
 running container.
+
+When runtime identity checks find that the runner has already exited, both
+the poller and attach revalidation preserve its sanitized exit state in
+`quarantine.failures[].runtimeState`. Before removing that stopped container,
+the daemon also attempts to retain its last 40 log lines (at most 8 KiB of
+sanitized text) in `quarantine.runtimeLogTail`, visible through
+`nosh-guard runs`. Log retrieval has a two-second timeout; unavailable logs
+do not prevent cleanup. Live-runner drift does not trigger this log read.
+The existing startup-failure path uses `failure.runtimeState` and
+`failure.runtimeLogTail`. These diagnostics require the updated host daemon
+and cannot recover logs from containers that were already removed.
 
 This poller shares the daemon's event loop and cannot detect or recover from a
 stuck process. The systemd `ExecStopPost` helper is a separate process and

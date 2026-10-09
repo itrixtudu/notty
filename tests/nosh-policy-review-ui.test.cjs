@@ -90,7 +90,7 @@ test('policy reviewer has no dependency on the former example application', () =
   assert.match(docs, /arbitrary pre-existing server/);
   assert.match(
     docs,
-    /\.\/nosh\.sh recreate --no-start-app --publish 127\.0\.0\.1:3001/,
+    /\.\/scripts\/nosh\.sh recreate --no-start-app --publish 127\.0\.0\.1:3001/,
   );
   assert.match(docs, /http:\/\/localhost:3001\/policy-review/);
   assert.match(docs, /HMR or diagnostics only/);

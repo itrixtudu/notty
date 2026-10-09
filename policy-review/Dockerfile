@@ -25,6 +25,8 @@ RUN npm run test:run \
 FROM ${NODE_IMAGE} AS runtime
 
 LABEL io.notty.policy-review.ui-abi="1"
+LABEL io.notty.tool-review.ui-abi="2"
+LABEL io.notty.setup.ui-abi="1"
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

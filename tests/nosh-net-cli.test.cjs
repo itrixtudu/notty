@@ -117,7 +117,7 @@ test('net learn owns shell finalization, compilation, registration, and removal'
     },
   };
 
-  const status = await executeNetCommand('learn', {
+  const status = await executeNetCommand('learn', { agents: 'none',
     workdir: current.workdir,
     image: 'nosh',
     'no-collab': true,
@@ -191,7 +191,7 @@ test('timed net learn observes headlessly and still compiles and removes the run
     },
   };
 
-  const status = await executeNetCommand('learn', {
+  const status = await executeNetCommand('learn', { agents: 'none',
     workdir: current.workdir,
     image: 'nosh',
     duration: '180',
@@ -343,7 +343,7 @@ test('interrupted timed learning stops but never advances a candidate', async (t
     },
   };
 
-  const status = await executeNetCommand('learn', {
+  const status = await executeNetCommand('learn', { agents: 'none',
     workdir: current.workdir,
     image: 'nosh',
     duration: '180',
@@ -398,7 +398,7 @@ test('signal latched during stop prevents the timed candidate commit', async (t)
     },
   };
 
-  const status = await executeNetCommand('learn', {
+  const status = await executeNetCommand('learn', { agents: 'none',
     workdir: current.workdir,
     duration: '180',
     'no-collab': true,
@@ -449,7 +449,7 @@ test('signal latched during admission skips attach and retains the stopped run',
     },
   };
 
-  const status = await executeNetCommand('learn', {
+  const status = await executeNetCommand('learn', { agents: 'none',
     workdir: current.workdir,
     duration: '180',
     'no-collab': true,
@@ -500,7 +500,7 @@ test('timed learning rejects a failed in-window attach health check', async (t) 
   };
 
   await assert.rejects(
-    executeNetCommand('learn', {
+    executeNetCommand('learn', { agents: 'none',
       workdir: current.workdir,
       duration: '180',
       'no-collab': true,
@@ -633,7 +633,7 @@ test('observation wait serializes runner health checks through its deadline', as
 test('net learn duration is validated and represented numerically in dry-run output', async () => {
   const { executeNetCommand } = await cliModule();
   let printed = null;
-  const status = await executeNetCommand('learn', {
+  const status = await executeNetCommand('learn', { agents: 'none',
     duration: '180',
     'dry-run': true,
   }, {
@@ -647,7 +647,7 @@ test('net learn duration is validated and represented numerically in dry-run out
 
   for (const duration of ['', '0', '-1', '1.5', '86401', 'unbounded']) {
     await assert.rejects(
-      executeNetCommand('learn', {
+      executeNetCommand('learn', { agents: 'none',
         duration,
         'dry-run': true,
       }, { print: () => {} }),
@@ -666,14 +666,14 @@ test('duration is learn-only and learn without it remains interactive', async ()
     /--duration is supported only by nosh net learn/,
   );
   await assert.rejects(
-    executeNetCommand('learn', {
+    executeNetCommand('learn', { agents: 'none',
       json: true,
       'dry-run': true,
     }),
     /nosh net learn --json requires --duration/,
   );
   await assert.rejects(
-    executeNetCommand('learn', {}, {
+    executeNetCommand('learn', { agents: 'none',}, {
       interactive: false,
       geteuid: () => 0,
     }),
@@ -705,7 +705,7 @@ test('net learn retains a stopped run when finalized evidence is incomplete', as
   };
 
   await assert.rejects(
-    executeNetCommand('learn', {
+    executeNetCommand('learn', { agents: 'none',
       workdir: current.workdir,
       image: 'nosh',
       'no-collab': true,
@@ -745,7 +745,7 @@ test('net learn never registers evidence when the guarded shell cannot launch', 
   };
 
   await assert.rejects(
-    executeNetCommand('learn', {
+    executeNetCommand('learn', { agents: 'none',
       workdir: current.workdir,
       image: 'nosh',
       'no-collab': true,
@@ -769,7 +769,7 @@ test('net learn never registers evidence when the guarded shell cannot launch', 
 test('net enforce ignores legacy approval and uses current learned launch settings', async (t) => {
   const { executeNetCommand } = await cliModule();
   const current = fixture(t);
-  const launchConfig = {
+  const launchConfig = { workload: 'dev',
     image: 'nosh',
     imageReference: `sha256:${'b'.repeat(64)}`,
     imageDigest: `sha256:${'b'.repeat(64)}`,
@@ -817,7 +817,7 @@ test('net enforce ignores legacy approval and uses current learned launch settin
     },
   };
 
-  const status = await executeNetCommand('enforce', {
+  const status = await executeNetCommand('enforce', { workload: 'dev',
     workdir: current.workdir,
   }, {
     client,
@@ -842,7 +842,7 @@ test('net enforce ignores legacy approval and uses current learned launch settin
 test('non-interactive net enforce launches current settings while Guard supplies signed policy', async (t) => {
   const { executeNetCommand } = await cliModule();
   const current = fixture(t);
-  const launchConfig = {
+  const launchConfig = { workload: 'dev',
     image: 'nosh',
     imageReference: `sha256:${'b'.repeat(64)}`,
     imageDigest: `sha256:${'b'.repeat(64)}`,
@@ -882,7 +882,7 @@ test('non-interactive net enforce launches current settings while Guard supplies
   };
 
   await assert.rejects(
-    executeNetCommand('enforce', {
+    executeNetCommand('enforce', { workload: 'dev',
       workdir: current.workdir,
       revision: 'not-the-current-candidate',
     }, {
@@ -892,7 +892,7 @@ test('non-interactive net enforce launches current settings while Guard supplies
     }),
     /is not the (?:current learned|applied) launch-settings revision/,
   );
-  const status = await executeNetCommand('enforce', {
+  const status = await executeNetCommand('enforce', { workload: 'dev',
     workdir: current.workdir,
   }, {
     client: {
@@ -920,6 +920,52 @@ test('non-interactive net enforce launches current settings while Guard supplies
     'signed-activation-001',
   );
   assert.equal(registry.state().lastLaunch.profileDirectory, null);
+});
+
+test('net enforce compares verified launch settings canonically before starting a runner', async (t) => {
+  const { executeNetCommand } = await cliModule();
+  const current = fixture(t);
+  const launchConfig = { workload: 'dev',
+    image: 'nosh', imageReference: `sha256:${'b'.repeat(64)}`,
+    imageDigest: `sha256:${'b'.repeat(64)}`, name: 'verified-launch',
+    agentId: 'verified-launch', roles: [], configPath: null, configHash: null,
+    collab: false, startApp: false,
+  };
+  const candidate = {
+    revision: 'verified-run', directory: path.join(current.root, 'verified-run'),
+    workspaceKey: 'a'.repeat(64), imageDigest: launchConfig.imageDigest, launchConfig,
+  };
+  const registry = fakeRegistry({ canonicalPath: current.workdir,
+    workspaceKey: candidate.workspaceKey, latestCandidate: candidate,
+    approved: null, audits: [], lastLaunch: null });
+  // Equivalent JSON may have a different key order after reading its bundle.
+  const verifiedLaunch = Object.fromEntries(Object.entries(launchConfig).reverse());
+  let starts = 0;
+  const dependencies = {
+    registry, interactive: false, geteuid: () => 0,
+    readActiveDeployment: async () => null,
+    verifyCandidate: async () => ({
+      ok: true, directory: candidate.directory, revision: candidate.revision,
+      workspaceKey: candidate.workspaceKey, imageDigest: candidate.imageDigest,
+      profile: { spec: { launch: { config: verifiedLaunch } } },
+    }),
+    client: { async startRun(request) {
+      starts += 1;
+      assert.equal(request.mode, 'egress-enforce');
+      return attachment('verified-enforced-run', current.workdir);
+    } },
+    mirrorWriter: () => current.root, print: () => {},
+  };
+  verifiedLaunch.startApp = true;
+  await assert.rejects(executeNetCommand('enforce', { workload: 'dev', workdir: current.workdir }, dependencies),
+    /candidate workspace reference does not match its verified bundle: launchConfig/);
+  assert.equal(starts, 0);
+  assert.equal(registry.state().lastLaunch, null);
+
+  verifiedLaunch.startApp = false;
+  assert.equal(await executeNetCommand('enforce', { workload: 'dev', workdir: current.workdir }, dependencies), 0);
+  assert.equal(starts, 1);
+  assert.equal(registry.state().lastLaunch.revision, candidate.revision);
 });
 
 test('explicit mirror repair propagates a writer failure', async (t) => {
@@ -986,7 +1032,7 @@ test('an applied revision remains selected after a newer learning candidate', as
   const { executeNetCommand } = await cliModule();
   const { workspaceKey } = await import('../lib/guardd/net-profile-store.js');
   const current = fixture(t);
-  const launchConfig = { image: 'nosh', imageReference: `sha256:${'b'.repeat(64)}`,
+  const launchConfig = { workload: 'dev', image: 'nosh', imageReference: `sha256:${'b'.repeat(64)}`,
     imageDigest: `sha256:${'b'.repeat(64)}`, name: 'nosh-applied', agentId: 'nosh-applied',
     roles: [], configPath: null, configHash: null, collab: false, startApp: false };
   const applied = { revision: 'applied-run', runId: 'applied-run',
@@ -994,13 +1040,56 @@ test('an applied revision remains selected after a newer learning candidate', as
   const registry = fakeRegistry({ canonicalPath: current.workdir, workspaceKey: await workspaceKey(current.workdir),
     latestCandidate: { ...applied, revision: 'new-learning-run' }, approved: null, audits: [], lastLaunch: null });
   let verified;
-  await executeNetCommand('enforce', { workdir: current.workdir, revision: 'applied-run' }, {
+  const deploymentDigest = `sha256:${'c'.repeat(64)}`;
+  await executeNetCommand('enforce', { workload: 'dev', workdir: current.workdir, revision: 'applied-run',
+    'expected-deployment': deploymentDigest }, {
     registry, interactive: false, geteuid: () => 0,
-    readActiveDeployment: async () => ({ workspaceKey: await workspaceKey(current.workdir), launchReference: applied }),
+    readActiveDeployment: async () => ({ workspaceKey: await workspaceKey(current.workdir),
+      launchReference: applied, leafBundleDigest: deploymentDigest }),
     verifyCandidate: async directory => { verified = directory; return { ok: true }; },
-    client: { async startRun() { return { ...attachment('enforce-applied', current.workdir), profileRevision: 'signed' }; } },
+    client: { async startRun(request) {
+      assert.equal(request.expectedDeploymentDigest, deploymentDigest);
+      return { ...attachment('enforce-applied', current.workdir), profileRevision: 'signed' };
+    } },
     mirrorWriter: () => current.root, print: () => {},
   });
   assert.equal(verified, applied.directory);
   assert.equal(registry.state().lastLaunch.revision, 'applied-run');
+  await assert.rejects(executeNetCommand('enforce', { workload: 'dev', workdir: current.workdir,
+    'expected-deployment': deploymentDigest }, {
+    registry, geteuid: () => 0,
+    readActiveDeployment: async () => ({ leafBundleDigest: `sha256:${'d'.repeat(64)}` }),
+    verifyCandidate: () => assert.fail('changed policy must stop before candidate verification'),
+  }), /applied deployment changed/);
+});
+
+test('combined runtime and stop failures expose both causes and the retained run ID', async () => {
+  const { executeNetShellRun } = await cliModule();
+  const runtimeError = new Error('required adapter nosh-egress exited');
+  const stopError = new Error('evidence collector did not complete');
+  const calls = [];
+  await assert.rejects(executeNetShellRun({}, async () => {
+    assert.fail('failed runtime must not compile a candidate');
+  }, {
+    durationSeconds: 180,
+    client: {
+      async startRun() { return { runId: 'retained-runtime-123' }; },
+      async action(runId, action) {
+        calls.push(action);
+        assert.equal(runId, 'retained-runtime-123');
+        if (action === 'attach') throw runtimeError;
+        if (action === 'stop') throw stopError;
+        assert.fail(`unexpected cleanup action: ${action}`);
+      },
+    },
+  }), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.deepEqual(error.errors, [runtimeError, stopError]);
+    assert.equal(error.runId, 'retained-runtime-123');
+    assert.match(error.message, /runtime: required adapter nosh-egress exited/);
+    assert.match(error.message, /finalization: evidence collector did not complete/);
+    assert.match(error.message, /retained-runtime-123/);
+    return true;
+  });
+  assert.deepEqual(calls, ['attach', 'stop']);
 });

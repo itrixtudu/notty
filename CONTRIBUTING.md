@@ -39,12 +39,12 @@ host preflight and reviewed-bundle requirements.
 From the host, the release baseline is:
 
 ```sh
-./release-audit.sh
+./scripts/release-audit.sh
 ```
 
 Docker is mandatory and the audit has no host-package-manager fallback. Build
-and enter the normal development environment with `./build-nosh.sh` and
-`./nosh.sh`. Package scripts and targeted Node.js tests may be run only from an
+and enter the normal development environment with `./scripts/build-nosh.sh` and
+`./scripts/nosh.sh`. Package scripts and targeted Node.js tests may be run only from an
 attached Nosh container. `bash scripts/test.sh` provides the Docker-backed MCP
 terminal flow from the host. Pull-request CI runs the same Docker release audit
 and accepts an untagged commit only when its report proves that the missing
@@ -53,12 +53,12 @@ checks use host Git; the workflow has no JavaScript actions or host Node.js
 package work.
 
 When an approved dependency change requires a new lockfile, edit and review
-`package.json`, then run `./regenerate-package-lock.sh` on the host. That
+`package.json`, then run `./scripts/regenerate-package-lock.sh` on the host. That
 wrapper passes only the manifest to a locked-down Docker container, disables
 lifecycle scripts and non-registry sources, rejects production advisories, and
 validates the candidate offline before replacing the lock atomically. It never
 runs a host package manager or repairs the old lock in place. Review and commit
-both manifests before running `./release-audit.sh`; the audit intentionally
+both manifests before running `./scripts/release-audit.sh`; the audit intentionally
 rejects a dirty checkout. Use `--replace-dirty-lock` only to discard previously
 reviewed uncommitted lockfile output.
 

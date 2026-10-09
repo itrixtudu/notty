@@ -9,7 +9,9 @@ dosbox-0.74-3.conf
 nosh.mounts.json
 .release-audit
 .nosh-guard-host-bundles
+.nosh-install.*
 cache
+/tmp/
 logs
 .notty-art-runs
 .notty/collab-resume*

@@ -526,8 +526,17 @@ swarm_agent_bootstrap_prompt() {
     local channel="$3"
     local mcp_url="$4"
 
+    local barrier_guidance='Treat a denied action as a boundary. Try safe in-scope alternatives, then report either "Task complete — <evidence>" or "Human help needed — <reason>. Next: <one concrete human action>".'
+    local permission_guidance='For approval or sandbox barriers, do not repeat the rejected operation, weaken containment, or broaden your own authority.'
+    local unsandboxed="${NOTTY_COLLAB_UNSANDBOXED:-${SWARM_UNSANDBOXED:-${DOCKER_CONTAINER:-}}}"
+
+    if [[ "${unsandboxed,,}" =~ ^(1|true|yes|on)$ ]]; then
+        permission_guidance=''
+    fi
     cat <<PROMPT
 You are the ${role} agent for this tmux session. Use the configured collab MCP service, set your nickname to ${agent}, coordinate in ${channel}, set_status("busy") while working, set_status("idle") when waiting or done, then call claim_pending() whenever you become idle. Follow any returned next steps and report status in lobby. Do not ask for permission for routine local commands like date.
+${barrier_guidance}
+${permission_guidance}
 PROMPT
 }
 

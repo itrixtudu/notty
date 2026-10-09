@@ -13,8 +13,6 @@ import {
     parseHubbleJsonLines,
     parseSemanticGraphDelta,
     parseSemanticGraphJson,
-    materializeDecisionSet,
-    POLICY_REVIEW_TARGETS,
 } from '../../modules/policy-review/semanticGraph';
 import { fetchPolicyReviewRuntimeAttestation } from '../../modules/policy-review/runtimeAttestation';
 import { resolveAllowProposalSelection } from '../../modules/policy-review/proposalDerivation';
@@ -27,6 +25,8 @@ import {
 
 import PolicyReviewCanvas, { POLICY_REVIEW_LANES } from './PolicyReviewCanvas';
 import PolicyReviewTimeline from './PolicyReviewTimeline';
+import ReviewWorkflow from './ReviewWorkflow';
+import EndpointTable from './EndpointTable';
 import styles from './PolicyReview.module.css';
 
 const dispositions = [
@@ -83,12 +83,6 @@ const downloadText = (filename, value, type) => {
     URL.revokeObjectURL(url);
 };
 
-const downloadJson = (filename, value) => downloadText(
-    filename,
-    `${JSON.stringify(value, null, 2)}\n`,
-    'application/json',
-);
-
 const safeDownloadFilename = (filename, fallback) => {
     const basename = String(filename || '').split(/[\\/]/).at(-1);
     const safe = basename.replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 160);
@@ -109,7 +103,7 @@ const proposalTitle = proposal => {
     return `${intent.effect || 'review'} ${intent.direction || intent.domain || 'policy'} ${peer || ''}`.trim();
 };
 
-function ReviewHeader({ decisionSet, onOpenGraph, onOpenUrl, onOpenHubble, onOpenDelta, onExport }) {
+function ReviewHeader({ decisionSet, onOpenGraph, onOpenUrl, onOpenHubble, onOpenDelta }) {
     const { state, dispatch } = usePolicyReviewStore();
     return (
         <header className={styles.header}>
@@ -129,7 +123,7 @@ function ReviewHeader({ decisionSet, onOpenGraph, onOpenUrl, onOpenHubble, onOpe
                     <small>rev {shortDigest(state.graph.revision)} · {shortDigest(state.graph.graphDigest)}</small>
                 </div>
             </div>
-            <nav className={styles.headerActions} aria-label="Review actions">
+            <details><summary>Evidence tools</summary><nav className={styles.headerActions} aria-label="Review actions">
                 <button type="button" onClick={() => dispatch({
                     type: 'LOAD_GRAPH',
                     graph: createSampleSemanticGraph(),
@@ -151,16 +145,8 @@ function ReviewHeader({ decisionSet, onOpenGraph, onOpenUrl, onOpenHubble, onOpe
                         </button>
                     </>
                 ) : null}
-                <button
-                    className={styles.exportButton}
-                    data-ready={decisionSet.reviewState === 'complete'}
-                    type="button"
-                    onClick={onExport}
-                    disabled={decisionSet.reviewState !== 'complete'}
-                >
-                    Export decisions
-                </button>
-            </nav>
+
+            </nav></details>
         </header>
     );
 }
@@ -1032,7 +1018,7 @@ function ReviewChecklist({ decisionSet }) {
     return (
         <section className={styles.checklist}>
             <div className={styles.reviewState} data-ready={decisionSet.reviewState === 'complete'}>
-                <span>{decisionSet.reviewState === 'complete' ? 'Ready for Guard CLI' : 'Draft review'}</span>
+                <span>{decisionSet.reviewState === 'complete' ? 'Review decisions complete' : 'Draft review'}</span>
                 <strong>{decisionSet.blockers.length} blocker{decisionSet.blockers.length === 1 ? '' : 's'}</strong>
             </div>
             <p>
@@ -1040,19 +1026,12 @@ function ReviewChecklist({ decisionSet }) {
             </p>
             {decisionSet.reviewState === 'complete' ? (
                 <section className={styles.activationHandoff} data-testid="signed-activation-handoff">
-                    <h3>Signed activation handoff</h3>
+                    <h3>Apply the saved profile</h3>
                     <p>
-                        The launcher prints the exact Frozen review bundle, target context, and
-                        DecisionSet output paths. Use those paths with the Guard signing authority
-                        to project, approve, grant, activate, and enforce this exact selection.
+                        Open Review selections above, save the reviewed policy, then copy its apply command. The host verifies
+                        the saved digest, projects the rules, signs approval, and activates the policy.
+                        Saving or downloading JSON alone does not apply it.
                     </p>
-                    <pre>{[
-                        `nosh policy project --bundle "$FROZEN_REVIEW_BUNDLE" --decisions "$DECISION_SET" --target ${state.intendedTarget} --context "$TARGET_CONTEXT" --output projected-policy`,
-                        'nosh review approve --bundle "$FROZEN_REVIEW_BUNDLE" --decisions "$DECISION_SET" --policy projected-policy --reviewer "$REVIEWER" --audience "$REVIEW_AUDIENCE" --key "$REVIEW_PRIVATE_KEY" --confirmation "$TARGET_REVIEW_SET_DIGEST" --output approval-001',
-                        'nosh gateway grant --policy projected-policy --approval approval-001/approval-envelope.dsse.json --review-key "$REVIEW_PUBLIC_KEY" --deployment-key "$DEPLOYMENT_PRIVATE_KEY" --audience "$DEPLOYMENT_AUDIENCE" --target-binding-digest "$TARGET_BINDING_DIGEST" --active-grant-set-digest "$ACTIVE_GRANT_SET_DIGEST"',
-                        'nosh-guard ebpf activate --bundle activation-001',
-                        'nosh-guard net enforce',
-                    ].join('\n')}</pre>
                 </section>
             ) : null}
             {Object.keys(assuranceSummary).length ? (
@@ -1070,42 +1049,8 @@ function ReviewChecklist({ decisionSet }) {
                     </dl>
                 </section>
             ) : null}
-            <label className={styles.reviewerField}>
-                <span>Intended projection target</span>
-                <select
-                    value={state.intendedTarget}
-                    onChange={event => dispatch({
-                        type: 'SET_INTENDED_TARGET',
-                        intendedTarget: event.target.value,
-                    })}
-                >
-                    {POLICY_REVIEW_TARGETS.map(target => (
-                        <option key={target} value={target}>{target}</option>
-                    ))}
-                </select>
-                <small>Only this target's restrictive or conditional projection blocks export.</small>
-            </label>
-            <label className={styles.reviewerField}>
-                <span>Reviewer identity</span>
-                <input
-                    type="text"
-                    maxLength={256}
-                    value={state.reviewer}
-                    placeholder="name or reviewed identity"
-                    onChange={event => dispatch({ type: 'SET_REVIEWER', reviewer: event.target.value })}
-                />
-            </label>
-            <label className={styles.acknowledgement}>
-                <input
-                    type="checkbox"
-                    checked={state.reviewerAcknowledged}
-                    onChange={event => dispatch({
-                        type: 'SET_ACKNOWLEDGED',
-                        acknowledged: event.target.checked,
-                    })}
-                />
-                <span>I reviewed the evidence, coverage, drift, and every proposal.</span>
-            </label>
+
+            <details><summary>Technical details: blockers and integrity</summary>
             <h3>Current blockers</h3>
             {decisionSet.blockers.length ? (
                 <ul className={styles.blockerList}>
@@ -1119,7 +1064,7 @@ function ReviewChecklist({ decisionSet }) {
                 <div><dt>Proposal set</dt><dd>{state.graph.proposalSetDigest || 'missing'}</dd></div>
                 <div><dt>Base policy</dt><dd>{state.graph.basePolicyDigest || 'missing'}</dd></div>
                 <div><dt>Scope</dt><dd>{state.graph.scope.scopeDigest}</dd></div>
-            </dl>
+            </dl></details>
         </section>
     );
 }
@@ -1133,7 +1078,7 @@ function EvidenceInspector({ decisionSet }) {
         .map(entry => entry.record);
     if (!record) {
         return (
-            <aside className={styles.inspector}>
+            <aside id="review-inspector" tabIndex={-1} className={styles.inspector}>
                 <header>
                     <div><span>Review gate</span><h2>Approval readiness</h2></div>
                 </header>
@@ -1146,7 +1091,7 @@ function EvidenceInspector({ decisionSet }) {
             .map(entry => `${entry.selection.type}:${entry.selection.id}`)
             .join('|');
         return (
-            <aside className={styles.inspector}>
+            <aside id="review-inspector" tabIndex={-1} className={styles.inspector}>
                 <header>
                     <div>
                         <span>Multi-selection</span>
@@ -1177,7 +1122,7 @@ function EvidenceInspector({ decisionSet }) {
         );
     }
     return (
-        <aside className={styles.inspector}>
+        <aside id="review-inspector" tabIndex={-1} className={styles.inspector}>
             <header>
                 <div>
                     <span>{state.selected.type}</span>
@@ -1218,6 +1163,7 @@ function PolicyReviewWorkspace() {
     const [showUrlLoader, setShowUrlLoader] = useState(false);
     const [graphUrl, setGraphUrl] = useState('');
     const [urlLoading, setUrlLoading] = useState(false);
+    const [view, setView] = useState('endpoints');
     const queryGraphLoadedRef = useRef(false);
     const decisionSet = useMemo(() => createDecisionSetPreview({
         graph: state.graph,
@@ -1310,40 +1256,6 @@ function PolicyReviewWorkspace() {
         }
     };
 
-    const exportDecisionSet = async () => {
-        try {
-            const document = await materializeDecisionSet({
-                graph: state.graph,
-                decisions: state.decisions,
-                intendedTarget: state.intendedTarget,
-                reviewer: state.reviewer,
-                reviewerAcknowledged: state.reviewerAcknowledged,
-            });
-            let managedSave = false;
-            try {
-                const response = await fetch('/api/policy-review-decision-set', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    cache: 'no-store',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(document),
-                });
-                managedSave = response.ok;
-            } catch {
-                managedSave = false;
-            }
-            const safeGraphId = state.graph.graphId.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 80);
-            downloadJson(`${safeGraphId}.decisions.json`, document);
-            setMessage({
-                type: managedSave ? 'success' : 'warning',
-                text: managedSave
-                    ? 'Saved decisions.json for the managed activation handoff and downloaded a copy.'
-                    : 'Downloaded the DecisionSet; managed saving was unavailable, so provide this file to Guard manually.',
-            });
-        } catch (error) {
-            setMessage({ type: 'error', text: error.message });
-        }
-    };
 
     return (
         <div className={styles.appShell}>
@@ -1353,7 +1265,6 @@ function PolicyReviewWorkspace() {
                 onOpenUrl={() => setShowUrlLoader(value => !value)}
                 onOpenHubble={() => hubbleInputRef.current?.click()}
                 onOpenDelta={() => deltaInputRef.current?.click()}
-                onExport={exportDecisionSet}
             />
             <input
                 ref={graphInputRef}
@@ -1425,10 +1336,15 @@ function PolicyReviewWorkspace() {
                     </div>
                 ) : null}
             </div>
-            <PolicyReviewTimeline />
+            <ReviewWorkflow decisionSet={decisionSet} />
+            <div className={styles.viewTabs} role="group" aria-label="Review view">
+                <button aria-pressed={view === 'endpoints'} onClick={() => setView('endpoints')}>Endpoints</button>
+                <button aria-pressed={view === 'graph'} onClick={() => setView('graph')}>Graph and timeline</button>
+            </div>
+            {view === 'graph' && <PolicyReviewTimeline />}
             <main className={styles.workspace}>
                 <ReviewSidebar />
-                <PolicyReviewCanvas />
+                {view === 'graph' ? <PolicyReviewCanvas /> : <EndpointTable />}
                 <EvidenceInspector decisionSet={decisionSet} />
             </main>
             <footer className={styles.footer}>

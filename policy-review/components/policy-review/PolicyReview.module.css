@@ -2204,3 +2204,54 @@
         padding: 6px 12px;
     }
 }
+
+/* The workflow stays in normal document flow so save/apply controls remain usable
+   on short screens and long reviews. Only the graph viewport has a fixed floor. */
+.appShell { height: auto; min-height: 100vh; overflow: visible; display: flex; flex-direction: column; }
+.workspace { min-height: 650px; flex: 1; }
+.workflow { padding: 16px 20px; border-bottom: 1px solid var(--review-border); background: var(--review-panel); overflow-wrap: anywhere; }
+.workflowIdentity { display: grid; gap: 6px; margin-bottom: 12px; }
+.workflowIdentity span, .savedPath { color: var(--review-muted); font-size: 12px; }
+.workflowActions, .viewTabs { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+.workflow button, .endpointPanel button, .viewTabs button, .endpointPanel select, .workflow input, .endpointPanel input:not([type=checkbox]) { background: var(--review-panel-strong); color: var(--review-text); border: 1px solid var(--review-border); border-radius: 6px; padding: 8px 10px; }
+.workflow button:disabled, .endpointPanel button:disabled { opacity: .5; cursor: not-allowed; }
+.workflow label { display: flex; gap: 8px; align-items: center; }
+.workflow pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--review-bg); }
+.workflow p { margin: 8px 0; font-size: 13px; }
+.applyDetails { margin-top: 10px; }
+.applyDetails summary { cursor: pointer; color: var(--review-accent); }
+.viewTabs { padding: 0 20px; }
+.viewTabs button[aria-pressed=true] { border-color: var(--review-accent); }
+.endpointPanel { min-width: 0; overflow: auto; padding: 16px; background: var(--review-bg); }
+.endpointPanel h2 { font-size: 18px; }
+.endpointPanel p { color: var(--review-muted); font-size: 13px; }
+.endpointTableScroll { overflow-x: auto; }
+.scopeCard > strong { overflow-wrap: anywhere; }
+.endpointTable { min-width: 680px; width: 100%; border-collapse: collapse; font-size: 12px; }
+.endpointTable th, .endpointTable td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--review-border); vertical-align: top; overflow-wrap: anywhere; }
+.endpointTable th { color: var(--review-accent); }
+.endpointTable small { display: block; color: var(--review-muted); margin-top: 5px; }
+.endpointTable details { max-width: 340px; margin-top: 6px; }
+@media (max-width: 1100px) { .workspace { grid-template-columns: 200px minmax(0, 1fr); } .workspace > aside:last-child { grid-column: 1 / -1; max-height: none; } }
+@media (max-width: 700px) { .workspace { display: flex; flex-direction: column; } .endpointPanel { order: -1; } .header { display: flex; flex-wrap: wrap; } .graphIdentity { display: none; } }
+
+.reviewSummary {
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid var(--border, #293653);
+    border-radius: 8px;
+}
+
+.workflow > details {
+    margin-top: 0.75rem;
+}
+
+.workflow summary {
+    cursor: pointer;
+}
+
+.workflow button:focus-visible,
+.workflow summary:focus-visible {
+    outline: 2px solid #49d7ff;
+    outline-offset: 3px;
+}

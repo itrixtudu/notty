@@ -176,13 +176,21 @@ test('containerized host bundle builder and installer preserve the privilege bou
     verifier,
     /check_launcher_help "\$PREFIX\/bin\/nosh-guard-fail-closed"/,
   );
+  const processHealthOffset = verifier.indexOf(
+    'nosh-build-loader" health --depth process',
+  );
+  const processVerifyOffset = verifier.indexOf(
+    'nosh-build-loader" verify --depth process',
+  );
   const buildHealthOffset = verifier.indexOf(
     'nosh-build-loader" health --depth balanced',
   );
   const buildVerifyOffset = verifier.indexOf(
     'nosh-build-loader" verify --depth balanced',
   );
-  assert.ok(buildHealthOffset >= 0);
+  assert.ok(processHealthOffset >= 0);
+  assert.ok(processVerifyOffset > processHealthOffset);
+  assert.ok(buildHealthOffset > processVerifyOffset);
   assert.ok(buildVerifyOffset > buildHealthOffset);
   assert.match(verifier, /Usage: nosh-guard <command> \[options\]/);
   assert.match(

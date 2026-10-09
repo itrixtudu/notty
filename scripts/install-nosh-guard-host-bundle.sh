@@ -868,6 +868,13 @@ run_install() {
     payload/lib/authState.js \
     payload/lib/guardGatewayAuth.js \
     payload/lib/guard/review/gateway-host.js \
+    payload/lib/guardd/workload.js \
+    payload/config/codex-resources.json \
+    payload/scripts/nosh-tool-policy.py \
+    payload/lib/guardd/tool-policy.js \
+    payload/scripts/codex-state.py \
+    payload/lib/guardd/agent-baselines.js \
+    payload/lib/guardd/executable-baseline.js \
     payload/lib/guardd/auth-reset-worker.js \
     payload/lib/guardd/auth-state.js \
     payload/lib/guardd/http-capture-manager.js \

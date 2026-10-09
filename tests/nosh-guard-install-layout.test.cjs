@@ -26,7 +26,7 @@ function userConfig(prefix, checkout = '/work/notty') {
   return [
     'SCHEMA_VERSION=1',
     'BIN_DIR=/home/test/.local/bin',
-    `NOSH_BIN=${checkout}/nosh.sh`,
+    `NOSH_BIN=${checkout}/scripts/nosh.sh`,
     `NOSH_GUARD_BIN=${checkout}/bin/nosh-guard`,
     `NOSH_GUARD_PREFIX=${prefix}`,
     `NOSH_GUARD_PRIVILEGED_BIN=${prefix}/bin/nosh-guard`,
@@ -144,7 +144,7 @@ test('missing privileged helper fails with setup guidance before Docker prefligh
       throw new Error('Docker preflight should not run');
     },
     reportProgress() {},
-  }), /run the checkout's \.\/setup-nosh\.sh/);
+  }), /run the checkout's \.\/scripts\/setup-nosh\.sh/);
   assert.equal(dockerCalled, false);
 });
 

@@ -73,6 +73,9 @@
     "ebpfEgressEvaluation": {
       "$ref": "#/$defs/ebpfEgressEvaluation"
     },
+    "executableInventory": {
+      "$ref": "#/$defs/executableInventory"
+    },
     "trainingEligible": {
       "type": "boolean"
     },
@@ -94,6 +97,46 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "required": [
+          "executableInventory"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sources": {
+            "$ref": "#/$defs/requiresNoshExecSource"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "executableInventory": {
+            "properties": {
+              "complete": {
+                "const": true
+              }
+            },
+            "required": [
+              "complete"
+            ]
+          }
+        },
+        "required": [
+          "executableInventory"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sources": {
+            "$ref": "#/$defs/requiresNoshExec"
+          }
+        }
+      }
+    },
     {
       "if": {
         "properties": {
@@ -1062,6 +1105,45 @@
         }
       }
     },
+    "executableInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "path",
+        "hash",
+        "inventoryDigest",
+        "complete",
+        "baselineDigest",
+        "eventCount",
+        "expectedCount",
+        "unknownCount",
+        "unknownAction",
+        "argumentsRecorded",
+        "policyUse",
+        "enforcing"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "hash": { "$ref": "#/$defs/hash" },
+        "inventoryDigest": { "$ref": "#/$defs/hash" },
+        "complete": { "type": "boolean" },
+        "baselineDigest": {
+          "oneOf": [
+            { "$ref": "#/$defs/hash" },
+            { "type": "null" }
+          ]
+        },
+        "eventCount": { "type": "integer", "minimum": 0 },
+        "expectedCount": { "type": "integer", "minimum": 0 },
+        "unknownCount": { "type": "integer", "minimum": 0 },
+        "unknownAction": { "const": "allow-and-alert" },
+        "argumentsRecorded": { "const": false },
+        "policyUse": { "const": "observation-only" },
+        "enforcing": { "const": false }
+      }
+    },
     "diagnostics": {
       "oneOf": [
         {
@@ -1114,6 +1196,7 @@
             "tetragon-enforce-policy",
             "ig-dns",
             "ig-syscalls",
+            "nosh-exec",
             "nosh-l4",
             "nosh-egress",
             "managed_dns",
@@ -1286,6 +1369,41 @@
               "name"
             ]
           }
+        ]
+      }
+    },
+    "requiresNoshExec": {
+      "type": "array",
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/requiredCompleteSource"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "const": "nosh-exec"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        ]
+      }
+    },
+    "requiresNoshExecSource": {
+      "type": "array",
+      "contains": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "const": "nosh-exec"
+          }
+        },
+        "required": [
+          "name"
         ]
       }
     },

@@ -34,7 +34,7 @@ function makeLearningEvidence(stateDir, options = {}) {
   const imageDigest = options.imageDigest || `sha256:${'a'.repeat(64)}`;
   const evidenceDir = path.join(stateDir, 'evidence', runId);
   fs.mkdirSync(evidenceDir, { recursive: true, mode: 0o700 });
-  const sources = ['nosh-egress'].map((name) => {
+  const sources = ['nosh-egress', 'nosh-exec'].map((name) => {
     const sourcePath = path.join(evidenceDir, `${name}.jsonl`);
     const source = Buffer.from(
       `${JSON.stringify({
@@ -235,6 +235,7 @@ test('candidate bundles are immutable, scoped, normalized, and registered', asyn
     path.join(stateDir, 'profiles', 'net', key, evidence.runId),
   );
   assert.equal(candidate.profile.kind, 'NoshEgressProfile');
+  assert.equal(candidate.profile.spec.launch.config.workload, 'dev');
   assert.equal(candidate.policy.kind, 'NoshEgressPolicy');
   assert.equal(candidate.manifest.kind, 'NoshEgressBundleManifest');
   assert.equal(candidate.profile.spec.workspace.canonicalPath, workdir);
@@ -691,7 +692,7 @@ test('registry recovers an identity-checked stale interprocess lock', async (t) 
   const { NetProfileRegistry } = await loadStore();
   const registry = new NetProfileRegistry({ stateDir, trustedUid });
   await registry.initialize();
-  const lockDir = path.join(stateDir, 'profiles', 'net', '.workspaces.lock');
+  const lockDir = path.join(stateDir, 'profiles', 'net', '.workspaces-dev.lock');
   fs.mkdirSync(lockDir, { mode: 0o700 });
   fs.writeFileSync(
     path.join(lockDir, 'owner.json'),
@@ -743,7 +744,7 @@ test('runtime-only review binds a subject and freezes literal DNS-associated end
   assert.deepEqual(endpoint.properties.runtimeEvidence[0].dnsNames, ['api.example.test']);
   const { writeReviewBundleArtifact } = await import('../lib/guard/review/bundle-store.js');
   const { createDecisionSet } = await import('../lib/guard/review/documents.js');
-  const { prepareReviewSession, snapshotReviewSelection, atomicSessionJson } = await import('../lib/guard/review/session.js');
+  const { prepareReviewSession, snapshotReviewSelection, atomicSessionJson, checkReviewSession, migrateReviewDraft } = await import('../lib/guard/review/session.js');
   const sessionDir = path.join(root, 'review-session');
   for (const directory of [sessionDir, path.join(sessionDir, 'runtime'), path.join(sessionDir, 'decisions')]) {
     fs.mkdirSync(directory, { mode: 0o700 });
@@ -751,15 +752,44 @@ test('runtime-only review binds a subject and freezes literal DNS-associated end
   const bundleDir = path.join(sessionDir, 'bundle');
   await writeReviewBundleArtifact(bundleDir, artifact);
   const session = await prepareReviewSession({ session: sessionDir, bundle: bundleDir,
-    candidate: candidate.directory, workdir, launcher: '/repo/nosh.sh',
+    candidate: candidate.directory, workdir, launcher: '/repo/scripts/nosh.sh',
     tooling: `sha256:${'a'.repeat(64)}`, context: path.join(candidate.directory, 'context.json'),
     applyConfig: '/config/apply.json', configAvailable: 'no' });
   assert.equal(session.runtimeCandidate, candidate.directory);
   assert.ok(session.preflight.some(message => /SBOM/.test(message)));
+  const readiness = await checkReviewSession(sessionDir);
+  assert.equal(readiness.readyForReview, false);
+  assert.equal(readiness.readyForApply, false);
+  assert.ok(readiness.blockers.some(blocker => blocker.code === 'inventory'));
+  const staleReadiness = await checkReviewSession(sessionDir, null, path.join(root, 'unavailable-source.spdx.json'));
+  assert.equal(staleReadiness.readyForApply, false);
+  assert.ok(staleReadiness.blockers.some(blocker => blocker.code === 'source-inventory'));
   const decisions = createDecisionSet({ graph: artifact.graph, reviewer: 'Operator',
     decisions: artifact.graph.proposals.map(proposal => ({ proposalId: proposal.id,
       disposition: 'accept', rationale: 'Required endpoint', targetAcknowledgements: [] })) });
   await atomicSessionJson(path.join(sessionDir, 'decisions', 'decisions.json'), decisions);
   await assert.rejects(snapshotReviewSelection(sessionDir, `sha256:${'f'.repeat(64)}`, path.join(root, 'apply')), /Saved decisions changed/);
   await assert.rejects(snapshotReviewSelection(sessionDir, decisions.contentDigest, path.join(root, 'apply')), /missing.*sbom/i);
+
+  // A tooling rebuild may produce the exact same graph. Restore its reviewed
+  // choices without carrying approval or finalization into the new session.
+  const updatedDir = path.join(root, 'updated-tooling-session');
+  for (const directory of [updatedDir, path.join(updatedDir, 'runtime'), path.join(updatedDir, 'decisions')]) {
+    fs.mkdirSync(directory, { mode: 0o700 });
+  }
+  await writeReviewBundleArtifact(path.join(updatedDir, 'bundle'), artifact);
+  await prepareReviewSession({ session: updatedDir, bundle: path.join(updatedDir, 'bundle'),
+    candidate: candidate.directory, workdir, launcher: '/repo/scripts/nosh.sh',
+    tooling: `sha256:${'b'.repeat(64)}`, context: path.join(candidate.directory, 'context.json'),
+    applyConfig: '/config/apply.json', configAvailable: 'no' });
+  const restored = await migrateReviewDraft(updatedDir);
+  assert.equal(restored.status, 'migrated');
+  assert.equal(restored.source, sessionDir);
+  const draft = JSON.parse(fs.readFileSync(path.join(updatedDir, 'decisions/draft.json'), 'utf8'));
+  assert.equal(draft.graphContentDigest, artifact.graph.contentDigest);
+  assert.equal(draft.reviewerAcknowledged, false);
+  assert.equal(draft.decisions[artifact.graph.proposals[0].id].disposition, 'accept');
+  assert.deepEqual(draft.decisions[artifact.graph.proposals[0].id].targetAcknowledgements, {});
+  assert.equal(fs.existsSync(path.join(updatedDir, 'decisions/decisions.json')), false);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(sessionDir, 'decisions/decisions.json'), 'utf8')).contentDigest, decisions.contentDigest);
 });

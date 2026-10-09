@@ -1,11 +1,113 @@
 # Nosh Policy Review
 
+The managed image also includes `/setup`, opened with `nosh config`, for saved
+repository build/runtime/tool settings and copyable host commands. It uses a
+separate authenticated setup session; saving settings never activates policy.
+See [repository setup profiles](../docs/nosh-repository-config.md).
+
 This standalone Next.js application renders frozen Nosh semantic graphs as an
 eight-lane UML-style policy review. It imports the exact URL printed by
 `nosh review serve`, local `NoshSemanticGraph` JSON, preview-only Hubble JSONL,
 and integrity-chained live deltas. It exports a digest-bound
 `NoshPolicyDecisionSet`; signing and policy compilation remain outside the
 browser.
+
+## Network review flow
+
+Choose Allow or Deny for each connection; draft progress saves automatically.
+Wait for **Progress saved** before leaving. If saving fails, retry or download
+JSON under **More options**. **Show remaining** finds unfinished choices.
+
+Open **Review selections**, enter the reviewer, acknowledge the review, and
+choose **Save reviewed policy**. Resolve any listed application prerequisites,
+then use **Copy apply command** to continue in the host terminal. Saving a
+review does not activate it; the host verifies and signs the exact selection.
+Editing a finalized review removes its apply command until it is saved again.
+
+## Tool activity review
+
+`/tool-review` uses the same review styling and draft autosave workflow for
+the saved output of `scripts/audit-codex-tools.py`. It classifies command-form
+activity as Expected, Investigate, or Unreviewed; those labels are not
+executable rules. Network review and its signed decision formats remain separate.
+
+On the host with Docker available, initialize an audit and choose **5 — Open
+review UI**, or reopen a saved report:
+
+```sh
+nosh tools init
+# Or reopen an existing report:
+nosh tools review --review /absolute/path/to/audit-report
+```
+
+With no configured image, the launcher reuses a compatible local
+`nosh-policy-review:managed` image. Otherwise it offers to build a missing or
+outdated UI from this checkout using Docker. Accepting builds, remembers the
+exact image ID, and continues with the saved report. All package installation,
+tests, and compilation happen inside the build container. Build dependencies may
+be downloaded. Declining or a failed build leaves the report and existing image
+selection unchanged. To allow the build without a prompt, add `--build-ui`.
+
+The exact ID is saved in the private
+`${XDG_CONFIG_HOME:-~/.config}/nosh/policy-review-images.conf` alongside the
+existing tooling selection; `NOSH_PROFILE_REVIEW_IMAGE_CONFIG` can select another
+absolute configuration path. An explicit `NOSH_POLICY_REVIEW_UI_IMAGE=sha256:…`
+override takes precedence and is never automatically replaced. If that override
+is stale, unset it to use automatic setup, or rebuild and provide a compatible ID.
+
+The launcher checks `io.notty.tool-review.ui-abi=1`, uses `--pull never`, publishes
+only on `127.0.0.1`, and prints the browser URL and container stop command. It
+mounts five redacted report files read-only and their private `review/` output
+directory writable. It does not mount history, active Codex configuration, or
+the Docker socket. Add `--no-browser` to `nosh tools review` to print the URL
+without opening a browser. Treat the token-bearing
+URL as private. Restart the launcher to reopen progress after stopping the container.
+
+Classify activity individually or use **Select all filtered** across pages
+and **Apply choice to selected**. Bulk actions display affected form/request
+counts, including selections hidden by the current filter. Scanner suggestions
+require explicit confirmation. Use **Show remaining** to find unfinished choices.
+Notes and source references are available under each form's evidence disclosure.
+
+Drafts autosave as `review/draft.json`. **Review selections** requires all forms,
+a reviewer, acknowledgement, and a complete audit before saving
+`review/proposal.json`. Both documents use tool-specific versioned formats,
+bind to the exact input hashes, and declare `enforcing: false`. Changing choices
+invalidates the current finalized status until saved again. **More options**
+provides downloads and same-snapshot imports; imports require renewed
+acknowledgement. Failed saves retain edits and offer Retry. The separate existing
+escape-rule panel is informational; rule edits and capability enforcement are
+outside this workflow.
+
+Container-based validation:
+
+```sh
+cd policy-review
+npm run test:run
+npm run build
+```
+
+The optional `scripts/tool-review-browser-smoke.mjs` runs against a temporary
+production server and synthetic audit. Run it from the repository root inside
+a container with Playwright and Chromium available; `NOSH_PLAYWRIGHT_MODULE`
+can point to an externally installed Playwright `index.mjs`. It checks selection,
+pagination, autosave/reload, failed-save recovery, proposal export/import,
+keyboard access, and mobile overflow. Screenshots default to
+`/tmp/nosh-tool-review-screenshots` (`NOSH_TOOL_REVIEW_SCREENSHOTS` overrides it).
+
+Reports are limited to 25 MiB combined; drafts, proposals, and imports to 8 MiB.
+Inputs and output must be private, caller-owned regular files/directories;
+symlinked inputs are rejected. Changed inputs require a new audit directory.
+Missing Docker, an outdated image, or startup failure leaves terminal review
+available. No active permissions are changed by this tool.
+
+Browser acceptance after rebuilding the managed UI image:
+
+- Check incomplete review → automatic save → refresh restores choices.
+- Check keyboard navigation and requirement links, including reviewer fields.
+- Check failed saves display Retry and retain edits; downloading remains available.
+- Check completed review and blocked evidence show distinct statuses, and
+  changing a saved decision immediately removes the old apply command.
 
 ## Authoritative use
 
@@ -18,7 +120,7 @@ bridge, inspects both current addresses, waits for the container health check,
 and opens the dynamically attested `172.*` link:
 
 ```console
-./profile-build-and-review.sh --cache-mode cold
+./scripts/profile-build-and-review.sh --cache-mode cold
 ```
 
 The wrapper prints separate stop commands for the reviewed UI and graph
@@ -30,7 +132,7 @@ From the repository root on the host, recreate the Nosh development container
 with the reviewer's port published only on loopback:
 
 ```console
-./nosh.sh recreate --no-start-app --publish 127.0.0.1:3001
+./scripts/nosh.sh recreate --no-start-app --publish 127.0.0.1:3001
 ```
 
 Then, inside the attached Nosh shell, start the standalone application:
@@ -171,3 +273,23 @@ shows the complete baseline, recapture, selection, and enforcement boundary.
 
 The canonical formats and end-to-end approval/gateway workflow are documented
 in `../docs/nosh-policy-review.md`.
+
+## Approve the tool environment
+
+After saving a complete tool proposal, use **Enforced capabilities**
+to bind its evidence to a host workspace. Read-only is the default; allowing
+implementation writes and acknowledging the enforcement limits are explicit
+choices. **Save environment policy** writes `review/environment-policy.json`
+and prints its exact digest. The browser never activates host policy.
+
+Use `nosh tools check` and `nosh tools apply --policy-digest …` on the host,
+or the tool steps in `nosh init --advanced`. Nosh mounts the applied revision
+read-only inside Docker and constrains the filesystem around stock Codex.
+Tool activity classifications remain informational. See
+[the full workflow and limits](../docs/nosh-tool-policy.md).
+
+The tool review displays the audit's history scope and exclusion counts.
+`nosh tools init` selects the current checkout, directory subtree, or all available
+history; every choice covers all recorded dates. Scoped audits with unattributed
+requests remain incomplete and cannot finalize a proposal. Historical scope is
+review evidence and does not change the workspace permissions being approved.

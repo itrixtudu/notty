@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { workloadName, resolveAgentHomes, validateAgentMounts, sameAgentMounts, resourceModes } from '../lib/guardd/workload.js';
+import { readAgentBaselines, composeAgentBaselines } from '../lib/guardd/agent-baselines.js';
 
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -34,6 +36,11 @@ import { listenGuardGateway } from '../lib/guardd/gateway.js';
 import { GrantStore } from '../lib/guardd/grants.js';
 import { EbpfActivationStore } from '../lib/guardd/ebpf-activation-store.js';
 import {
+  ExecutableBaselineStore,
+  executableBaselineDigest,
+  validateExecutableBaseline,
+} from '../lib/guardd/executable-baseline.js';
+import {
   DEFAULT_EBPF_EGRESS_RESOLVERS,
   EBPF_EGRESS_BACKEND_ABI,
   normalizeEbpfResolvers,
@@ -64,6 +71,7 @@ import { commandPolicy } from '../lib/guard/review/policy-cli.js';
 import { commandGateway } from '../lib/guard/review/gateway-cli.js';
 import { commandDeployment } from '../lib/guard/review/deployment-cli.js';
 import { readTrustedJson } from '../lib/guard/review/io.js';
+import { stableStringify } from '../lib/guard/stable.js';
 
 const DOCTOR_SCRIPT = fileURLToPath(
   new URL('./nosh-guard-doctor.sh', import.meta.url),
@@ -93,6 +101,8 @@ Commands:
   policy project             Compile accepted graph decisions for one target
   deployment grant           Issue a short-lived eBPF activation grant
   ebpf status|activate       Inspect or atomically activate signed eBPF policy
+  executables status|activate
+                             Inspect or activate an advisory executable baseline
   gateway grant              Issue a legacy external-gateway grant
   principal add|list|revoke  Bind a short-lived mTLS identity to one runner
   grant create|list|revoke   Manage audited dependency-fetch egress grants
@@ -110,6 +120,12 @@ Run options:
   --network INTERNAL_NETWORK
   --socket PATH               Root-owned guard management socket
   --collab | --no-collab
+  --workload dev|run        Runtime workload (default: dev)
+  --agents auto|none|NAMES  Dev agent homes (default: all existing homes)
+  --codex-home PATH         Custom host Codex home
+  --agent-skills ro|rw      Codex skill access (explicit controls default to ro)
+  --agent-settings ro|rw    Codex settings access
+  --agent-plugins ro|rw     Codex plugin access
   --start-app | --no-start-app
   --persist                   Keep an interactive start after its shell exits
   --dry-run
@@ -161,13 +177,42 @@ Commands:
 Status options:
   --json                     Emit machine-readable JSON
 
+Selectors (both commands):
+  --workload dev|run         Workload (default: dev)
+  --workdir DIR             Workspace (required)
+
 Activate options:
+  --learn-revision ID       Bind the exact learned launch description
   --bundle DIR               Private DecisionSet projection, approval, and grant
   --target-context FILE      User-owned Guard eBPF target context from profiling
 
 Both commands require root. Activation reads the bundle and target context as
 the invoking sudo user, verifies the installed loader object digest, consumes
 the signed one-time deployment grant, and advances root-owned state atomically.
+`;
+
+const EXECUTABLES_HELP = `Usage: nosh-guard executables <command> [options]
+
+Commands:
+  status                     Inspect the active executable baseline
+  activate                   Activate a reviewed executable baseline
+
+Selectors (both commands):
+  --workdir DIR              Canonical workspace (required)
+  --image-digest SHA256      Exact sha256: image digest (required)
+  --state-dir DIR            Root-owned Guard state directory
+
+Status options:
+  --json                     Include reviewed executable references as JSON
+
+Activate options:
+  --baseline FILE            User-owned reviewed baseline JSON (required)
+  --baseline-digest SHA256   Exact SHA-256 of FILE (required)
+
+Both commands require root. Activation reads the baseline as the invoking sudo
+user, verifies its exact digest, and binds it to the selected workspace and
+image. Baselines classify observations as expected or unknown; they do not
+authorize or block execution. Unknown executable references remain allowed and are reported.
 `;
 
 const BUILD_HELP = `Usage: nosh-guard build <command> [options]
@@ -234,6 +279,12 @@ Learn, audit, and enforce launch options:
   --resolver IP             Explicit runtime resolver; repeatable and saved
   --config PATH             Explicit Notty configuration inside the workspace
   --collab | --no-collab
+  --workload dev|run        Runtime workload (default: dev)
+  --agents auto|none|NAMES  Dev agent homes (default: all existing homes)
+  --codex-home PATH         Custom host Codex home
+  --agent-skills ro|rw      Codex skill access (explicit controls default to ro)
+  --agent-settings ro|rw    Codex settings access
+  --agent-plugins ro|rw     Codex plugin access
   --start-app | --no-start-app
   --socket PATH             Root-owned guard management socket
 
@@ -251,9 +302,13 @@ Approve options:
   --revision REVISION       Require this exact current candidate revision
   --yes                     Approve without the interactive confirmation
 
+Learn accepts repeatable --agent-baseline FILE@sha256:DIGEST as review inputs.
+
 Enforce options:
   --revision REVISION       Require this exact learned launch-settings revision;
                             policy authority requires prior 'nosh-guard ebpf activate'
+  --expected-deployment DIGEST
+                            Require the selected signed deployment through admission
 
 Status options:
   --json                    Print the receipt as JSON
@@ -282,6 +337,7 @@ const BOOLEAN_FLAGS = new Set([
   'yes',
 ]);
 const REPEAT_FLAGS = new Set([
+  'agent-baseline',
   'build-arg',
   'evidence',
   'output',
@@ -292,6 +348,7 @@ const REPEAT_FLAGS = new Set([
   'tag',
 ]);
 const RUN_FLAGS = new Set([
+  'workload', 'agents', 'codex-home', 'agent-skills', 'agent-settings', 'agent-plugins', 'tool-mode',
   'action',
   'agent-id',
   'allow-incomplete',
@@ -358,6 +415,7 @@ const BUILD_SESSION_FLAGS = new Set();
 const AUTH_RESET_FLAGS = new Set(['dry-run', 'help', 'socket', 'workdir']);
 
 const NET_LAUNCH_FLAGS = [
+  'workload', 'agents', 'codex-home', 'agent-skills', 'agent-settings', 'agent-plugins', 'tool-mode',
   'agent-id',
   'collab',
   'config',
@@ -376,10 +434,11 @@ const NET_LAUNCH_FLAGS = [
 ];
 
 const NET_FLAGS = Object.freeze({
-  learn: new Set([...NET_LAUNCH_FLAGS, 'duration', 'json', 'review-output']),
+  learn: new Set([...NET_LAUNCH_FLAGS, 'agent-baseline', 'duration', 'json', 'review-output']),
   audit: new Set(NET_LAUNCH_FLAGS),
-  enforce: new Set([...NET_LAUNCH_FLAGS, 'revision']),
+  enforce: new Set([...NET_LAUNCH_FLAGS, 'revision', 'expected-deployment']),
   approve: new Set([
+    'workload',
     'dry-run',
     'help',
     'reviewer',
@@ -389,6 +448,7 @@ const NET_FLAGS = Object.freeze({
     'yes',
   ]),
   status: new Set([
+    'workload',
     'dry-run',
     'help',
     'json',
@@ -504,6 +564,7 @@ async function runRequest(options) {
   if (options['allow-incomplete']) {
     throw new TypeError('--allow-incomplete is disabled for guarded runners');
   }
+  if (options['tool-mode'] && !['read-only', 'implementation'].includes(options['tool-mode'])) throw new Error('Invalid --tool-mode');
   const mode = requireOption(options, 'mode');
   const action = options.action || 'start';
   if (!SECURITY_MODES.includes(mode)) {
@@ -530,16 +591,28 @@ async function runRequest(options) {
   }
 
   if (!['start', 'recreate'].includes(action)) {
-    return { action, name };
+    return { action, name, ...(options['tool-mode'] ? { toolMode: options['tool-mode'] } : {}) };
   }
 
+  const workload = workloadName(options.workload);
+  if (workload !== 'dev' && options.agents && options.agents !== 'none') {
+    throw new Error('--agents requires --workload dev');
+  }
+  const user = resolveInvokingUser();
+  const homes = options.agentHomes || resolveAgentHomes({ workload,
+    agents: options.agents || 'auto', user,
+    codexHome: options['codex-home'] || process.env.CODEX_HOME,
+    workspace: workdir, modes: resourceModes(options), prepare: !options['dry-run'] });
+  validateAgentMounts(homes.mounts, { uid: user.uid }, workload);
+  options.agentHomes = homes;
   const configPath = await ensureConfigVisible(options.config, workdir);
   const collab = options.collab ? true : options['no-collab'] ? false : false;
+  if (workload === 'run' && collab) throw new Error('Collab requires the dev workload');
   const startApp = options['start-app']
     ? true
     : options['no-start-app']
       ? false
-      : false;
+      : workload === 'run';
   const roles = profileRoles(options);
   const resolverInput = options.resolver == null
     ? null
@@ -580,6 +653,9 @@ async function runRequest(options) {
     image,
     name,
     workdir,
+    workload,
+    ...(options['tool-mode'] ? { toolMode: options['tool-mode'] } : {}),
+    agentMounts: homes.mounts,
     agentId: options['agent-id'] || name,
     roles,
     ...(resolvers ? { resolvers } : {}),
@@ -921,7 +997,7 @@ export async function executeRunRequest(request, options = {}) {
   const spawnSyncImpl = options.spawnSyncImpl || spawnSync;
 
   if (request.action === 'attach') {
-    const attached = await client.action(request.name, 'attach');
+    const attached = await client.action(request.name, 'attach', request.toolMode ? { toolMode: request.toolMode } : {});
     if (!interactive) {
       print(attached);
       return 0;
@@ -1339,7 +1415,7 @@ function netTrustedRoot(options = {}) {
 }
 
 function netRegistry(options = {}) {
-  return new NetProfileRegistry({ stateDir: netStateDir(options) });
+  return new NetProfileRegistry({ stateDir: netStateDir(options), workload: options.workload });
 }
 
 async function sha256Path(filePath) {
@@ -1393,6 +1469,10 @@ async function learnedLaunchConfig(options, started, workdir) {
     ? await ensureConfigVisible(options.config, workdir)
     : null;
   return {
+    workload: workloadName(options.workload),
+    workdir,
+    agentHomes: options.agentHomes || { agents: [], mounts: [] },
+    agentBaselines: options.agentBaselines || [],
     image: options.image || 'nosh',
     imageReference: started.imageReference || null,
     imageDigest: started.imageDigest,
@@ -1411,7 +1491,7 @@ async function learnedLaunchConfig(options, started, workdir) {
     configPath,
     configHash: await sha256Path(configPath),
     collab: selectedBoolean(options, 'collab', 'no-collab') === true,
-    startApp: selectedBoolean(options, 'start-app', 'no-start-app') === true,
+    startApp: selectedBoolean(options, 'start-app', 'no-start-app') ?? options.workload === 'run',
     ...(options.duration == null
       ? {}
       : { observationDurationSeconds: netLearnDuration(options) }),
@@ -1425,6 +1505,17 @@ async function launchMismatches(options, stored) {
       mismatches.push({ label, requested, learned });
     }
   };
+  if (workloadName(options.workload) !== workloadName(stored.workload)) {
+    throw new Error('saved profile belongs to another workload; learn this workload first');
+  }
+  if (options.agents || options['codex-home'] || resourceModes(options)) {
+    const homes = resolveAgentHomes({ workload: options.workload, agents: options.agents || 'auto',
+      user: resolveInvokingUser(), codexHome: options['codex-home'] || process.env.CODEX_HOME,
+      workspace: stored.workdir, modes: resourceModes(options) || stored.agentHomes?.mounts?.find((m) => m.agent === 'codex')?.policy?.modes });
+    if (!sameAgentMounts(homes.mounts, stored.agentHomes?.mounts)) {
+      throw new Error('agent selection or homes changed; learn the dev workload again');
+    }
+  }
   compare('image', options.image, stored.image);
   compare('name', options.name, stored.name);
   compare('agent-id', options['agent-id'], stored.agentId);
@@ -1485,6 +1576,8 @@ async function launchMismatches(options, stored) {
 
 function storedLaunchOptions(stored, workdir, profileDir) {
   return {
+    workload: workloadName(stored.workload),
+    agentHomes: stored.agentHomes || { agents: [], mounts: [] },
     mode: null,
     action: 'start',
     image: stored.imageReference || stored.image,
@@ -1671,10 +1764,14 @@ export async function executeNetShellRun(request, finalize, options = {}) {
       try {
         stopped = await client.action(started.runId, 'stop');
       } catch (stopError) {
-        throw new AggregateError(
+        const failure = new AggregateError(
           [shellError, stopError],
-          'network shell and evidence finalization both failed',
+          `network shell and evidence finalization both failed for run ${started.runId}: `
+            + `runtime: ${shellError.message}; finalization: ${stopError.message}`,
         );
+        failure.code = 'GUARD_NET_RUNTIME_AND_FINALIZATION_FAILED';
+        failure.runId = started.runId;
+        throw failure;
       }
     } else {
       stopped = await client.action(started.runId, 'stop');
@@ -1796,6 +1893,7 @@ function receiptFor(workdir, state) {
     apiVersion: 'notty.dev/v1alpha1',
     kind: 'NoshEgressProfileReceipt',
     authoritative: false,
+    workload: state?.workload || state?.latestCandidate?.launchConfig?.workload || 'dev',
     workspace: {
       id: state?.workspaceKey || null,
       path: workdir,
@@ -2033,12 +2131,15 @@ function humanNetStatus(receipt) {
   );
   return [
     `Workspace: ${receipt.workspace?.path || 'unknown'}`,
+    `Workload: ${receipt.workload || 'dev'}`,
     `Scope: ${receipt.enforcementScope || 'egress-only'}`,
     `Candidate: ${candidate?.revision || 'none'}`,
     `Approved: ${approved?.revision || 'none'}`,
     `Applied for future runs: ${receipt.activation?.learnRevision || (receipt.activation ? receipt.activation.leafBundleDigest : 'none (or not checked in user mirror)')}`,
     `Image: ${candidate?.imageDigest || approved?.imageDigest || 'unknown'}`,
     `Learned roles: ${launch.roles?.length ? launch.roles.join(', ') : 'none'}`,
+    `Agent homes: ${launch.agentHomes?.agents?.join(', ') || 'none'}`,
+    `Agent baselines: ${launch.agentBaselines?.map((entry) => `${entry.agent}@${entry.revision}`).join(', ') || 'none'}`,
     `Learned collab/start-app: ${Boolean(launch.collab)}/${Boolean(launch.startApp)}`,
     `Learned observation: ${
       Number.isSafeInteger(launch.observationDurationSeconds)
@@ -2118,10 +2219,13 @@ async function commandNetLearn(options, dependencies = {}, durationSeconds = nul
     mode: 'egress-learn',
     action: 'start',
     image: options.image || 'nosh',
-    name: options.name || netName(workdir, key),
+    name: options.name || `${netName(workdir, key)}-${options.workload}`,
     workdir,
   };
   const request = await runRequest(requestOptions);
+  requestOptions.agentBaselines = await readAgentBaselines(options['agent-baseline'] || [], {
+    workload: options.workload, agents: requestOptions.agentHomes.agents, uid: resolveInvokingUser().uid,
+  });
   let learnedResult = null;
   const result = await executeNetShellRun(
     request,
@@ -2156,7 +2260,7 @@ async function commandNetLearn(options, dependencies = {}, durationSeconds = nul
         imageDigest: stopped.imageDigest || started.imageDigest,
         imageReference: stopped.imageReference || started.imageReference,
         evidenceManifestPath,
-        rules: policy.spec?.egress || [],
+        rules: composeAgentBaselines(policy.spec?.egress || [], requestOptions.agentBaselines, launchConfig.imageDigest),
         unresolvedObservations: (policy.spec?.unresolvedObservations || [])
           .filter((entry) => entry.direction !== 'ingress'),
         launchConfig,
@@ -2339,7 +2443,7 @@ async function commandNetAudit(options, dependencies = {}) {
   });
   assertVerifiedReference(reference, verification, 'candidate');
   const replay = await resolveReplay(options, reference, workdir, dependencies);
-  const request = await runRequest({ ...replay, mode: 'egress-audit' });
+  const request = await runRequest({ ...replay, 'tool-mode': options['tool-mode'], mode: 'egress-audit' });
   const result = await executeNetShellRun(
     request,
     async ({ stopped }) => {
@@ -2471,7 +2575,8 @@ async function commandNetApprove(options, dependencies = {}) {
 
 async function activeNetworkDeployment(options, dependencies) {
   if (dependencies.readActiveDeployment) return dependencies.readActiveDeployment();
-  const store = new EbpfActivationStore({ stateDir: netStateDir(options) });
+  const store = new EbpfActivationStore({ stateDir: netStateDir(options), workload: options.workload,
+    workspaceKey: await workspaceKey(options.workdir || process.cwd()) });
   try { return (await store.readState()).current; }
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
@@ -2482,6 +2587,12 @@ async function commandNetEnforce(options, dependencies = {}) {
   await registry.initialize();
   const state = await registry.readWorkspace(workdir);
   const active = await activeNetworkDeployment(options, dependencies);
+  if (options['expected-deployment'] && (
+    !/^sha256:[a-f0-9]{64}$/.test(options['expected-deployment'])
+    || active?.leafBundleDigest !== options['expected-deployment']
+  )) {
+    throw new Error('The applied deployment changed. Run nosh again to confirm the current policy.');
+  }
   if (active && active.workspaceKey !== await workspaceKey(workdir)) {
     throw new Error('The active policy belongs to another workspace. Apply this workspace\'s saved profile first.');
   }
@@ -2508,7 +2619,10 @@ async function commandNetEnforce(options, dependencies = {}) {
   // Guard boundary for egress-enforce; the root activation store is the sole
   // policy authority.
   delete replay['profile-dir'];
-  const request = await runRequest({ ...replay, mode: 'egress-enforce' });
+  const request = await runRequest({ ...replay, 'tool-mode': options['tool-mode'], mode: 'egress-enforce' });
+  if (options['expected-deployment']) {
+    request.expectedDeploymentDigest = options['expected-deployment'];
+  }
   const interactive = dependencies.interactive == null
     ? interactiveTerminal(dependencies.streams || process)
     : Boolean(dependencies.interactive);
@@ -2604,7 +2718,7 @@ async function commandNetStatus(options, dependencies = {}) {
       throw new Error('nosh net status --repair requires root');
     }
     const readMirror = dependencies.readMirror || readCurrentUserMirror;
-    ({ receipt } = await readMirror(workdir, dependencies));
+    ({ receipt } = await readMirror(workdir, { ...dependencies, workload: options.workload }));
   }
   if (options.json) {
     printJson(receipt);
@@ -2615,8 +2729,12 @@ async function commandNetStatus(options, dependencies = {}) {
 }
 
 export async function executeNetCommand(subcommand, options, dependencies = {}) {
+  options = { ...options, workload: workloadName(options.workload || 'dev') };
   if (subcommand !== 'learn' && options.duration != null) {
     throw new TypeError('--duration is supported only by nosh net learn');
+  }
+  if (options.workload !== 'dev' && (options['agent-baseline']?.length || options['codex-home'] || (options.agents && options.agents !== 'none'))) {
+    throw new Error('agent options require the dev workload');
   }
   const durationSeconds = subcommand === 'learn'
     ? netLearnDuration(options)
@@ -2629,6 +2747,7 @@ export async function executeNetCommand(subcommand, options, dependencies = {}) 
       dryRun: true,
       command: `net ${subcommand}`,
       workdir: path.resolve(options.workdir || process.cwd()),
+      workload: options.workload,
       scope: 'egress-only',
       ...(options.resolver == null
         ? {}
@@ -2806,21 +2925,23 @@ export async function executeBuildCommand(
       );
     }
   };
-  if (subcommand === 'profile') {
-    const result = await (dependencies.executeProfile || executeBuildProfile)(
-      buildProfileInput('build-profile', context, options, passthrough),
-      dependencies,
-    );
-    printResult(result);
-    return result.status || 0;
-  }
-  if (subcommand === 'net-learn') {
-    const result = await (dependencies.executeProfile || executeBuildProfile)(
-      buildProfileInput('build-net-learn', context, options, passthrough),
-      dependencies,
-    );
-    printResult(result);
-    return result.status || 0;
+  if (subcommand === 'profile' || subcommand === 'net-learn') {
+    try {
+      const result = await (dependencies.executeProfile || executeBuildProfile)(
+        buildProfileInput(subcommand === 'profile' ? 'build-profile' : 'build-net-learn', context, options, passthrough),
+        dependencies,
+      );
+      printResult(result);
+      return result.status || 0;
+    } catch (error) {
+      // Private machine consumers can retain diagnostic evidence on failed runs.
+      // Never put these host paths in the redacted --json stream.
+      if (options['private-json'] && !options.json && typeof error.bundleDir === 'string' && path.isAbsolute(error.bundleDir)) {
+        printJson({ kind: 'NoshBuildCaptureFailure', bundleDir: error.bundleDir,
+          portableBundleDir: path.join(error.bundleDir, 'portable') });
+      }
+      throw error;
+    }
   }
   if (subcommand === 'status') {
     return executeBuildStatus('build-profile', context, options, dependencies);
@@ -3223,8 +3344,8 @@ export async function commandEbpf(argv, dependencies = {}) {
     throw new TypeError(`unexpected ebpf arguments: ${positionals.join(' ')}`);
   }
   const allowed = {
-    activate: new Set(['bundle', 'help', 'target-context', 'learn-revision', 'workdir']),
-    status: new Set(['help', 'json']),
+    activate: new Set(['workload', 'bundle', 'help', 'target-context', 'learn-revision', 'workdir']),
+    status: new Set(['workload', 'workdir', 'help', 'json']),
   }[subcommand];
   if (!allowed) {
     throw new TypeError('ebpf command must be status or activate');
@@ -3236,7 +3357,9 @@ export async function commandEbpf(argv, dependencies = {}) {
   }
   assertRootManagement(dependencies.geteuid || process.geteuid);
 
-  const store = dependencies.store || new EbpfActivationStore();
+  options.workload = workloadName(options.workload);
+  const store = dependencies.store || new EbpfActivationStore({ workload: options.workload,
+    workspaceKey: await workspaceKey(requireOption(options, 'workdir')) });
   const readHealth = dependencies.readHealth || readInstalledEbpfBackendHealth;
   if (subcommand === 'status') {
     const state = await store.initialize();
@@ -3275,28 +3398,29 @@ export async function commandEbpf(argv, dependencies = {}) {
     error.code = 'GUARD_EBPF_OBJECT_DIGEST_MISMATCH';
     throw error;
   }
-  let launchReference;
-  if (options['learn-revision']) {
-    const revision = options['learn-revision'];
-    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(revision)) throw new Error('Invalid learned revision');
-    const workdir = await canonicalWorkspace(requireOption(options, 'workdir'));
-    const key = await workspaceKey(workdir);
-    if (key !== validatedContext.expected.workspaceKey) throw new Error('Learned workspace does not match activation');
-    const verification = await verifyEgressCandidateBundle(path.join(netTrustedRoot({}), key, revision), {
-      trustedRoot: netTrustedRoot({}), workdir,
-    });
-    if (verification.imageDigest !== validatedContext.expected.imageDigest
-        || stableStringify(verification.workspaceIdentity) !== stableStringify(validatedContext.expected.workspaceIdentity)) {
-      throw new Error('Learned image/workspace identity does not match activation');
-    }
-    launchReference = bundleReference(verification, verification.profile.spec.launch.config,
-      verification.profile.spec.evidence.manifestPath);
-  } else if (options.workdir) throw new Error('--workdir requires --learn-revision');
+  const revision = requireOption(options, 'learn-revision');
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(revision)) throw new Error('Invalid learned revision');
+  const workdir = await canonicalWorkspace(requireOption(options, 'workdir'));
+  const key = await workspaceKey(workdir);
+  if (key !== validatedContext.expected.workspaceKey) throw new Error('Learned workspace does not match activation');
+  const verifyCandidate = dependencies.verifyCandidate || verifyEgressCandidateBundle;
+  const verification = await verifyCandidate(path.join(netTrustedRoot({}), key, revision), {
+    trustedRoot: netTrustedRoot({}), workdir,
+  });
+  if (verification.imageDigest !== validatedContext.expected.imageDigest
+      || stableStringify(verification.workspaceIdentity) !== stableStringify(validatedContext.expected.workspaceIdentity)) {
+    throw new Error('Learned image/workspace identity does not match activation');
+  }
+  if (workloadName(verification.profile.spec.launch.config.workload) !== workloadName(options.workload)) {
+    throw new Error('activation workload does not match learned launch settings');
+  }
+  const launchReference = bundleReference(verification, verification.profile.spec.launch.config,
+    verification.profile.spec.evidence.manifestPath);
   const imported = await store.importActivation(bundle, {
     sourceUid: invokingUser.uid,
     expected: validatedContext.expected,
     now: dependencies.now,
-    ...(launchReference ? { launchReference } : {}),
+    launchReference,
   });
   const status = publicEbpfActivationState(imported.state, backendHealth);
   (dependencies.print || printJson)({
@@ -3307,11 +3431,138 @@ export async function commandEbpf(argv, dependencies = {}) {
   return 0;
 }
 
+export async function commandExecutables(argv, dependencies = {}) {
+  const [subcommand, ...rest] = argv;
+  const write = dependencies.write || ((value) => process.stdout.write(value));
+  if (!subcommand || ['help', '--help', '-h'].includes(subcommand)) {
+    write(EXECUTABLES_HELP);
+    return 0;
+  }
+  const { options, positionals } = parseFlags(rest);
+  if (positionals.length) {
+    throw new TypeError(
+      `unexpected executables arguments: ${positionals.join(' ')}`,
+    );
+  }
+  const allowed = {
+    activate: new Set([
+      'baseline',
+      'baseline-digest',
+      'help',
+      'image-digest',
+      'state-dir',
+      'workdir',
+    ]),
+    status: new Set([
+      'help',
+      'image-digest',
+      'json',
+      'state-dir',
+      'workdir',
+    ]),
+  }[subcommand];
+  if (!allowed) {
+    throw new TypeError('executables command must be status or activate');
+  }
+  assertKnownOptions(options, allowed, `executables ${subcommand}`);
+  if (options.help) {
+    write(EXECUTABLES_HELP);
+    return 0;
+  }
+  assertRootManagement(dependencies.geteuid || process.geteuid);
+
+  const selectedWorkspaceKey = await (
+    dependencies.workspaceKey || workspaceKey
+  )(requireOption(options, 'workdir'));
+  const expected = {
+    workspaceKey: selectedWorkspaceKey,
+    imageDigest: requireOption(options, 'image-digest'),
+  };
+  const store = dependencies.store || new ExecutableBaselineStore({
+    stateDir: options['state-dir'] || process.env.NOSH_GUARD_STATE_DIR,
+  });
+
+  if (subcommand === 'status') {
+    const active = await store.loadActive(expected);
+    const status = {
+      schemaVersion: 1,
+      kind: 'NoshExecutableBaselineStatus',
+      workspaceKey: expected.workspaceKey,
+      imageDigest: expected.imageDigest,
+      active: Boolean(active),
+      policyUse: 'observation-only',
+      enforcing: false,
+      unknownAction: 'allow-and-alert',
+      ...(active ? {
+        activationDigest: active.digest,
+        baselineDigest: executableBaselineDigest(active.document),
+        baseline: active.document,
+      } : {}),
+    };
+    if (options.json) {
+      (dependencies.print || printJson)(status);
+    } else {
+      write(`Executable observer baseline: ${active ? 'active' : 'not active'}\n`);
+      write(`Workspace key: ${expected.workspaceKey}\n`);
+      write(`Image digest: ${expected.imageDigest}\n`);
+      write('Mode: observation-only (unknown executable references are allowed and reported)\n');
+      if (active) {
+        write(`Reviewed executable references: ${active.document.executables.length}\n`);
+        write(`Reviewer: ${active.document.reviewer}\n`);
+        write(`Reviewed at: ${active.document.reviewedAt}\n`);
+        write(`Baseline digest: ${status.baselineDigest}\n`);
+      }
+    }
+    return 0;
+  }
+
+  const invokingUser = dependencies.invokingUser
+    || (dependencies.resolveInvokingUser || resolveInvokingUser)();
+  if (!Number.isSafeInteger(invokingUser?.uid) || invokingUser.uid < 0) {
+    throw new Error('cannot resolve the invoking user for executable baseline activation');
+  }
+  const trusted = await (
+    dependencies.readTrustedJson || readTrustedJson
+  )(path.resolve(requireOption(options, 'baseline')), {
+    expectedUid: invokingUser.uid,
+    maximumBytes: 4 * 1024 * 1024,
+  });
+  const reviewedDigest = requireOption(options, 'baseline-digest');
+  if (trusted.digest !== reviewedDigest) {
+    throw new Error('executable baseline digest changed before activation');
+  }
+  const baseline = (
+    dependencies.validateBaseline || validateExecutableBaseline
+  )(trusted.document, expected);
+  const activated = await store.activate(baseline, { expected });
+  (dependencies.print || printJson)({
+    schemaVersion: 1,
+    kind: 'NoshExecutableBaselineActivationReceipt',
+    workspaceKey: expected.workspaceKey,
+    imageDigest: expected.imageDigest,
+    sourceDigest: trusted.digest,
+    activationDigest: activated.digest,
+    baselineDigest: executableBaselineDigest(activated.document),
+    reviewedAt: activated.document.reviewedAt,
+    reviewer: activated.document.reviewer,
+    executableCount: activated.document.executables.length,
+    policyUse: 'observation-only',
+    enforcing: false,
+    unknownAction: 'allow-and-alert',
+  });
+  return 0;
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const [command, ...rest] = argv;
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     process.stdout.write(HELP);
     return 0;
+  }
+  if (command === 'tools') {
+    const result = spawnSync('python3', ['-I', '-S', fileURLToPath(new URL('./nosh-tool-policy.py', import.meta.url)), ...rest], { stdio: 'inherit' });
+    if (result.error) throw result.error;
+    return result.status ?? 1;
   }
   if (command === 'daemon') {
     return commandDaemon(rest);
@@ -3351,6 +3602,9 @@ export async function main(argv = process.argv.slice(2)) {
   }
   if (command === 'ebpf') {
     return commandEbpf(rest);
+  }
+  if (command === 'executables') {
+    return commandExecutables(rest);
   }
   if (command === 'build-session') {
     return commandBuildSession(rest);

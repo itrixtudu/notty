@@ -121,6 +121,12 @@ function makeRun(root, options = {}) {
     runId,
     fs.statSync(dnsPaths.logPath).size,
   );
+  const execPath = path.join(evidenceDir, 'nosh-exec.jsonl');
+  writeNoshExecEvidence(execPath);
+  const adapters = [...(options.adapters || [])];
+  if (!adapters.some((adapter) => adapter.name === 'nosh-exec')) {
+    adapters.push(noshExecAdapter(execPath));
+  }
   return {
     runId,
     mode: options.mode || 'enforce',
@@ -129,7 +135,7 @@ function makeRun(root, options = {}) {
     workspaceIdentity: options.workspaceIdentity || null,
     evidenceDir,
     evidenceComplete: options.evidenceComplete ?? true,
-    adapters: options.adapters || [],
+    adapters,
     detachResults: options.detachResults || [],
     egress: {
       sourceIpv4: options.sourceIpv4 || '10.240.8.3',
@@ -154,6 +160,76 @@ function writeJsonl(filePath, records) {
     records.map((record) => JSON.stringify(record)).join('\n') +
       (records.length ? '\n' : ''),
   );
+}
+
+function noshExecCounters(overrides = {}) {
+  return {
+    ringbufDrops: '0',
+    syscallMapFull: '0',
+    inflightMapFull: '0',
+    configMissing: '0',
+    cgroupFilterErrors: '0',
+    dnsParseErrors: '0',
+    dnsCompressedNames: '0',
+    dnsTruncatedNames: '0',
+    dnsTruncatedResponses: '0',
+    dnsAnswerLimitReached: '0',
+    dnsUnsupportedAnswers: '0',
+    dnsCorrelationMissing: '0',
+    dnsQueryObservations: '0',
+    dnsResponseObservations: '0',
+    dnsNamePointers: '0',
+    fileMapFull: '0',
+    filePathErrors: '0',
+    fileOpenObservations: '0',
+    ...overrides,
+  };
+}
+
+function writeNoshExecEvidence(filePath, options = {}) {
+  const targetCgroupId = options.targetCgroupId || '42';
+  const events = options.events || [];
+  writeJsonl(filePath, [
+    {
+      schemaVersion: 2,
+      recordKind: 'capabilities',
+      timestampUnixNs: '1',
+      collectionDepth: 'process',
+      availableSources: ['process-exec'],
+      unavailableSources: [],
+      ...(options.capabilities || {}),
+    },
+    ...events,
+    {
+      schemaVersion: 2,
+      recordKind: 'stats',
+      timestampUnixNs: '2',
+      targetCgroupId,
+      final: true,
+      eventsSeen: String(events.length),
+      decoderErrors: options.decoderErrors || '0',
+      inflightSyscalls: '0',
+      counters: noshExecCounters(options.counters),
+      fileSummaryRecords: '0',
+    },
+  ]);
+}
+
+function noshExecAdapter(logPath, options = {}) {
+  return {
+    name: 'nosh-exec',
+    logPath,
+    required: true,
+    evidence: true,
+    readiness: {
+      schemaVersion: 2,
+      recordKind: 'status',
+      status: 'ready',
+      collectionDepth: 'process',
+      attachedPrograms: 1,
+      cgroupId: options.targetCgroupId || '42',
+    },
+  };
 }
 
 function sourceByName(manifest, name) {
@@ -299,6 +375,120 @@ async function finalizeEnforceEvidence(t, options = {}) {
   );
   return finalizeRunEvidence(run, { stateDir: root });
 }
+
+test('nosh-exec accepts unknown successful exec metadata without argv and reports loss', async (t) => {
+  const root = tempDir(t);
+  const run = makeRun(root, { mode: 'enforce' });
+  run.workspaceKey = 'a'.repeat(64);
+  run.imageDigest = `sha256:${'b'.repeat(64)}`;
+  const adapter = run.adapters.find((entry) => entry.name === 'nosh-exec');
+  const event = {
+    schemaVersion: 2,
+    recordKind: 'event',
+    metadataOnly: true,
+    eventKind: 'process-exec',
+    timestampNs: '100',
+    targetCgroupId: '42',
+    observedCgroupId: '84',
+    process: {
+      pid: 101,
+      tid: 101,
+      ppid: 100,
+      uid: 1000,
+      gid: 1000,
+      comm: 'node',
+    },
+    executable: '/usr/bin/node',
+    rawExitCode: null,
+  };
+  writeNoshExecEvidence(adapter.logPath, { events: [event] });
+  const { finalizeRunEvidence } = await importModule(
+    'lib/guardd/evidence-finalizer.js',
+  );
+  const clean = await finalizeRunEvidence(run, {
+    stateDir: root,
+    requiredSources: ['nosh-exec'],
+  });
+  const source = sourceByName(clean.manifest, 'nosh-exec');
+  assert.equal(source.complete, true);
+  assert.equal(source.completionMarker, 'final-process-stats-clean');
+  assert.equal(clean.manifest.complete, true);
+  assert.equal(clean.manifest.executableInventory.unknownCount, 1);
+  assert.equal(clean.manifest.executableInventory.expectedCount, 0);
+  const inventory = JSON.parse(fs.readFileSync(
+    clean.manifest.executableInventory.path,
+    'utf8',
+  ));
+  assert.equal(inventory.executables[0].path, '/usr/bin/node');
+  assert.equal(inventory.executables[0].action, 'allow-and-alert');
+  assert.equal(inventory.argumentsRecorded, false);
+
+  writeNoshExecEvidence(adapter.logPath, {
+    events: [{ ...event, executable: './workspace-tool' }],
+  });
+  const relative = await finalizeRunEvidence(run, {
+    stateDir: root,
+    requiredSources: ['nosh-exec'],
+  });
+  assert.equal(sourceByName(relative.manifest, 'nosh-exec').complete, true);
+  const relativeInventory = JSON.parse(fs.readFileSync(
+    relative.manifest.executableInventory.path,
+    'utf8',
+  ));
+  assert.equal(relativeInventory.executables[0].path, './workspace-tool');
+
+  writeNoshExecEvidence(adapter.logPath, {
+    events: [event],
+    counters: { ringbufDrops: '1' },
+  });
+  const lossy = await finalizeRunEvidence(run, {
+    stateDir: root,
+    requiredSources: ['nosh-exec'],
+  });
+  const lossySource = sourceByName(lossy.manifest, 'nosh-exec');
+  assert.equal(lossySource.complete, false);
+  assert.equal(lossySource.completionMarker, 'final-process-stats-reported-loss');
+  assert.equal(lossy.manifest.complete, false);
+
+  writeNoshExecEvidence(adapter.logPath, {
+    events: [{ ...event, argv: ['node', 'exec.js', '--', 'sh'] }],
+  });
+  const withArgv = await finalizeRunEvidence(run, {
+    stateDir: root,
+    requiredSources: ['nosh-exec'],
+  });
+  assert.equal(
+    sourceByName(withArgv.manifest, 'nosh-exec').completionMarker,
+    'invalid-nosh-exec-v2-record',
+  );
+
+  writeNoshExecEvidence(adapter.logPath, {
+    events: [event],
+    capabilities: { unexpected: true },
+  });
+  const withUnexpectedCapability = await finalizeRunEvidence(run, {
+    stateDir: root,
+    requiredSources: ['nosh-exec'],
+  });
+  assert.equal(
+    sourceByName(withUnexpectedCapability.manifest, 'nosh-exec')
+      .completionMarker,
+    'invalid-nosh-exec-v2-record',
+  );
+
+  writeNoshExecEvidence(adapter.logPath, {
+    events: [{ ...event, executable: `/${'x'.repeat(254)}` }],
+  });
+  const truncated = await finalizeRunEvidence(run, {
+    stateDir: root,
+    requiredSources: ['nosh-exec'],
+  });
+  assert.equal(
+    sourceByName(truncated.manifest, 'nosh-exec').completionMarker,
+    'executable-reference-may-be-truncated',
+  );
+  assert.equal(truncated.manifest.complete, false);
+});
 
 test('managed runner access stays on a root-only Unix control proxy', async (t) => {
   const root = tempDir(t);
@@ -2580,6 +2770,7 @@ test('required evidence sources change by security mode', async (t) => {
       'ig-syscalls',
       'managed_dns',
       'managed_gateway',
+      'nosh-exec',
       'nosh-l4',
       'tetragon-events',
     ],
@@ -2588,23 +2779,28 @@ test('required evidence sources change by security mode', async (t) => {
       'ig-syscalls',
       'managed_dns',
       'managed_gateway',
+      'nosh-exec',
       'nosh-l4',
       'tetragon-events',
     ],
     enforce: [
       'managed_dns',
       'managed_gateway',
+      'nosh-exec',
       'nosh-l4',
       'tetragon-events',
     ],
     'egress-learn': [
       'nosh-egress',
+      'nosh-exec',
     ],
     'egress-audit': [
       'nosh-egress',
+      'nosh-exec',
     ],
     'egress-enforce': [
       'nosh-egress',
+      'nosh-exec',
     ],
   };
 

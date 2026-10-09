@@ -7,19 +7,27 @@ import {
 } from '../policy-review/runtimeAttestation';
 
 describe('Policy Review runtime attestation', () => {
-    it('accepts one strict pair of distinct Docker bridge origins', () => {
-        expect(parsePolicyReviewRuntimeAttestation({
-            schemaVersion: 1,
-            uiOrigin: 'http://172.24.0.2:3000',
-            graphOrigin: 'http://172.24.0.3:43117',
-        })).toEqual({
-            schemaVersion: 1,
-            uiOrigin: 'http://172.24.0.2:3000',
-            graphOrigin: 'http://172.24.0.3:43117',
-        });
+    it('accepts distinct Docker bridge origins in each RFC1918 range', () => {
+        for (const prefix of ['10.0.0', '10.255.255', '172.16.0', '172.24.0',
+            '172.31.255', '192.168.16', '192.168.255']) {
+            const document = {
+                schemaVersion: 1,
+                uiOrigin: `http://${prefix}.2:3000`,
+                graphOrigin: `http://${prefix}.3:43117`,
+            };
+            expect(parsePolicyReviewRuntimeAttestation(document)).toEqual(document);
+            const graph = `${document.graphOrigin}/v1/graph/${'c'.repeat(64)}`;
+            expect(normalizeManagedReviewGraphUrl(graph, {
+                attestedGraphOrigin: document.graphOrigin,
+            })).toBe(graph);
+            expect(() => normalizeManagedReviewGraphUrl(graph)).toThrow('requires launcher');
+            expect(() => normalizeManagedReviewGraphUrl(graph, {
+                attestedGraphOrigin: `http://${prefix}.4:43117`,
+            })).toThrow('does not match');
+        }
     });
 
-    it('rejects public, unrelated private, loopback, same-container, and expanded documents', () => {
+    it('rejects public, loopback, same-container, and expanded documents', () => {
         for (const document of [
             {
                 schemaVersion: 1,
@@ -29,7 +37,7 @@ describe('Policy Review runtime attestation', () => {
             {
                 schemaVersion: 1,
                 uiOrigin: 'http://172.24.0.2:3000',
-                graphOrigin: 'http://10.0.0.3:43117',
+                graphOrigin: 'http://192.169.0.3:43117',
             },
             {
                 schemaVersion: 1,
@@ -49,6 +57,18 @@ describe('Policy Review runtime attestation', () => {
             },
         ]) {
             expect(() => parsePolicyReviewRuntimeAttestation(document)).toThrow();
+        }
+    });
+
+    it('rejects addresses outside RFC1918 and malformed IPv4', () => {
+        for (const address of ['9.255.255.254', '11.0.0.2', '172.15.255.254',
+            '172.32.0.2', '192.167.255.254', '192.169.0.2', '169.254.1.2',
+            '100.64.0.2', '10.1.2.256']) {
+            expect(() => parsePolicyReviewRuntimeAttestation({
+                schemaVersion: 1,
+                uiOrigin: 'http://192.168.16.2:3000',
+                graphOrigin: `http://${address}:43117`,
+            })).toThrow();
         }
     });
 

@@ -1256,6 +1256,7 @@ test('guard-ebpf authority verifies the reviewed leaf and rejects role, context,
     deploymentAudience,
   })}\n`, { mode: 0o600 });
   const activation = new activationStore.EbpfActivationStore({
+    workspaceKey,
     stateRoot: path.join(parent, 'activation-state'),
     trustPath,
     enforceTrustPathChains: false,
@@ -1460,8 +1461,13 @@ test('guard-ebpf authority verifies the reviewed leaf and rejects role, context,
     verified.approval.envelopeDigest);
   assert.equal(imported.current.grantEnvelopeDigest, verified.grant.envelopeDigest);
   assert.notEqual(imported.state.activeGrantSetDigest, activeGrantSetDigest);
-  const active = await activation.verifyActive(expected);
+  const active = await activation.verifyActive(expected, {
+    leafBundleDigest: projection.leaf.bundleDigest });
   assert.equal(active.current.grantEnvelopeDigest, verified.grant.envelopeDigest);
+  await assert.rejects(
+    () => activation.verifyActive(expected, { leafBundleDigest: `sha256:${'0'.repeat(64)}` }),
+    /deployment changed after launch selection/,
+  );
   await assert.rejects(
     () => activation.importActivation(activationBundle, {
       sourceUid,
@@ -2290,43 +2296,29 @@ test('review CLI option parsing fails closed before performing work', async () =
   );
 });
 
-test('offline SBOM generation disables image pulls for both scans', async (t) => {
+test('offline SBOM generation delegates to container orchestration with exact tooling identity', async (t) => {
   const { sbom } = await modules();
+  const { inventoryDocument } = require('./helpers/inventory-fixture.cjs');
   const parent = privateTemporaryDirectory(t);
   const context = path.join(parent, 'context');
   const output = path.join(parent, 'sboms');
-  fs.mkdirSync(context, { mode: 0o700 });
+  const image = 'sha256:' + 'a'.repeat(64);
+  fs.mkdirSync(context, {mode:0o700});
   const calls = [];
-  const spdx = JSON.stringify({
-    spdxVersion: 'SPDX-2.3',
-    name: 'integration fixture',
-    packages: [],
-  });
-  const runCommand = async (_command, args) => {
-    calls.push([...args]);
-    if (args[0] === 'image' && args[1] === 'save') {
-      fs.writeFileSync(args[args.indexOf('--output') + 1], 'fixture image archive');
-    } else if (args.includes('dir:/source')) {
-      fs.writeFileSync(path.join(output, 'source.spdx.json'), spdx);
-    } else if (args.includes('docker-archive:/input/image.tar')) {
-      fs.writeFileSync(path.join(output, 'image.spdx.json'), spdx);
-    }
-    return { status: 0, signal: null, stdout: '', stderr: '' };
+  const runCommand = async (command, args) => {
+    calls.push({command,args});
+    fs.mkdirSync(output, {mode:0o700});
+    for (const role of ['source','image']) fs.writeFileSync(path.join(output, role+'.spdx.json'),
+      JSON.stringify(inventoryDocument(role,image)), {mode:0o600});
   };
-  const generated = await sbom.generateBuildSboms({
-    context,
-    imageReference: 'fixture:latest',
-    output,
-  }, { dockerCommand: 'docker', runCommand });
-  assert.equal(generated.source.format, 'spdx-json');
-  assert.equal(generated.image.format, 'spdx-json');
-  const scans = calls.filter((args) => args[0] === 'run');
-  assert.equal(scans.length, 2);
-  for (const args of scans) {
-    const pull = args.indexOf('--pull');
-    assert.notEqual(pull, -1);
-    assert.equal(args[pull + 1], 'never');
-  }
+  const generated = await sbom.generateBuildSboms({context,imageReference:image,toolingImage:image,output}, {runCommand});
+  assert.equal(generated.source.format,'spdx-json');
+  assert.equal(generated.image.collection.input.imageDigest,image);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].command,'bash');
+  assert.match(calls[0].args[0], /nosh-inventory\.sh$/);
+  assert.equal(calls[0].args[calls[0].args.indexOf('--tooling')+1],image);
+  await assert.rejects(sbom.generateBuildSboms({context,output}), /exact local policy tooling/);
 });
 
 test('root-owned reviewer DecisionSet fixture is accepted and graph-content-bound', async () => {

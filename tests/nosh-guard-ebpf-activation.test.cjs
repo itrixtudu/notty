@@ -114,9 +114,12 @@ test('ebpf status exposes the current grant-set digest and installed object', as
   assert.equal(printed[0].activation, null);
 });
 
-test('ebpf activate reads the context as the sudo user and imports exact bindings', async () => {
+test('ebpf activate reads the context as the sudo user and imports exact bindings', async (t) => {
   const { commandEbpf } = await cliModule();
+  const fixture = await learnedActivationFixture(t);
   const context = contextFixture();
+  context.expected.workspaceKey = fixture.candidate.workspaceKey;
+  context.expected.workspaceIdentity = fixture.workspaceIdentity;
   const importedState = {
     ...stateFixture(),
     activeGrantSetDigest: digest('next-grant-set'),
@@ -141,9 +144,11 @@ test('ebpf activate reads the context as the sudo user and imports exact binding
     'activate',
     '--bundle', '/review/activation',
     '--target-context', '/review/context.json',
+    '--learn-revision', fixture.revision, '--workdir', fixture.workdir,
   ], {
     geteuid: () => 0,
     invokingUser: { uid: 1000, gid: 1000, username: 'reviewer' },
+    verifyCandidate: fixture.verifyCandidate,
     async readTrustedJson(file, options) {
       observed.contextRead = { file, options };
       return { document: { fixture: true } };
@@ -198,6 +203,231 @@ test('ebpf activate fails before import when the installed object changed', asyn
     (error) => error.code === 'GUARD_EBPF_OBJECT_DIGEST_MISMATCH',
   );
   assert.equal(imported, false);
+});
+
+async function learnedActivationFixture(t) {
+  const root = privateTemporaryDirectory(t);
+  const stateDir = path.join(root, 'state');
+  const workdir = path.join(root, 'workspace');
+  const alias = path.join(root, 'workspace-alias');
+  const revision = 'learned-activation';
+  const evidenceDir = path.join(stateDir, 'evidence', revision);
+  fs.mkdirSync(workdir, { mode: 0o700 });
+  fs.symlinkSync(workdir, alias);
+  fs.mkdirSync(evidenceDir, { recursive: true, mode: 0o700 });
+  const stat = fs.statSync(workdir, { bigint: true });
+  const workspaceIdentity = { dev: String(stat.dev), ino: String(stat.ino) };
+  const source = `${JSON.stringify({
+    schemaVersion: 2, source: 'nosh-egress', recordKind: 'stats', final: true,
+  })}\n`;
+  const sourcePath = path.join(evidenceDir, 'nosh-egress.jsonl');
+  const execSource = `${JSON.stringify({
+    schemaVersion: 2, source: 'nosh-exec', recordKind: 'stats', final: true,
+  })}\n`;
+  const execSourcePath = path.join(evidenceDir, 'nosh-exec.jsonl');
+  const manifestPath = path.join(evidenceDir, 'evidence-manifest.json');
+  fs.writeFileSync(sourcePath, source, { mode: 0o600 });
+  fs.writeFileSync(execSourcePath, execSource, { mode: 0o600 });
+  writePrivateJson(manifestPath, {
+    schemaVersion: 1,
+    apiVersion: 'notty.dev/v1alpha1',
+    kind: 'NoshSecurityEvidenceManifest',
+    generatedAt: '2026-08-21T00:00:01.000Z',
+    runId: revision,
+    mode: 'egress-learn',
+    subject: {
+      containerId: 'learned-container',
+      containerName: 'learned-container',
+      image: 'nosh:test',
+      imageDigest: SHA_B,
+      workspace: workdir,
+      workspaceIdentity,
+    },
+    startedAt: '2026-08-21T00:00:00.000Z',
+    endedAt: '2026-08-21T00:00:01.000Z',
+    profileRevision: 'candidate',
+    complete: true,
+    trainingEligible: true,
+    evidenceUse: 'training',
+    ebpfEgressEvaluation: {
+      schemaVersion: 2,
+      backend: 'nosh-egress',
+      backendAbi: 'nosh-egress-v2',
+      eligible: true,
+      unresolved: [],
+    },
+    sources: [
+      {
+        name: 'nosh-egress',
+        path: sourcePath,
+        format: 'ndjson',
+        required: true,
+        present: true,
+        complete: true,
+        bytes: Buffer.byteLength(source),
+        records: 1,
+        hash: digest(source),
+        lostEvents: 0,
+        parseErrors: 0,
+        completionMarker: 'clean-supervised-stop',
+      },
+      {
+        name: 'nosh-exec',
+        path: execSourcePath,
+        format: 'ndjson',
+        required: true,
+        present: true,
+        complete: true,
+        bytes: Buffer.byteLength(execSource),
+        records: 1,
+        hash: digest(execSource),
+        lostEvents: 0,
+        parseErrors: 0,
+        completionMarker: 'final-process-stats-clean',
+      },
+    ],
+  });
+  const { createEgressCandidateBundle, verifyEgressCandidateBundle } = await import(
+    '../lib/guardd/net-profile-store.js'
+  );
+  const trustedUid = process.geteuid();
+  const candidate = await createEgressCandidateBundle({
+    stateDir,
+    trustedUid,
+    workdir,
+    runId: revision,
+    imageDigest: SHA_B,
+    imageReference: 'nosh:test',
+    evidenceManifestPath: manifestPath,
+    rules: [{ destination: '1.1.1.1', protocol: 'tcp', ports: [443] }],
+    launchConfig: { imageDigest: SHA_B, imageReference: 'nosh:test', collab: false },
+    createdAt: '2026-08-21T00:00:02.000Z',
+  });
+  const previousStateDir = process.env.NOSH_GUARD_STATE_DIR;
+  process.env.NOSH_GUARD_STATE_DIR = stateDir;
+  t.after(() => {
+    if (previousStateDir === undefined) delete process.env.NOSH_GUARD_STATE_DIR;
+    else process.env.NOSH_GUARD_STATE_DIR = previousStateDir;
+  });
+  return {
+    root, stateDir, workdir, alias, revision, candidate, workspaceIdentity,
+    verifyCandidate: (directory, options) => verifyEgressCandidateBundle(
+      directory, { ...options, trustedUid },
+    ),
+  };
+}
+
+test('ebpf activate binds a learned revision to its canonical workspace identity', async (t) => {
+  const { commandEbpf } = await cliModule();
+  const fixture = await learnedActivationFixture(t);
+  const context = contextFixture();
+  context.expected.workspaceKey = fixture.candidate.workspaceKey;
+  // The context and verified profile may serialize the same identity in different orders.
+  context.expected.workspaceIdentity = {
+    ino: fixture.workspaceIdentity.ino,
+    dev: fixture.workspaceIdentity.dev,
+  };
+  const argv = [
+    'activate', '--bundle', path.join(fixture.root, 'activation'),
+    '--target-context', path.join(fixture.root, 'context.json'),
+    '--learn-revision', fixture.revision, '--workdir', fixture.alias,
+  ];
+  function invocation(expectedContext = context) {
+    const observed = { imports: [], verifications: [], receipts: [] };
+    const dependencies = {
+      geteuid: () => 0,
+      invokingUser: { uid: process.geteuid() },
+      readTrustedJson: async () => ({ document: {} }),
+      validateTargetContext: () => expectedContext,
+      readHealth: () => healthFixture(),
+      async verifyCandidate(directory, options) {
+        observed.verifications.push({ directory, options });
+        return fixture.verifyCandidate(directory, options);
+      },
+      store: {
+        async importActivation(bundle, input) {
+          observed.imports.push({ bundle, input });
+          return { state: stateFixture() };
+        },
+      },
+      print(value) { observed.receipts.push(value); },
+    };
+    return { observed, dependencies };
+  }
+
+  await t.test('equivalent identities and a workspace symlink import the verified launch reference', async () => {
+    const { observed, dependencies } = invocation();
+    assert.equal(await commandEbpf(argv, dependencies), 0);
+    assert.deepEqual(observed.verifications, [{
+      directory: fixture.candidate.directory,
+      options: {
+        trustedRoot: path.join(fixture.stateDir, 'profiles', 'net'),
+        workdir: fixture.workdir,
+      },
+    }]);
+    assert.equal(observed.imports.length, 1);
+    const { input } = observed.imports[0];
+    assert.deepEqual(input.expected, context.expected);
+    assert.equal(input.launchReference.directory, fixture.candidate.directory);
+    assert.equal(input.launchReference.revision, fixture.revision);
+    assert.equal(input.launchReference.workspaceKey, fixture.candidate.workspaceKey);
+    assert.equal(input.launchReference.imageDigest, SHA_B);
+    assert.equal(input.launchReference.manifestHash, fixture.candidate.manifestHash);
+    assert.equal(input.launchReference.policyHash, fixture.candidate.policyHash);
+    assert.deepEqual(input.launchReference.launchConfig, fixture.candidate.profile.spec.launch.config);
+    assert.equal(input.launchReference.evidenceManifest, fixture.candidate.profile.spec.evidence.manifestPath);
+    assert.equal(observed.receipts[0].kind, 'NoshGuardEbpfActivationReceipt');
+  });
+
+  for (const field of ['dev', 'ino']) {
+    await t.test(`changed ${field} rejects before activation import`, async () => {
+      const changed = structuredClone(context);
+      changed.expected.workspaceIdentity[field] = String(
+        BigInt(changed.expected.workspaceIdentity[field]) + 1n,
+      );
+      const { observed, dependencies } = invocation(changed);
+      await assert.rejects(commandEbpf(argv, dependencies), {
+        message: 'Learned image/workspace identity does not match activation',
+      });
+      assert.equal(observed.verifications.length, 1);
+      assert.equal(observed.imports.length, 0);
+      assert.equal(observed.receipts.length, 0);
+    });
+  }
+
+  await t.test('a different image rejects before activation import', async () => {
+    const changed = structuredClone(context);
+    changed.expected.imageDigest = SHA_A;
+    const { observed, dependencies } = invocation(changed);
+    await assert.rejects(commandEbpf(argv, dependencies), {
+      message: 'Learned image/workspace identity does not match activation',
+    });
+    assert.equal(observed.verifications.length, 1);
+    assert.equal(observed.imports.length, 0);
+  });
+
+  await t.test('a different workspace key rejects before candidate verification or import', async () => {
+    const changed = structuredClone(context);
+    changed.expected.workspaceKey = WORKSPACE_KEY;
+    assert.notEqual(changed.expected.workspaceKey, fixture.candidate.workspaceKey);
+    const { observed, dependencies } = invocation(changed);
+    await assert.rejects(commandEbpf(argv, dependencies), {
+      message: 'Learned workspace does not match activation',
+    });
+    assert.equal(observed.verifications.length, 0);
+    assert.equal(observed.imports.length, 0);
+  });
+
+  await t.test('a replacement directory at the learned path rejects before activation import', async () => {
+    fs.renameSync(fixture.workdir, path.join(fixture.root, 'original-workspace'));
+    fs.mkdirSync(fixture.workdir, { mode: 0o700 });
+    const { observed, dependencies } = invocation();
+    await assert.rejects(commandEbpf(argv, dependencies), {
+      code: 'GUARD_EGRESS_WORKSPACE_IDENTITY_CHANGED',
+    });
+    assert.equal(observed.verifications.length, 1);
+    assert.equal(observed.imports.length, 0);
+  });
 });
 
 test('ebpf activation management is root-only', async () => {
@@ -267,6 +497,7 @@ test('activation imports serialize one-time grant-set transitions without lost s
   const second = await createActivationSource(root, 'second', jcs);
   const observedGrantSets = [];
   const store = new activation.EbpfActivationStore({
+    workspaceKey: WORKSPACE_KEY,
     stateRoot: path.join(root, 'state'),
     trustPath,
     lockTimeoutMs: 5_000,
@@ -325,9 +556,11 @@ test('fresh activation stores use distinct grant-set roots', async (t) => {
   const { activation } = await storeModules();
   const root = privateTemporaryDirectory(t);
   const first = new activation.EbpfActivationStore({
+    workspaceKey: WORKSPACE_KEY,
     stateRoot: path.join(root, 'first'),
   });
   const second = new activation.EbpfActivationStore({
+    workspaceKey: WORKSPACE_KEY,
     stateRoot: path.join(root, 'second'),
   });
   const [firstState, secondState] = await Promise.all([
@@ -343,6 +576,7 @@ test('activation lock contention fails closed with a stable busy code', async (t
   const { activation } = await storeModules();
   const root = privateTemporaryDirectory(t);
   const store = new activation.EbpfActivationStore({
+    workspaceKey: WORKSPACE_KEY,
     stateRoot: path.join(root, 'state'),
     trustPath: path.join(root, 'unused-trust.json'),
     lockTimeoutMs: 10,

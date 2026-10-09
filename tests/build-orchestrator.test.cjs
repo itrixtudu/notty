@@ -2785,3 +2785,29 @@ test('managed capture cleanup aggregates bootstrap, proxy stop, and network fail
     'network-cleanup',
   ]);
 });
+
+test('CI collector lifecycle elevation is noninteractive and still uses the trusted helper', async (t) => {
+  const { defaultPrivilegedInvoker } = await orchestratorModule();
+  const previous = process.env.NOSH_BUILD_NONINTERACTIVE;
+  t.after(() => { if (previous === undefined) delete process.env.NOSH_BUILD_NONINTERACTIVE; else process.env.NOSH_BUILD_NONINTERACTIVE = previous; });
+  // Intercept execution after trust checks; no sudo process is started.
+  const helper = fs.realpathSync('/usr/bin/true');
+  for (const enabled of [false, true]) {
+    if (enabled) process.env.NOSH_BUILD_NONINTERACTIVE = '1'; else delete process.env.NOSH_BUILD_NONINTERACTIVE;
+    const result = defaultPrivilegedInvoker('begin', { clientUid: process.getuid() }, {
+      guardBin: helper,
+      spawnSyncImpl(command, args, options) {
+        if (process.geteuid() === 0) {
+          assert.equal(command, helper);
+          assert.deepEqual(args, ['build-session', 'begin']);
+        } else {
+          assert.equal(command, 'sudo');
+          assert.deepEqual(args, [...(enabled ? ['-n'] : []), '--', helper, 'build-session', 'begin']);
+        }
+        assert.equal(JSON.parse(options.input).clientUid, process.getuid());
+        return { status: 0, stdout: '{"ok":true}' };
+      },
+    });
+    assert.deepEqual(result, { ok: true });
+  }
+});

@@ -53,14 +53,14 @@ test('development origins reject schemes, ports, paths, and wildcards', () => {
   }
 });
 
-test('managed policy review page is explicitly no-store', async () => {
+test('managed review pages are explicitly no-store', async () => {
   const rules = await loadConfig().headers();
-  assert.deepEqual(rules, [{
-    source: '/policy-review',
+  assert.deepEqual(rules, ['/policy-review', '/tool-review', '/setup'].map(source => ({
+    source,
     headers: [
       { key: 'Cache-Control', value: 'no-store' },
       { key: 'Referrer-Policy', value: 'no-referrer' },
       { key: 'X-Content-Type-Options', value: 'nosniff' },
     ],
-  }]);
+  })));
 });

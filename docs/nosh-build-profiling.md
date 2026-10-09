@@ -52,10 +52,10 @@ There are two explicit collection levels:
 
 ```bash
 # Kernel-scoped IP, protocol, port, process/socket, and userspace-decoded DNS.
-./build-nosh.sh net learn --http-capture none
+./scripts/build-nosh.sh net learn --http-capture none
 
 # The same eBPF evidence plus managed HTTP(S) request/response capture and CAS.
-./build-nosh.sh net learn --http-capture mitmproxy
+./scripts/build-nosh.sh net learn --http-capture mitmproxy
 ```
 
 `none` is the default and is the shortest verifier/load smoke. `mitmproxy`
@@ -121,14 +121,14 @@ Review handoff automatically; use `--no-review` to suppress it:
 
 
 ```bash
-./build-nosh.sh
-./build-nosh.sh profile
-./build-nosh.sh net learn
+./scripts/build-nosh.sh
+./scripts/build-nosh.sh profile
+./scripts/build-nosh.sh net learn
 ```
 
 `IMAGE_NAME`, `TARGET`, `USERNAME`, `USER_UID`, and `USER_GID` are passed to
 the profiled wrapper in the same way as an ordinary `build-nosh.sh` build.
-For `./build-nosh.sh net learn`, Nosh automatically opens the persisted build
+For `./scripts/build-nosh.sh net learn`, Nosh automatically opens the persisted build
 profile in the managed Policy Review UI after learning. The terminal prints a
 clickable `http://172.*:3000/policy-review?graph=...` link; use
 `--no-review` for machine-only or CI runs. Public JSON, private JSON, dry-run,
@@ -143,7 +143,7 @@ The default `local` target and the existing `base`, `agent`, `hardware`,
 distinct image tag when profiling its pinned CLI and runtime libraries:
 
 ```bash
-IMAGE_NAME=nosh:ollama TARGET=ollama ./build-nosh.sh profile
+IMAGE_NAME=nosh:ollama TARGET=ollama ./scripts/build-nosh.sh profile
 ```
 
 This opt-in cold profile includes the large Ollama distribution download and
@@ -155,7 +155,7 @@ Ollama daemon state.
 The repository includes a non-destructive demonstration workflow:
 
 ```bash
-./profile-build-and-run.sh
+./scripts/profile-build-and-run.sh
 ```
 
 Run it as the Docker-authorized user, not through `sudo`. It performs these
@@ -181,7 +181,7 @@ Select a different window, image, target, cache condition, or mounted runtime
 workspace with:
 
 ```bash
-./profile-build-and-run.sh \
+./scripts/profile-build-and-run.sh \
   --duration 180 \
   --image nosh \
   --target local \
@@ -194,16 +194,16 @@ profile exercises the `ollama` command itself. Managed Copilot and Collab
 backends connect from Codex to an external daemon and work with the lean
 targets.
 
-For the shortest build-to-review handoff, use `./build-nosh.sh net learn`.
+For the shortest build-to-review handoff, use `./scripts/build-nosh.sh net learn`.
 It derives the just-built image digest, builds or reuses the managed Policy
 Review UI image, and opens the review automatically. For separately pinned
 review images, configure them once:
 
 ```bash
-./setup-nosh.sh \
+./scripts/setup-nosh.sh \
   --policy-tooling-image sha256:<approved-64-hex-tooling-image-id> \
   --policy-review-ui-image sha256:<approved-64-hex-review-ui-image-id>
-./profile-build-and-review.sh --cache-mode cold
+./scripts/profile-build-and-review.sh --cache-mode cold
 ```
 
 Warm-only evidence cannot advance a behavioral candidate, so use `cold` or the
@@ -278,7 +278,7 @@ retention, and cleanup are preserved. The workflow consumes the hash-bound
 
 ## Reviewed-policy enforcement smoke
 
-The supported one-click entrypoint is `./build-nosh.sh net learn`: it profiles
+The supported one-click entrypoint is `./scripts/build-nosh.sh net learn`: it profiles
 the build, opens Policy Review, and persists the DecisionSet selected in the
 UI. Use the signed projection/activation workflow above to enforce that exact
 JSON. The deterministic enforcement regression is
@@ -403,7 +403,7 @@ The host requires:
 - the root-owned build adapter configuration at
   `/etc/nosh-guard/build-adapters.json`.
 
-`./reset-nosh-guard.sh --replace-config` rebuilds the four collector binaries,
+`./scripts/reset-nosh-guard.sh --replace-config` rebuilds the four collector binaries,
 installs the current adapter/version contract, and now performs a real
 non-attaching kernel verifier load of `nosh-build` in balanced mode. A reset
 that succeeds has therefore already passed compilation and verifier admission;
@@ -411,9 +411,9 @@ the subsequent basic learn proves real cgroup attachment and inspectable
 evidence:
 
 ```bash
-./reset-nosh-guard.sh --replace-config
-./build-nosh.sh net learn --http-capture none
-./build-nosh.sh net status
+./scripts/reset-nosh-guard.sh --replace-config
+./scripts/build-nosh.sh net learn --http-capture none
+./scripts/build-nosh.sh net status
 ```
 
 Version 1 deliberately fixes the privileged build-session boundary to
@@ -423,10 +423,10 @@ relocatable, but `/etc/nosh-guard`, `/var/lib/nosh-guard`, the runtime socket,
 systemd unit destination, and sudoers destination remain fixed host-integration
 paths.
 
-Run `./setup-nosh.sh` to create the user launchers and path record. This
+Run `./scripts/setup-nosh.sh` to create the user launchers and path record. This
 unprivileged command never invokes sudo. If the root Guard is absent, it prints
 the checksum verification, private extraction, and host-bundle installer
-commands to review and run. `./setup-nosh.sh --check` verifies both launcher
+commands to review and run. `./scripts/setup-nosh.sh --check` verifies both launcher
 and host readiness; `--guard-prefix /opt/notty` selects a custom root-owned
 software prefix.
 
@@ -473,7 +473,7 @@ must advertise private cgroup namespaces as its default before Nosh starts the
 privileged BuildKit builder; the started builder and root Guard independently
 revalidate that boundary.
 
-`./release-audit.sh` installs the Debian CO-RE toolchain in its digest-pinned
+`./scripts/release-audit.sh` installs the Debian CO-RE toolchain in its digest-pinned
 audit image and compiles all four objects, skeletons, and loaders in the offline
 verification phase. The unprivileged audit intentionally does not
 verifier-load or attach BPF; retain that check in the privileged host smoke
@@ -561,7 +561,7 @@ installer, and removes its unprivileged work directory on exit.
 The default software prefix is `/usr/local`. To use a reviewed root-owned
 prefix such as `/opt/notty`, pass `--prefix /opt/notty` to `install`,
 `verify`, and `uninstall`, and record the same choice with
-`./setup-nosh.sh --guard-prefix /opt/notty`. The installer renders the
+`./scripts/setup-nosh.sh --guard-prefix /opt/notty`. The installer renders the
 manifest-covered wrappers, adapter paths, service units, verifier, and sudoers
 commands for that prefix. Fixed configuration, state, socket, unit, and
 sudoers locations do not move.
@@ -622,7 +622,7 @@ After changing Guard or collector sources, refresh the existing host
 installation from the reviewed checkout with:
 
 ```bash
-./reset-nosh-guard.sh
+./scripts/reset-nosh-guard.sh
 ```
 
 Run the wrapper as the Docker-authorized user, not with `sudo`. It discovers
@@ -633,7 +633,7 @@ an in-place versioned refresh: it enables/starts and deep-verifies the daemon
 without deleting `/etc/nosh-guard` or `/var/lib/nosh-guard`. The default
 fails closed if a bundle-authoritative adapter or version file differs. After
 reviewing an intentional collector-contract upgrade, run
-`./reset-nosh-guard.sh --replace-config` to replace only those
+`./scripts/reset-nosh-guard.sh --replace-config` to replace only those
 bundle-authoritative files. That option never replaces the operator-managed
 network contract and never deletes Guard state or evidence.
 

@@ -116,7 +116,7 @@ through `review decisions --input` first.
 Run the one-click profile from the repository root on the Docker host:
 
 ```console
-./build-nosh.sh net learn
+./scripts/build-nosh.sh net learn
 ```
 
 The command opens the managed Policy Review UI and prints exact paths such as:
@@ -214,7 +214,7 @@ their port numbers do not make them implicit allows or invariant denies.
 Build network learning has an explicit managed HTTP option:
 
 ```bash
-./build-nosh.sh net learn --http-capture mitmproxy
+./scripts/build-nosh.sh net learn --http-capture mitmproxy
 ```
 
 The digest-pinned mitmproxy adapter records a provider-neutral private stream:
@@ -263,7 +263,7 @@ editable: operator decisions and notes may change, but its `candidateHash` and
 `evidenceManifestHash` must continue to identify the exact captured inputs.
 Portable review material never replaces the private evidence as authority.
 
-Create offline SPDX SBOMs with the digest-pinned scanner. Existing
+Create offline SPDX inventories with the reviewed local policy tooling image. Existing
 SPDX/CycloneDX JSON can be used instead. For an authoritative build/runtime
 review, select exact independently reviewed tooling and UI image IDs, then let
 the combined wrapper validate, compose, health-check, and open the review:
@@ -271,10 +271,10 @@ the combined wrapper validate, compose, health-check, and open the review:
 ```bash
 nosh review sbom --context . --image local/image:tag --output sbom-001
 
-./setup-nosh.sh \
+./scripts/setup-nosh.sh \
   --policy-tooling-image sha256:<approved-64-hex-tooling-image-id> \
   --policy-review-ui-image sha256:<approved-64-hex-review-ui-image-id>
-./profile-build-and-review.sh --cache-mode cold \
+./scripts/profile-build-and-review.sh --cache-mode cold \
   --sbom-source "$PWD/sbom-001/source.spdx.json" \
   --sbom-image "$PWD/sbom-001/image.spdx.json"
 ```
@@ -283,7 +283,31 @@ The wrapper rejects mutable tags and ABI mismatch, never pulls either image,
 runs bundle projection with networking disabled, starts the reviewed UI and
 graph server on a dedicated internal Docker bridge, inspects both current
 container addresses, configures exact-origin CORS, waits for the image health
-check, and opens that exact UI. It
+check, and opens that exact UI. Bridges may use any RFC1918 IPv4 range
+(`10/8`, `172.16/12`, or `192.168/16`); the exact network, container, and image
+identities are still required. Configure a reserved pool through
+`nosh init --step network` before opening review. The launcher allocates an
+explicit `/29` only within that pool, checks all host IPv4 routing tables,
+interface prefixes, Docker network subnets and configured exclusions, and
+rechecks the allocation after creation and on reuse. Missing configuration,
+remote Docker endpoints, container-side route inspection and pool exhaustion
+stop startup; there is no fallback to Docker's automatic pools. Account for
+disconnected LANs and VPNs when reserving the pool and listing exclusions.
+
+Failed startup cleans up its own containers and its verified empty network.
+For a completed review, the launcher prints this command with the exact session:
+
+```bash
+python3 -I -S /absolute/path/to/review-session/stop-review.py \
+  --session /absolute/path/to/review-session
+```
+
+The helper is frozen outside the workload before profiling. It verifies the
+saved Docker object identities before stopping the two services
+and removing their empty bridge. The frozen bundle and decisions remain, and
+review can be reopened. It refuses unrelated attachments and objects; it does
+not prune other Docker networks or remove old orphan objects without a saved
+ownership receipt. The launcher
 does not trust candidate code or an arbitrary pre-existing server. Supplying no
 SBOM leaves blocking coverage; `--allow-missing-sbom` is an explicit
 review-only downgrade and does not permit activation.
@@ -308,7 +332,7 @@ the repository root on the host, recreate the development container with the
 reviewer's port published only on loopback:
 
 ```console
-./nosh.sh recreate --no-start-app --publish 127.0.0.1:3001
+./scripts/nosh.sh recreate --no-start-app --publish 127.0.0.1:3001
 ```
 
 Then start the standalone application from `policy-review/` inside the attached
@@ -329,7 +353,7 @@ wrapper at the detected Docker bridge address (for example
 tokenized graph URL printed by `review serve` (or a materialized graph
 JSON file). A launcher may safely deep-link the frozen graph as
 `/policy-review?graph=<percent-encoded-graph-url>`. Auto-load accepts a
-tokenized loopback diagnostics URL or the exact Docker `172.16/12` graph
+tokenized loopback diagnostics URL or the exact private Docker bridge graph
 origin attested by the managed launcher; another private or public origin is
 rejected. It removes the token from browser history before fetching. Install dependencies and run other
 package-manager commands only inside the development container.
@@ -415,15 +439,15 @@ nosh policy project \
 The complete Guard eBPF flow is intentionally split across review,
 projection, durable approval, and a short-lived single-use activation grant:
 
-1. For the one-click workflow, `./build-nosh.sh net learn` derives the tooling
+1. For the one-click workflow, `./scripts/build-nosh.sh net learn` derives the tooling
    image ID from the learned build output and builds/reuses the managed UI
    image automatically. No SHA export is required. Deployments that require
-   independently pinned images can instead run `./setup-nosh.sh` with exact
+   independently pinned images can instead run `./scripts/setup-nosh.sh` with exact
    local IDs; the tooling image must carry
    `io.notty.guard.policy-tooling-abi=1`:
 
    ```bash
-   ./setup-nosh.sh \
+   ./scripts/setup-nosh.sh \
      --policy-tooling-image sha256:<approved-64-hex-tooling-image-id> \
      --policy-review-ui-image sha256:<approved-64-hex-review-ui-image-id>
 
@@ -434,12 +458,12 @@ projection, durable approval, and a short-lived single-use activation grant:
      "$NOSH_POLICY_TOOLING_IMAGE"
    ```
 
-2. Run `./profile-build-and-review.sh --cache-mode cold`. It validates both
+2. Run `./scripts/profile-build-and-review.sh --cache-mode cold`. It validates both
    exact local images, snapshots any supplied SBOM files before candidate code
    runs, executes bundle projection with `--pull never` and `--network none`,
    starts the trusted tokenized graph server and a health-checked UI container
    on one dedicated internal Docker bridge, discovers their exact addresses,
-   and opens the resulting `172.*` UI link. Review every proposal and export the complete
+   and opens the resulting UI link. Review every proposal and export the complete
    `NoshPolicyDecisionSet` as `decisions.json`. Missing SBOM coverage blocks by
    default; `--allow-missing-sbom` is an explicit review-only downgrade and
    never makes a graph activation-eligible.
@@ -455,6 +479,7 @@ projection, durable approval, and a short-lived single-use activation grant:
    FROZEN_REVIEW_BUNDLE='/absolute/path/printed-as-Frozen-review-bundle'
    RUNTIME_TARGET_CONTEXT='/absolute/path/printed-as-Guard-eBPF-target-context'
    EXPORTED_DECISIONS='/absolute/path/to/exported-decisions.json'
+   LEARN_REVISION='<exact learned revision used for this review>'
    # Set these from the separately provisioned trust roles. The audiences must
    # exactly match /etc/nosh-guard/ebpf-deployment-trust.json.
    REVIEWER='<operator-reviewer-id>'
@@ -573,9 +598,9 @@ projection, durable approval, and a short-lived single-use activation grant:
    review private key:
 
    ```bash
-   sudo -- "$GUARD_BIN" ebpf status --json
+   sudo -- "$GUARD_BIN" ebpf status --workload dev --workdir "$PWD" --json
    ACTIVE_GRANT_SET_DIGEST="$(
-     sudo -- "$GUARD_BIN" ebpf status --json |
+     sudo -- "$GUARD_BIN" ebpf status --workload dev --workdir "$PWD" --json |
        jq -er '.activeGrantSetDigest'
    )"
 
@@ -621,6 +646,7 @@ projection, durable approval, and a short-lived single-use activation grant:
 
    ```bash
    sudo -- "$GUARD_BIN" ebpf activate \
+     --workload dev --workdir "$PWD" --learn-revision "$LEARN_REVISION" \
      --bundle "$POLICY_IO/activation-001" \
      --target-context "$POLICY_IO/guard-ebpf-target-context.json"
    sudo -- "$GUARD_BIN" net enforce --workdir "$PWD"
@@ -1015,23 +1041,42 @@ reachability.
 
 ## SBOM generation
 
-`config/nosh-review/tools.json` pins Syft by OCI digest. Generation runs in an
-offline, unprivileged container: source is mounted read-only and final-image
-scanning uses a local `docker image save` archive, not the Docker socket inside
-the scanner. Checksums prove integrity, not provenance; use a reviewed checkout
-and reviewed pinned image update. Imported SPDX JSON and CycloneDX JSON remain
-supported for systems that already produce SBOMs.
+The built-in `nosh-inventory` collector runs inside the exact local policy tooling
+image, using Python's standard library. No scanner image is downloaded. Rebuild
+older tooling images once to include the collector. The host launcher exports a
+never-started container from the selected immutable image; the offline collector
+receives only read-only source/archive inputs and a separate output directory.
+It has no Docker socket and never executes workload code or package managers.
+
+Inventories cover npm lockfiles and installed npm packages, Debian package
+databases, and Python installed/copied project metadata. Embedded collection
+reports bind the input hashes, image ID, exclusions and limitations. Missing or
+malformed required metadata blocks Apply. Standalone software without package
+metadata is a visible limitation, not executable approval or a malware verdict.
+The research `tmp/` directory is excluded from source collection and builds.
+
+Source metadata is refreshed before Apply; changed inputs require a fresh review.
+Image inventories may be reused for the same exact image and tooling identity.
+Imported SPDX/CycloneDX documents remain reviewable, but a parseable document
+alone does not establish collection completeness. Regenerate with the built-in
+collector to satisfy the collection-report requirement.
 
 ## Saved runtime profiles
 
-For a workspace policy, run `./nosh.sh net learn`. When learning finishes, the
+Runtime profiles now distinguish `--workload dev` (the default) and
+`--workload run`. Dev shares available agent homes with the host; run omits
+them. Review and activation are independent per workspace and workload.
+See [workload profiles](nosh-workloads.md) for setup and pinned agent
+baseline inputs.
+
+For a workspace policy, run `./scripts/nosh.sh net learn`. When learning finishes, the
 launcher opens runtime review. `--no-review` skips opening the UI; JSON learning
 also stays noninteractive. Reopen without relearning or rebuilding:
 
 ```sh
-./nosh.sh net review --workdir /absolute/workspace
+./scripts/nosh.sh net review --workdir /absolute/workspace
 # Or choose an older exported learning run:
-./nosh.sh net review --workdir /absolute/workspace --revision LEARN_ID
+./scripts/nosh.sh net review --workdir /absolute/workspace --revision LEARN_ID
 ```
 
 The endpoint table shows observed DNS names beside the actual address, protocol,
@@ -1040,11 +1085,14 @@ means no DNS evidence was captured; no reverse lookup is invented. Allow/Deny
 controls select an IP allow list. These IP rules do not follow future DNS changes.
 Unconvertible domain evidence remains visible and may block native activation.
 
-Enter a reviewer, select endpoints, and acknowledge the review. **Save draft**
-preserves unfinished work. **Save profile** saves completed decisions and displays
-an exact, digest-bound **Apply command**. **Download JSON** exports a separate
-browser download; **Import saved JSON** restores a review bound to the same graph.
-The UI displays the host paths and save status. Changing a saved selection removes
+Select allowed and denied connections; unfinished progress saves automatically.
+**Show remaining** finds unfinished decisions. Open **Review selections**, enter
+a reviewer, and acknowledge the review. **Save reviewed policy** saves completed decisions and displays
+an exact, digest-bound **Apply command**. **More options → Download JSON** exports a separate
+browser download; **More options → Import saved JSON** restores a review bound to the same graph.
+The UI shows **Saving progress…**, **Progress saved**, or a retryable save failure.
+Host paths and raw blockers are under **Technical details**. Failed saves retain
+your choices in the open tab; retry or download a copy before leaving. Changing a saved selection removes
 its Apply command until you save again. Reopening the same session restores its
 draft. Saving or downloading alone does not activate anything.
 
@@ -1064,11 +1112,20 @@ are retained in the printed private directory. Failures preserve saved review.
 Repeating the currently active selection does not mint another grant.
 
 Apply needs both source and exact-image SBOMs, complete evidence, supported rules,
-and the installed Guard's signing trust. `net review` uses the configured cached
-Syft image if available; otherwise pass `--sbom-source FILE --sbom-image FILE`.
+and the installed Guard's signing trust. `net review` generates inventories with
+the local tooling image before opening review; `net inventory --workdir DIR
+--image SHA256` prepares them explicitly.
 Missing SBOMs still permit reviewing and saving, but prevent signing.
 
-Create a caller-owned mode-0600 `~/.config/nosh/policy-apply.json` (override with
+For first-time setup, run wizard step **6 — Set up signing**, or
+`python3 scripts/nosh-signing-setup.py --workdir "$PWD"` as your normal host user.
+The helper uses the exact local policy-tooling image in separate networkless
+containers, then previews public trust and asks before its sudo installation.
+It creates the user configuration, never replaces existing trust/configuration,
+and prints a resume command if setup needs to be continued. Retain the private
+signing directory permanently; it contains your signing keys.
+
+For existing signing authority, create a caller-owned mode-0600 `~/.config/nosh/policy-apply.json` (override with
 `NOSH_POLICY_APPLY_CONFIG`) using the existing installed trust's keys/audiences:
 
 ```json
@@ -1085,7 +1142,7 @@ Create a caller-owned mode-0600 `~/.config/nosh/policy-apply.json` (override wit
 Keep private keys outside the workspace, review, and candidate directories. Apply
 mounts each signing key only into its own signing container. The browser receives
 no private keys or Docker socket. This configuration does not install or change
-root-owned trust. `./nosh.sh net apply --help` repeats the setup details.
+root-owned trust. `./scripts/nosh.sh net apply --help` repeats the setup details.
 
 Activation affects future guarded runs for the exact image/workspace. Use the
 printed `net enforce` command and privileged status command to check the active revision.
@@ -1096,6 +1153,11 @@ replaces it. Existing containers keep their current policy.
 
 `build-nosh.sh net learn` captures build traffic. Its build review is useful for
 build policy, but a future workspace run requires runtime learning as above.
+UI image updates use separate review services and retain prior sessions. When
+exactly one frozen review matches the inputs and tooling image, its bundle and
+saved choices are copied and revalidated; existing services are not stopped.
+Adding SBOM evidence changes the review graph and requires reviewing the new bundle.
+
 Rebuild tooling/UI images and reinstall the Guard host bundle when updating the
 implementation; an existing exact image ID still contains its older code.
 

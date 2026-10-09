@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Nosh Protocol Handler
-Exec=/home/xpatchdev/notty/nosh-xdg-handler.sh %u
+Exec=/home/xpatchdev/notty/scripts/nosh-xdg-handler.sh %u
 Type=Application
 Terminal=false
 MimeType=x-scheme-handler/nosh;

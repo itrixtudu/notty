@@ -6,7 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
-const hostScript = path.join(root, 'release-audit.sh');
+const hostScript = path.join(root, 'scripts/release-audit.sh');
 const containerScript = path.join(root, 'scripts', 'release-audit-container.sh');
 const ciHostScript = path.join(root, 'scripts', 'ci-release-audit.sh');
 const pretagChecker = path.join(root, 'scripts', 'check-pretag-audit-report.py');
@@ -108,7 +108,7 @@ test('CI uses host Git checkout and runs package work only in the Docker audit',
   assert.match(workflow, /unset CHECKOUT_TOKEN checkout_auth/);
   assert.match(workflow, /permissions:\s*\n\s+contents: read/);
   assert.match(workflow, /git rev-list --parents -n 1 HEAD/);
-  assert.match(workflow, /run: \.\/release-audit\.sh/);
+  assert.match(workflow, /run: \.\/scripts\/release-audit\.sh/);
   assert.match(workflow, /run: \.\/scripts\/ci-release-audit\.sh/);
   assert.doesNotMatch(workflow, /pull_request_target|actions\/setup-node/);
   assert.doesNotMatch(workflow, /^\s*run:\s*(?:npm|npx|node)\b/m);
@@ -533,7 +533,7 @@ test('release tag must match the captured RELEASE candidate', (t) => {
   fs.mkdirSync(path.join(fixture, 'scripts'), { recursive: true });
   fs.mkdirSync(fakeBin);
   for (const [source, destination] of [
-    [hostScript, path.join(fixture, 'release-audit.sh')],
+    [hostScript, path.join(fixture, 'scripts/release-audit.sh')],
     [containerScript, path.join(fixture, 'scripts', 'release-audit-container.sh')],
     [auditDockerfile, path.join(fixture, 'Dockerfile.release-audit')],
     [path.join(root, 'RELEASE.md'), path.join(fixture, 'RELEASE.md')],
@@ -551,7 +551,7 @@ test('release tag must match the captured RELEASE candidate', (t) => {
   fixtureLock.packages[''].version = expectedReleaseVersion;
   fs.writeFileSync(fixturePackagePath, `${JSON.stringify(fixturePackage, null, 2)}\n`);
   fs.writeFileSync(fixtureLockPath, `${JSON.stringify(fixtureLock, null, 2)}\n`);
-  fs.chmodSync(path.join(fixture, 'release-audit.sh'), 0o755);
+  fs.chmodSync(path.join(fixture, 'scripts/release-audit.sh'), 0o755);
   fs.writeFileSync(
     path.join(fakeBin, 'docker'),
     '#!/bin/sh\n[ "$1" = info ] && exit 0\nexit 99\n',
@@ -570,7 +570,7 @@ test('release tag must match the captured RELEASE candidate', (t) => {
     assert.equal(gitResult.status, 0, gitResult.stderr);
   }
 
-  const result = run('/bin/bash', [path.join(fixture, 'release-audit.sh'), '--report', reportPath], {
+  const result = run('/bin/bash', [path.join(fixture, 'scripts/release-audit.sh'), '--report', reportPath], {
     cwd: fixture,
     env: {
       PATH: `${fakeBin}:/usr/bin:/bin`,

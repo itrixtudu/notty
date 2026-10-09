@@ -6,6 +6,8 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
+const { inventoryDocument } = require('./helpers/inventory-fixture.cjs');
+
 const CREATED_AT = '2026-09-14T12:00:00.000Z';
 const ROLES = ['nodes', 'observations', 'coverage', 'findings', 'proposals', 'diff'];
 
@@ -87,10 +89,7 @@ async function fixture(t) {
   ]));
   const sources = [...graph.sources, runtime.source];
   for (const role of ['source', 'image']) {
-    const document = {
-      spdxVersion: 'SPDX-2.3', name: `${role}-fixture`,
-      packages: [{ SPDXID: 'SPDXRef-Package', name: `${role}-package`, versionInfo: '1.0.0' }],
-    };
+    const document = inventoryDocument(role, graph.scope.imageDigest);
     const generated = sbom.sbomGraphRecords({
       scope: graph.scope, role, digest: core.sha256Digest(document),
       sbom: sbom.normalizeSbomDocument(document),

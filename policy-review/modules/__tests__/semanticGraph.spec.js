@@ -141,12 +141,17 @@ describe('semantic policy graph', () => {
             `http://127.0.0.1:8765/v1/graph/${'a'.repeat(64)}?extra=1`,
             `http://172.32.0.1:8765/v1/graph/${'a'.repeat(64)}`,
             `http://172.17.999.1:8765/v1/graph/${'a'.repeat(64)}`,
-            `http://10.0.0.2:8765/v1/graph/${'a'.repeat(64)}`,
-            `http://192.168.1.2:8765/v1/graph/${'a'.repeat(64)}`,
             `http://example.test:8765/v1/graph/${'a'.repeat(64)}`,
             'http://127.0.0.1:8765/v1/graph/short',
         ]) {
             expect(() => normalizeLoopbackReviewGraphUrl(invalid)).toThrow('exact tokenized');
+        }
+        for (const origin of ['http://10.0.0.2:8765', 'http://192.168.16.3:8765']) {
+            const url = `${origin}/v1/graph/${'a'.repeat(64)}`;
+            expect(() => normalizeLoopbackReviewGraphUrl(url)).toThrow('requires launcher');
+            expect(normalizeLoopbackReviewGraphUrl(url, {
+                attestedGraphOrigin: origin,
+            })).toBe(url);
         }
     });
 

@@ -6,7 +6,7 @@
   "description": "Node-pty MCP server",
   "main": "server.js",
   "bin": {
-    "nosh": "./nosh.sh",
+    "nosh": "./scripts/nosh.sh",
     "nosh-guard": "./bin/nosh-guard",
     "nosh-gateway": "./bin/nosh-gateway",
     "nosh-guardd": "./bin/nosh-guardd",

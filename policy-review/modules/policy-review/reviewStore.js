@@ -2,6 +2,7 @@ import { createContext, createElement, useContext, useMemo, useReducer } from 'r
 
 import { createSampleSemanticGraph, POLICY_REVIEW_TARGETS } from './semanticGraph';
 import { createTimelineProjection, TIMELINE_DOMAINS } from './timelineProjection';
+import { validateReviewDraft } from './savedReview';
 
 const PolicyReviewContext = createContext(null);
 
@@ -258,7 +259,8 @@ const reconcileTimelineViewState = (timeline, graph) => {
 export const createPolicyReviewState = graph => ({
     graph,
     decisions: createProposalDecisions(graph),
-    intendedTarget: POLICY_REVIEW_TARGETS[0],
+    intendedTarget: graph.scope.class === 'runtime' ? 'guard-ebpf' : POLICY_REVIEW_TARGETS[0],
+    profileName: '',
     reviewer: '',
     reviewerAcknowledged: false,
     selected: null,
@@ -279,6 +281,14 @@ export const createPolicyReviewState = graph => ({
 
 export const policyReviewReducer = (state, action) => {
     switch (action.type) {
+        case 'SET_PROFILE_NAME':
+            return { ...state, profileName: String(action.value).slice(0, 128) };
+        case 'RESTORE_REVIEW': {
+            const draft = validateReviewDraft(action.document, state.graph);
+            return { ...state, profileName: draft.profileName, decisions: draft.decisions,
+                reviewer: draft.reviewer, reviewerAcknowledged: draft.reviewerAcknowledged,
+                intendedTarget: draft.intendedTarget };
+        }
         case 'LOAD_GRAPH':
             return {
                 ...createPolicyReviewState(action.graph),
@@ -293,8 +303,11 @@ export const policyReviewReducer = (state, action) => {
             return selectRecord(state, action);
         case 'SELECT_PROPOSAL':
             return selectRecord(state, action);
+        case 'SELECT_ALL_NETWORK_PROPOSALS':
         case 'SELECT_ALL_PROPOSALS': {
-            const selectedProposalIds = state.graph.proposals.map(proposal => proposal.id);
+            const selectedProposalIds = state.graph.proposals
+                .filter(proposal => action.type !== 'SELECT_ALL_NETWORK_PROPOSALS' || proposal.intent?.domain === 'network')
+                .map(proposal => proposal.id);
             if (!selectedProposalIds.length) {
                 return state;
             }

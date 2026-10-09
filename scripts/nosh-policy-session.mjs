@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { prepareReviewSession, snapshotReviewSelection } from '../lib/guard/review/session.js';
+import { prepareReviewSession, snapshotReviewSelection, checkReviewSession, migrateReviewDraft } from '../lib/guard/review/session.js';
 
 const [command, ...argv] = process.argv.slice(2);
 const options = {};
@@ -15,6 +15,9 @@ try {
     ...options, configAvailable: options['config-available'], applyConfig: options['apply-config'],
     sbomSource: options['sbom-source'], sbomImage: options['sbom-image'],
   }) : command === 'snapshot' ? await snapshotReviewSelection(options.session, options.digest, options.output)
-    : (() => { throw new Error('Use prepare or snapshot'); })();
+    : command === 'check' ? await checkReviewSession(options.session, options.digest, options['current-source'])
+      : command === 'migrate' ? await migrateReviewDraft(options.session, options.source)
+        : (() => { throw new Error('Use prepare, check, migrate or snapshot'); })();
   process.stdout.write(`${JSON.stringify(result)}\n`);
+  if (command === 'check' && !(options.digest ? result.readyForApply : result.readyForReview)) process.exitCode = 2;
 } catch (error) { process.stderr.write(`nosh-policy-session: ${error.message}\n`); process.exitCode = 1; }

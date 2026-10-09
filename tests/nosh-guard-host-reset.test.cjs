@@ -8,7 +8,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const repository = path.resolve(__dirname, '..');
-const resetPath = path.join(repository, 'reset-nosh-guard.sh');
+const resetPath = path.join(repository, 'scripts/reset-nosh-guard.sh');
 
 function run(command, args, options = {}) {
   return childProcess.spawnSync(command, args, {
@@ -71,7 +71,7 @@ test('host Guard reset verifies a fresh bundle before the only sudo step', (t) =
   const builderOutput = path.join(fixture, 'builder-output.txt');
   const sudoLog = path.join(fixture, 'sudo.log');
   const receiptPath = path.join(fixture, 'layout-receipt.conf');
-  const fixtureResetPath = path.join(fixture, 'reset-nosh-guard.sh');
+  const fixtureResetPath = path.join(fixture, 'scripts/reset-nosh-guard.sh');
   fs.mkdirSync(scripts, { mode: 0o700 });
   fs.mkdirSync(fakeBin, { mode: 0o700 });
   const resetSource = fs.readFileSync(resetPath, 'utf8');

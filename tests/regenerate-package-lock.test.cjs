@@ -6,7 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
-const hostScript = path.join(root, 'regenerate-package-lock.sh');
+const hostScript = path.join(root, 'scripts/regenerate-package-lock.sh');
 const containerScript = path.join(root, 'scripts', 'regenerate-package-lock-container.sh');
 const dockerfilePath = path.join(root, 'Dockerfile.package-lock');
 const releaseAuditDockerfilePath = path.join(root, 'Dockerfile.release-audit');
@@ -28,7 +28,7 @@ function createFixture(tempRoot) {
   const fixture = path.join(tempRoot, 'checkout');
   fs.mkdirSync(path.join(fixture, 'scripts'), { recursive: true });
   for (const [source, destination] of [
-    [hostScript, path.join(fixture, 'regenerate-package-lock.sh')],
+    [hostScript, path.join(fixture, 'scripts/regenerate-package-lock.sh')],
     [containerScript, path.join(fixture, 'scripts', 'regenerate-package-lock-container.sh')],
     [dockerfilePath, path.join(fixture, 'Dockerfile.package-lock')],
     [path.join(root, 'package.json'), path.join(fixture, 'package.json')],
@@ -36,7 +36,7 @@ function createFixture(tempRoot) {
   ]) {
     fs.copyFileSync(source, destination);
   }
-  fs.chmodSync(path.join(fixture, 'regenerate-package-lock.sh'), 0o755);
+  fs.chmodSync(path.join(fixture, 'scripts/regenerate-package-lock.sh'), 0o755);
   fs.chmodSync(
     path.join(fixture, 'scripts', 'regenerate-package-lock-container.sh'),
     0o755,
@@ -137,7 +137,7 @@ test('missing Docker never calls a host npm executable or changes the lock', (t)
   const { fixture } = createFixture(tempRoot);
   const fakeBin = path.join(tempRoot, 'bin');
   const npmMarker = path.join(tempRoot, 'host-npm-was-called');
-  const fixtureScript = path.join(fixture, 'regenerate-package-lock.sh');
+  const fixtureScript = path.join(fixture, 'scripts/regenerate-package-lock.sh');
   const fixtureLock = path.join(fixture, 'package-lock.json');
   const lockBefore = fs.readFileSync(fixtureLock);
   fs.mkdirSync(fakeBin);
@@ -199,7 +199,7 @@ test('symlink lock target is rejected before Docker', (t) => {
     { mode: 0o755 },
   );
 
-  const result = run('/bin/bash', [path.join(fixture, 'regenerate-package-lock.sh')], {
+  const result = run('/bin/bash', [path.join(fixture, 'scripts/regenerate-package-lock.sh')], {
     cwd: fixture,
     env: { PATH: `${fakeBin}:/usr/bin:/bin` },
   });
@@ -317,7 +317,7 @@ exit 99
     { mode: 0o755 },
   );
 
-  const result = run('/bin/bash', [path.join(fixture, 'regenerate-package-lock.sh')], {
+  const result = run('/bin/bash', [path.join(fixture, 'scripts/regenerate-package-lock.sh')], {
     cwd: fixture,
     env: {
       PATH: `${fakeBin}:/usr/bin:/bin`,
@@ -358,7 +358,7 @@ exit 99
   fs.writeFileSync(candidatePath, '{"invalid":"candidate"}\n');
   const failedValidation = run(
     '/bin/bash',
-    [path.join(fixture, 'regenerate-package-lock.sh'), '--replace-dirty-lock'],
+    [path.join(fixture, 'scripts/regenerate-package-lock.sh'), '--replace-dirty-lock'],
     {
       cwd: fixture,
       env: {

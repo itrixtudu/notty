@@ -19,7 +19,7 @@
       "type": "string",
       "pattern": "^(0|[1-9][0-9]*)$"
     },
-    "collectionDepth": { "enum": ["balanced", "policy"] },
+    "collectionDepth": { "enum": ["process", "balanced", "policy"] },
     "availableSources": {
       "type": "array",
       "uniqueItems": true,
@@ -51,6 +51,10 @@
               "cpu-samples",
               "off-cpu",
               "file-operations",
+              "process-exit",
+              "syscall-summary",
+              "udp-dns-query",
+              "udp-dns-response",
               "block-latency"
             ]
           },

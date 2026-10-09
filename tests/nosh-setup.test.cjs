@@ -8,8 +8,8 @@ const path = require('node:path');
 const test = require('node:test');
 
 const appRoot = path.resolve(__dirname, '..');
-const setupPath = path.join(appRoot, 'setup-nosh.sh');
-const noshPath = path.join(appRoot, 'nosh.sh');
+const setupPath = path.join(appRoot, 'scripts/setup-nosh.sh');
+const noshPath = path.join(appRoot, 'scripts/nosh.sh');
 const checkoutGuardPath = path.join(appRoot, 'bin', 'nosh-guard');
 const missingPrefix = `/opt/notty-setup-test-${process.pid}`;
 

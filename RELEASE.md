@@ -19,7 +19,7 @@ document, this document wins.
 ## Previous Repository Snapshot (2026-07-31)
 
 This snapshot is retained as the finding set for commit `15d560e`; it is not a
-claim about the current checkout. Run `./release-audit.sh` for current automated
+claim about the current checkout. Run `./scripts/release-audit.sh` for current automated
 results. Docker is mandatory and the audit never falls back to host npm.
 
 - The reviewed checkout is branch `v0.4` at commit `15d560e`, tracking
@@ -545,7 +545,7 @@ defaults.
       application sidecar; local shell, agent, hardware, and C-development
       tooling must remain opt-in. Labs targets do not become Supported merely
       because they build.
-- [ ] Keep `./build-nosh.sh` as the canonical image build entrypoint, defaulting
+- [ ] Keep `./scripts/build-nosh.sh` as the canonical image build entrypoint, defaulting
       to the `local` development target. Local targets may map `USERNAME`,
       `USER_UID`, and `USER_GID`, but release artifacts must not embed a
       maintainer username, home path, credential directory, or private tool
@@ -553,7 +553,7 @@ defaults.
 - [ ] Keep personal mounts, provider credentials, device access, and private
       tooling out of image defaults. Expose them only through explicit profiles
       with the minimum required access.
-- [ ] Keep `./nosh.sh` as the canonical launcher. Any retained legacy launcher
+- [ ] Keep `./scripts/nosh.sh` as the canonical launcher. Any retained legacy launcher
       names must be thin compatibility shims rather than divergent
       implementations.
 - [ ] Retain explicit `--image` and `--name` overrides for local and test
@@ -674,10 +674,10 @@ Dependency maintenance and the baseline release audit:
 
 ```sh
 # After reviewing package.json changes; then review and commit the new lock.
-./regenerate-package-lock.sh
+./scripts/regenerate-package-lock.sh
 
 # Run only from the resulting clean, committed checkout.
-./release-audit.sh
+./scripts/release-audit.sh
 ```
 
 The lockfile command is a mutating maintenance tool, not release evidence. It

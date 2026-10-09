@@ -169,12 +169,12 @@ The command contract is:
 
 ```text
 nosh-build-loader health [--cgroup ABSOLUTE_PATH] [--cgroup-id UINT64]
-  [--depth balanced|policy|deep]
+  [--depth process|balanced|policy|deep]
 
-nosh-build-loader verify [--depth balanced|policy|deep]
+nosh-build-loader verify [--depth process|balanced|policy|deep]
 
 nosh-build-loader run --cgroup ABSOLUTE_PATH [--cgroup-id UINT64]
-  [--depth balanced|policy|deep]
+  [--depth process|balanced|policy|deep]
   [--stats-interval-ms 0|100..3600000] [--status-fd FD]
 ```
 
@@ -182,6 +182,9 @@ nosh-build-loader run --cgroup ABSOLUTE_PATH [--cgroup-id UINT64]
 verifier. Root may run `verify` to open and load the selected CO-RE programs,
 then immediately destroy them without attaching to a tracepoint or cgroup. This
 is the definitive preflight for verifier complexity and kernel compatibility.
+`process` is the runtime Guard observer depth: it loads and attaches only the
+successful `sched_process_exec` collector, records no argv, and does not alter
+the user-selectable build-profile depth contract.
 
 The default install path is
 `/usr/local/libexec/nosh-build/nosh-build-loader`. The source adapter set is

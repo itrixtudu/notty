@@ -7,9 +7,13 @@ collab/intragent/managed_agents.json
 .notty/collab-resume*
 /.release-audit/
 /.nosh-guard-host-bundles/
+/.nosh-install.*/
+/.nosh-deb/*
+/Screenshot_*.png
 
 # Local runtime state and credentials; keep these out of source history.
 /cache/
+/tmp/
 /logs/
 /agents/active/
 /agents/history/
@@ -26,15 +30,7 @@ collab/intragent/managed_agents.json
 *.swp
 *.swo
 
-# Local planning, implementation handoff, and release-validation notes.
-/next.md
-/terminal.md
-/workflows.md
-/notty-v0.9b-profiler-privilege-seam.md
-/docs/batch-validation-2026-09-08.md
 
-# Local containment experiment workspace.
-/tidesea/
 
 # Private/provenance-unresolved artwork retained only in the local staging tree.
 /art/acid/

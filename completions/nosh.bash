@@ -131,8 +131,8 @@ _nosh_completion_add_profiles() {
 
 _nosh_completion_accepts_equals() {
   case "$1" in
-    --profile|--config|--network|--security-mode|--security-profile-dir|\
-      --image|--name|--otp|--workdir|--publish|--revision|--reviewer|\
+    --scope|--tool-mode|--allow-mcp-tool|--workload|--agents|--codex-home|--agent-skills|--agent-settings|--agent-plugins|--agent-baseline|--profile|--config|--network|--security-mode|--security-profile-dir|\
+      --image|--name|--otp|--workdir|--guard-prefix|--publish|--revision|--reviewer|\
       --file|--variant|--tag|--target|--platform|--build-arg|--cache-mode|\
       --depth|--http-capture|--duration|--output|--run|--bundle|--baseline|--base-policy|\
       --baseline-override-reason|--sbom-source|--sbom-image|--port|--origin|\
@@ -148,18 +148,20 @@ _nosh_completion_accepts_equals() {
   esac
 }
 
-_nosh_completion() {
-  local commands="start attach stop rm recreate net build review policy gateway auth set-login-password completion"
-  local options="-p --profile --profile-list --collab --no-collab --config --persist --image --name --publish -P --network --security-mode --security-profile-dir --otp --workdir --start-app --no-start-app --dry-run --noauth --no-oauth --no-otp-auth --no-otp -h --help"
+_nosh_completion_docker() {
+  local commands="tools init uninstall start attach stop rm recreate net build review policy gateway auth set-login-password completion"
+  local options="--tool-mode --allow-mcp-tool --workload --agents --codex-home --agent-skills --agent-settings --agent-plugins --detach -p --profile --profile-list --collab --no-collab --config --persist --image --name --publish -P --network --security-mode --security-profile-dir --otp --workdir --start-app --no-start-app --dry-run --noauth --no-oauth --no-otp-auth --no-otp -h --help"
+  local init_options="--review --policy-digest --workload --agents --codex-home --agent-baseline --workdir --image --guard-prefix --dry-run --check --advanced --step --help"
+  local uninstall_options="--user-only --guard --purge-config --purge-state --dry-run --yes -h --help"
   local auth_commands="otp reset"
   local auth_options="--image --workdir --dry-run -h --help"
   local auth_reset_options="$auth_options --secure"
   local net_commands="learn audit approve enforce status"
-  local net_launch_options="-p --profile --collab --no-collab --config --image --name --workdir --start-app --no-start-app --dry-run -h --help"
-  local net_learn_options="$net_launch_options --duration --json"
-  local net_approve_options="--revision --reviewer --yes --workdir --dry-run -h --help"
+  local net_launch_options="--tool-mode --workload --agents --codex-home --agent-skills --agent-settings --agent-plugins -p --profile --collab --no-collab --config --image --name --workdir --start-app --no-start-app --dry-run -h --help"
+  local net_learn_options="$net_launch_options --agent-baseline --duration --json"
+  local net_approve_options="--workload --revision --reviewer --yes --workdir --dry-run -h --help"
   local net_enforce_options="$net_launch_options --revision"
-  local net_status_options="--json --repair --workdir --dry-run -h --help"
+  local net_status_options="--workload --json --repair --workdir --dry-run -h --help"
   local build_commands="profile status net"
   local build_profile_options="--file --variant --tag --target --platform --build-arg --cache-mode --depth --push --output --no-load --private-json --dry-run -h --help"
   local build_status_options="--run --json --dry-run -h --help"
@@ -224,13 +226,13 @@ _nosh_completion() {
       for ((recovery_index = COMP_CWORD - 1; recovery_index > 0; recovery_index--)); do
         recovery_part="${COMP_WORDS[recovery_index]}"
         case "$recovery_part" in
-          --config|--security-profile-dir|--workdir|--file|--bundle|--baseline|--base-policy|\
+          --config|--security-profile-dir|--workdir|--guard-prefix|--file|--bundle|--baseline|--base-policy|\
           --sbom-source|--sbom-image|--decisions|--policy|--key|--context|\
           --approval|--review-key|--deployment-key|--trust|--grant|--output)
             recovered_option="$recovery_part"
             recovered_value=""
             ;;
-          --config=*|--security-profile-dir=*|--workdir=*|--file=*|--bundle=*|\
+          --config=*|--security-profile-dir=*|--workdir=*|--guard-prefix=*|--file=*|--bundle=*|\
           --baseline=*|--base-policy=*|--sbom-source=*|--sbom-image=*|--decisions=*|--policy=*|\
           --key=*|--context=*|--approval=*|--review-key=*|--deployment-key=*|\
           --trust=*|--grant=*|--output=*)
@@ -273,6 +275,63 @@ _nosh_completion() {
       done
       ;;
   esac
+
+  case "$previous" in
+    --scope) _nosh_completion_add_words "$current" "repo directory all" "$word_prefix"; return ;;
+    --tool-mode) _nosh_completion_add_words "$current" "read-only implementation" "$word_prefix"; return ;;
+    --workload) _nosh_completion_add_words "$current" "dev run" "$word_prefix"; return ;;
+    --agents) _nosh_completion_add_words "$current" "auto none codex claude gemini codex,claude,gemini" "$word_prefix"; return ;;
+    --agent-skills|--agent-settings|--agent-plugins) _nosh_completion_add_words "$current" "ro rw" "$word_prefix"; return ;;
+    --codex-home) _nosh_completion_add_paths "$current" directory "$word_prefix" "$preserved_path_prefix"; return ;;
+    --agent-baseline) _nosh_completion_add_paths "$current" file "$word_prefix" "$preserved_path_prefix"; return ;;
+  esac
+  if [[ "${COMP_WORDS[1]:-}" == tools ]]; then
+    if ((COMP_CWORD == 2)); then
+      _nosh_completion_add_words "$current" "init review check apply status rollback doctor help"
+    elif [[ "$previous" == --output-dir || "$previous" == --review || "$previous" == --workdir || "$previous" == --guard-prefix ]]; then
+      _nosh_completion_add_paths "$current" directory "$word_prefix" "$preserved_path_prefix"
+    elif [[ -z "$current" || "$current" == -* ]]; then
+      if [[ "${COMP_WORDS[2]:-}" == init ]]; then
+        _nosh_completion_add_words "$current" "--scope --codex-home --output-dir --no-prompt --request-details --workdir --help"
+      elif [[ "${COMP_WORDS[2]:-}" == review ]]; then
+        _nosh_completion_add_words "$current" "--review --build-ui --no-browser --workdir --help"
+      else
+        _nosh_completion_add_words "$current" "--review --workdir --guard-prefix --policy-digest --revision --container --json --help"
+      fi
+    fi
+    return
+  fi
+  if [[ "${COMP_WORDS[1]:-}" == "init" ]]; then
+    case "$previous" in
+      --step)
+        _nosh_completion_add_words "$current" "install setup build preflight network learn review signing apply status tools-review tools-check tools-apply tools-status tools-init"
+        ;;
+      --workdir)
+        _nosh_completion_add_paths \
+          "$current" directory "$word_prefix" "$preserved_path_prefix"
+        ;;
+      --guard-prefix)
+        current="${current:-/}"
+        if [[ "$current" == /* ]]; then
+          _nosh_completion_add_paths \
+            "$current" directory "$word_prefix" "$preserved_path_prefix"
+        fi
+        ;;
+      --image)
+        ;;
+      *)
+        if [[ -z "$current" || "$current" == -* ]]; then
+          _nosh_completion_add_words "$current" "$init_options"
+        fi
+        ;;
+    esac
+    return
+  fi
+
+  if [[ "${COMP_WORDS[1]:-}" == "uninstall" ]]; then
+    _nosh_completion_add_words "$current" "$uninstall_options"
+    return
+  fi
 
   if [[ "${COMP_WORDS[1]:-}" == "build" ]]; then
     for ((build_index = 2; build_index < COMP_CWORD; build_index++)); do
@@ -506,6 +565,55 @@ _nosh_completion() {
   if [[ -z "$current" || "$current" == -* ]]; then
     _nosh_completion_add_words "$current" "$options"
   fi
+}
+
+_nosh_completion() {
+  local -a COMP_WORDS=("${COMP_WORDS[@]}")
+  local COMP_CWORD="$COMP_CWORD"
+  local backend="" selected current previous
+  COMPREPLY=()
+  while ((COMP_CWORD > 1)); do
+    case "${COMP_WORDS[1]}" in
+      --docker|--qemu|--bwrap)
+        selected="${COMP_WORDS[1]#--}"
+        [[ -z "$backend" || "$backend" == "$selected" ]] || return 0
+        backend="$selected"
+        COMP_WORDS=("${COMP_WORDS[0]}" "${COMP_WORDS[@]:2}")
+        COMP_CWORD=$((COMP_CWORD - 1))
+        ;;
+      *) break ;;
+    esac
+  done
+  current="${COMP_WORDS[COMP_CWORD]:-}"
+  previous="${COMP_WORDS[COMP_CWORD - 1]:-}"
+  case "$backend" in
+    bwrap) return 0 ;;
+    qemu)
+      case "$previous" in
+        --accel) _nosh_completion_add_words "$current" 'kvm tcg' ;;
+        --agents) _nosh_completion_add_words "$current" 'codex' ;;
+        --agent-skills|--agent-settings|--agent-plugins)
+          _nosh_completion_add_words "$current" 'ro rw' ;;
+        --workdir|--codex-home|--state-dir)
+          _nosh_completion_add_paths "$current" directory ;;
+        --name|--cpus|--memory-mib|--disk-gib|--boot-timeout|--timeout) ;;
+        *)
+          if ((COMP_CWORD == 1)); then
+            _nosh_completion_add_words "$current" 'start attach stop status reset'
+          fi
+          if [[ -z "$current" || "$current" == -* ]]; then
+            _nosh_completion_add_words "$current" '--name --detach --workdir --codex-home --agents --agent-skills --agent-settings --agent-plugins --accel --cpus --memory-mib --disk-gib --boot-timeout --timeout --state-dir -h --help'
+          fi
+          ;;
+      esac
+      ;;
+    *)
+      _nosh_completion_docker
+      if [[ -z "$backend" ]] && ((COMP_CWORD == 1)); then
+        _nosh_completion_add_words "$current" '--docker --qemu --bwrap'
+      fi
+      ;;
+  esac
 }
 
 complete -F _nosh_completion nosh nosh.sh

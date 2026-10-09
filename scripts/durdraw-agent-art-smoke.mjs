@@ -387,7 +387,7 @@ async function preflightNotty(options, auth) {
   if (missing.length > 0) {
     throw new Error(
       `Notty is not running the Durdraw MCP toolset (missing: ${missing.join(', ')}). ` +
-      'Start Nosh with: ./nosh.sh start -p durdraw'
+      'Start Nosh with: ./scripts/nosh.sh start -p durdraw'
     );
   }
   log(`Notty MCP ready (${REQUIRED_DURDRAW_TOOLS.join(', ')})`);

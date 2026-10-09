@@ -436,6 +436,35 @@ test('normalizes raw Tetragon envelopes and multiline Inspektor Gadget advice', 
   assert.equal(advice.advisoryEvidence[0].policyUse, 'evidence-only');
 });
 
+test('nosh-exec observations remain evidence-only and never authorize executables', async () => {
+  const { normalizeEvidence } = await loadGuard();
+  const evidence = normalizeEvidence({
+    schemaVersion: 1,
+    source: { kind: 'nosh_exec', name: 'cgroup-exec' },
+    runId: 'exec-observation',
+    event: {
+      type: 'recommendation',
+      domain: 'process',
+      action: 'record',
+      generator: 'cgroup-exec',
+      value: {
+        eventKind: 'process-exec',
+        executable: '/usr/bin/node',
+        argumentsRecorded: false,
+      },
+    },
+  });
+  assert.deepEqual(evidence.observations.executables, []);
+  assert.equal(evidence.advisoryEvidence.length, 1);
+  assert.equal(evidence.advisoryEvidence[0].policyUse, 'evidence-only');
+  assert.equal(
+    evidence.provenance.find(
+      (entry) => entry.source.kind === 'nosh_exec',
+    ).policyUse,
+    'evidence-only',
+  );
+});
+
 test('compiles deterministic independent candidates with hashes and review gates', async () => {
   const {
     compileGuardProfile,

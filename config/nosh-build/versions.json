@@ -9,7 +9,7 @@
     "mutableReferenceAllowedForDryRunOnly": true
   },
   "noshBuild": {
-    "loaderVersion": "4",
+    "loaderVersion": "5",
     "evidenceSchemaVersion": 2,
     "loaderPath": "/usr/local/libexec/nosh-build/nosh-build-loader",
     "source": "bpf/nosh_build"

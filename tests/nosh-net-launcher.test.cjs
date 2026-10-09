@@ -8,7 +8,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const appRoot = path.resolve(__dirname, '..');
-const noshPath = path.join(appRoot, 'nosh.sh');
+const noshPath = path.join(appRoot, 'scripts/nosh.sh');
 
 function createFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'notty-nosh-net-'));
@@ -43,6 +43,54 @@ function guardCommand(result) {
     .find((line) => /(?:^|\/)nosh-guard net(?: |$)/.test(line)) || '';
 }
 
+test('init learning previews the wizard learning step with its safe defaults', (t) => {
+  const fixture = createFixture(t);
+  const result = runNosh(fixture, [
+    'init', '--step', 'learn', '--dry-run', '--workdir', fixture.workspace,
+    '--image', 'nosh:test', '--guard-prefix', '/opt/example',
+  ]);
+  assert.equal(result.status, 0, output(result));
+  assert.match(result.stdout, /sudo \/opt\/example\/bin\/nosh-guard net learn/);
+  assert.match(result.stdout, /--image nosh:test/);
+  assert.match(result.stdout, /--review-output --no-start-app --no-collab/);
+  assert.doesNotMatch(result.stdout, /docker run|net enforce/);
+});
+
+test('init learning supports the installed symlink, preserves literal arguments and forwards failure', (t) => {
+  const fixture = createFixture(t);
+  const checkout = path.join(fixture.root, 'checkout');
+  const bin = path.join(fixture.root, 'bin');
+  fs.mkdirSync(path.join(checkout, 'scripts'), { recursive: true });
+  fs.mkdirSync(bin);
+  fs.copyFileSync(noshPath, path.join(checkout, 'scripts/nosh.sh'));
+  fs.symlinkSync('../checkout/scripts/nosh.sh', path.join(bin, 'nosh'));
+  fs.writeFileSync(path.join(checkout, 'scripts/nosh-init.sh'), '#!/bin/bash\nprintf "%s\\n" "$PWD" "$@"\nexit 17\n');
+  const workspace = path.join(fixture.workspace, 'space $(touch INJECTED)');
+  const result = childProcess.spawnSync('bash', [path.join(bin, 'nosh'), 'init', '--step', 'learn',
+    '--workdir', workspace, '--image', 'nosh:test'], { cwd: fixture.workspace, encoding: 'utf8' });
+  assert.equal(result.status, 17, output(result));
+  assert.deepEqual(result.stdout.trimEnd().split('\n'), [fixture.workspace, '--step', 'learn',
+    '--workdir', workspace, '--image', 'nosh:test']);
+  assert.equal(fs.existsSync(path.join(fixture.workspace, 'INJECTED')), false);
+
+});
+
+test('init help exposes configuration and rejects invalid options', t => {
+  const fixture = createFixture(t);
+  const help = runNosh(fixture, ['--help']);
+  assert.equal(help.status, 0, output(help));
+  assert.match(help.stdout, /init.*Configure/);
+  const initHelp = runNosh(fixture, ['init', '--help']);
+  assert.equal(initHelp.status, 0, output(initHelp));
+  assert.match(initHelp.stdout, /Usage: nosh init/);
+  assert.match(initHelp.stdout, /--advanced/);
+  assert.match(initHelp.stdout, /--check/);
+  for (const args of [['--workdir'], ['--unknown'], ['--step', 'enforce']]) {
+    const rejected = runNosh(fixture, ['init', '--dry-run', ...args]);
+    assert.notEqual(rejected.status, 0, output(rejected));
+  }
+});
+
 test('net command parsing exposes nested help and rejects missing stages', (t) => {
   const fixture = createFixture(t);
   const help = runNosh(fixture, ['net', '--help']);
@@ -73,11 +121,11 @@ test('net learn delegates resolved launch settings without a basename-only name'
   assert.match(
     defaultCommand,
     new RegExp(
-      `net learn --workdir ${fixture.workspace} --image nosh(?: |$)`,
+      `net learn --workload dev --workdir ${fixture.workspace} --image nosh(?: |$)`,
     ),
   );
   assert.match(defaultCommand, /--no-collab(?: |$)/);
-  assert.match(defaultCommand, /--start-app(?: |$)/);
+  assert.match(defaultCommand, /--no-start-app(?: |$)/);
   assert.match(defaultCommand, /--dry-run(?: |$)/);
   assert.doesNotMatch(defaultCommand, /--name(?: |$)/);
   assert.doesNotMatch(defaultCommand, /--config(?: |$)/);
@@ -183,7 +231,7 @@ test('net audit and enforce omit defaults and pass only explicit launch override
   const auditCommand = guardCommand(audit);
   assert.match(
     auditCommand,
-    new RegExp(`net audit --workdir ${fixture.workspace}(?: |$)`),
+    new RegExp(`net audit --workload dev --workdir ${fixture.workspace}(?: |$)`),
   );
   assert.doesNotMatch(
     auditCommand,
@@ -363,7 +411,7 @@ test('net status delegates without sudo and strips legacy credentials', (t) => {
   assert.equal(result.status, 0, output(result));
   assert.equal(
     fs.readFileSync(argvLog, 'utf8'),
-    `net\nstatus\n--workdir\n${fixture.workspace}\n--json\n`,
+    `net\nstatus\n--workload\ndev\n--workdir\n${fixture.workspace}\n--json\n`,
   );
   assert.equal(
     fs.readFileSync(envLog, 'utf8'),
@@ -391,4 +439,33 @@ test('net status canonicalizes a symlinked workspace before delegation', (t) => 
     new RegExp(`--workdir ${fixture.workspace}(?: |$)`),
   );
   assert.doesNotMatch(guardCommand(result), /workspace-link/);
+});
+
+
+test('init defaults to the caller workspace and honors an explicit override', t => {
+  const fixture = createFixture(t);
+  const other = path.join(fixture.root, 'other');
+  fs.mkdirSync(other);
+  for (const [args, workspace] of [[[], fixture.workspace], [['--workdir', other], other]]) {
+    const result = runNosh(fixture, ['init', '--dry-run', '--step=learn', '--image=nosh:test', ...args]);
+    assert.equal(result.status, 0, output(result));
+    assert.ok(result.stdout.includes(`--workdir ${workspace} `), result.stdout);
+    assert.doesNotMatch(result.stdout, /net enforce/);
+  }
+});
+
+
+test('dev is the default; explicit run and agent-home options are forwarded', (t) => {
+  const fixture = createFixture(t);
+  const dev = runNosh(fixture, ['net', 'learn', '--dry-run', '--agents', 'codex', '--codex-home', fixture.home]);
+  assert.equal(dev.status, 0, output(dev));
+  assert.match(guardCommand(dev), /--workload dev/);
+  assert.match(guardCommand(dev), /--agents codex/);
+  assert.match(guardCommand(dev), new RegExp(`--codex-home ${fixture.home}`));
+  const run = runNosh(fixture, ['net', 'learn', '--dry-run', '--workload', 'run']);
+  assert.equal(run.status, 0, output(run));
+  assert.match(guardCommand(run), /--workload run/);
+  assert.doesNotMatch(guardCommand(run), /--agents|--codex-home/);
+  const invalid = runNosh(fixture, ['net', 'learn', '--dry-run', '--workload', 'run', '--agents', 'codex']);
+  assert.notEqual(invalid.status, 0);
 });

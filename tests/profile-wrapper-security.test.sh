@@ -3,9 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd -P "$SCRIPT_DIR/.." && pwd)"
-RUN_WRAPPER="$REPO_DIR/profile-build-and-run.sh"
-REVIEW_WRAPPER="$REPO_DIR/profile-build-and-review.sh"
-BUILD_WRAPPER="$REPO_DIR/build-nosh.sh"
+RUN_WRAPPER="$REPO_DIR/scripts/profile-build-and-run.sh"
+REVIEW_WRAPPER="$REPO_DIR/scripts/profile-build-and-review.sh"
+BUILD_WRAPPER="$REPO_DIR/scripts/build-nosh.sh"
 
 fail() {
   printf 'profile-wrapper-security.test: %s\n' "$*" >&2

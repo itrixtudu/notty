@@ -10,10 +10,11 @@ RECEIPT_PATH="/etc/nosh-guard-install-layout.conf"
 RECEIPT_MANIFEST_DIGEST=""
 RENDER_STAGING=""
 DEEP=0
+SYSTEMD_UNIT_DIR=/etc/systemd/system
 
 usage() {
   cat <<'EOF'
-Usage: nosh-guard-host-verify [--prefix ABS] [--deep]
+Usage: nosh-guard-host-verify [--prefix ABS] [--systemd-unit-dir DIR] [--deep]
 
 Verify the installed Nosh Guard release manifest, installation-layout receipt,
 root ownership and modes, fixed Node runtime, prefix-derived launchers and
@@ -49,6 +50,18 @@ while (($#)); do
       ;;
     --deep)
       DEEP=1
+      shift
+      ;;
+    --systemd-unit-dir)
+      [[ -n "${2:-}" ]] || {
+        printf 'nosh-guard-host-verify: --systemd-unit-dir requires a value\n' >&2
+        exit 2
+      }
+      SYSTEMD_UNIT_DIR="$2"
+      shift 2
+      ;;
+    --systemd-unit-dir=*)
+      SYSTEMD_UNIT_DIR="${1#*=}"
       shift
       ;;
     --service)
@@ -100,6 +113,14 @@ validate_prefix() {
 }
 
 validate_prefix || exit 2
+case "$SYSTEMD_UNIT_DIR" in
+  /etc/systemd/system|/usr/lib/systemd/system) ;;
+  *)
+    printf 'nosh-guard-host-verify: unsupported systemd unit directory: %s\n' \
+      "$SYSTEMD_UNIT_DIR" >&2
+    exit 2
+    ;;
+esac
 INSTALL_BASE="$PREFIX/lib/notty/nosh-guard"
 CURRENT_LINK="$INSTALL_BASE/current"
 
@@ -306,7 +327,7 @@ for trusted_directory in \
   /etc \
   /etc/nosh-guard \
   /etc/systemd \
-  /etc/systemd/system \
+  "$SYSTEMD_UNIT_DIR" \
   /var \
   /var/lib \
   /var/lib/nosh-guard \
@@ -402,6 +423,10 @@ RENDER_STAGING="$(mktemp -d /tmp/nosh-guard-verify-render.XXXXXX)"
   --prefix "$PREFIX" \
   --source-root "$CURRENT_ROOT" \
   --output-dir "$RENDER_STAGING"
+if [[ "$SYSTEMD_UNIT_DIR" == /usr/lib/systemd/system ]]; then
+  sed -i 's/ --service$/ --systemd-unit-dir \/usr\/lib\/systemd\/system --service/' \
+    "$RENDER_STAGING/deploy/systemd/nosh-guardd.service"
+fi
 
 for launcher in \
   nosh-gateway \
@@ -484,11 +509,11 @@ compare_deployed \
 check_root_file /etc/nosh-guard/network-contract.json 640
 compare_deployed \
   "$RENDER_STAGING/deploy/systemd/nosh-guard-bpffs.service" \
-  /etc/systemd/system/nosh-guard-bpffs.service \
+  "$SYSTEMD_UNIT_DIR/nosh-guard-bpffs.service" \
   644
 compare_deployed \
   "$RENDER_STAGING/deploy/systemd/nosh-guardd.service" \
-  /etc/systemd/system/nosh-guardd.service \
+  "$SYSTEMD_UNIT_DIR/nosh-guardd.service" \
   644
 compare_deployed \
   "$CURRENT_ROOT/payload/docs/nosh-gateway.md" \
@@ -528,6 +553,8 @@ if ((DEEP == 1)); then
     printf 'nosh-guard-host-verify: egress object receipt is malformed\n' >&2
     exit 1
   }
+  "$PREFIX/libexec/nosh-build/nosh-build-loader" health --depth process
+  "$PREFIX/libexec/nosh-build/nosh-build-loader" verify --depth process
   "$PREFIX/libexec/nosh-build/nosh-build-loader" health --depth balanced
   "$PREFIX/libexec/nosh-build/nosh-build-loader" verify --depth balanced
   "$PREFIX/libexec/nosh-guard/nosh-l4-loader" health

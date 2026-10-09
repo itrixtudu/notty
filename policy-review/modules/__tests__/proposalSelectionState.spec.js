@@ -197,3 +197,24 @@ describe('bulk proposal disposition', () => {
         ))).toBe(true);
     });
 });
+
+describe('network endpoint select all', () => {
+    it('selects network proposals only without changing decisions and permits exceptions', () => {
+        const graph = createSampleSemanticGraph();
+        const original = createPolicyReviewState(graph);
+        const network = graph.proposals.filter(proposal => proposal.intent?.domain === 'network').map(proposal => proposal.id);
+        expect(network.length).toBeGreaterThan(0);
+        const selected = reduce(original, { type: 'SELECT_ALL_NETWORK_PROPOSALS' });
+        expect(new Set(selected.selectedProposalIds)).toEqual(new Set(network));
+        expect(selected.decisions).toEqual(original.decisions);
+        const excepted = reduce(selected, { type: 'SELECT_PROPOSAL', proposalId: network[0], toggle: true });
+        expect(excepted.selectedProposalIds).not.toContain(network[0]);
+        expect(excepted.decisions).toEqual(original.decisions);
+        const allowed = reduce(excepted, { type: 'SET_BULK_PROPOSAL_DECISION',
+            proposalIds: excepted.selectedProposalIds, disposition: 'accept', rationale: 'Required connections' });
+        expect(allowed.decisions[network[0]]).toEqual(original.decisions[network[0]]);
+        const cleared = reduce(allowed, { type: 'SELECT', selected: null });
+        expect(cleared.selectedProposalIds).toEqual([]);
+        expect(cleared.decisions).toEqual(allowed.decisions);
+    });
+});

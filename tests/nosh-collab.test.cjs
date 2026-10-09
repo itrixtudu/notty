@@ -8,7 +8,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const appRoot = path.resolve(__dirname, '..');
-const noshPath = path.join(appRoot, 'nosh.sh');
+const noshPath = path.join(appRoot, 'scripts/nosh.sh');
 
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -125,7 +125,7 @@ test('Nosh secure modes delegate dry runs to nosh-guard without requiring the bi
     assert.equal(result.dockerRun, '');
     const command = guardRun(result.output);
     assert.match(command, new RegExp(
-      `^(?:.*/)?nosh-guard run --mode ${mode} --image nosh --name nosh-workspace `
+      `^(?:.*/)?nosh-guard run --workload dev --mode ${mode} --image nosh --name nosh-workspace-dev `
         + `--workdir ${fixture.workspace} --action start(?: |$)`,
     ));
     assert.match(command, /--profile agents(?: |$)/);
@@ -213,7 +213,7 @@ test('Nosh does not forward legacy credentials to guarded lifecycle commands', (
 
   assert.equal(result.status, 0, result.output);
   const guardArgv = fs.readFileSync(argvLog, 'utf8');
-  assert.match(guardArgv, /^run\n--mode\nlearn\n/);
+  assert.match(guardArgv, /^run\n--workload\ndev\n--mode\nlearn\n/);
   assert.match(guardArgv, /--action\nstart\n/);
   assert.doesNotMatch(guardArgv, /fixed-test-otp/);
   assert.equal(

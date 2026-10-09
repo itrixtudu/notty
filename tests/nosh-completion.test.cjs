@@ -9,7 +9,7 @@ const test = require('node:test');
 
 const appRoot = path.resolve(__dirname, '..');
 const completionPath = path.join(appRoot, 'completions', 'nosh.bash');
-const noshPath = path.join(appRoot, 'nosh.sh');
+const noshPath = path.join(appRoot, 'scripts/nosh.sh');
 
 function runNosh(args, options = {}) {
   return childProcess.spawnSync('bash', [noshPath, ...args], {
@@ -56,6 +56,21 @@ function complete(words, options = {}) {
     .split('\0')
     .filter(Boolean);
 }
+
+test('backend completion offers selectors and delegates to backend-specific commands', () => {
+  assert.deepEqual(complete(['nosh', '--q']), ['--qemu']);
+  assert.ok(complete(['nosh', '']).includes('--docker'));
+  assert.deepEqual(complete(['nosh', '--docker', 'build', '']), complete(['nosh', 'build', '']));
+  const qemu = complete(['nosh', '--qemu', '']);
+  assert.ok(qemu.includes('status'));
+  assert.ok(qemu.includes('--accel'));
+  assert.ok(!qemu.includes('--image'));
+  assert.ok(!qemu.includes('_serve'));
+  assert.deepEqual(complete(['nosh', '--qemu', '--accel', '']), ['kvm', 'tcg']);
+  assert.deepEqual(complete(['nosh', '--qemu', '--agent-skills', '']), ['ro', 'rw']);
+  assert.deepEqual(complete(['nosh', '--bwrap', '']), []);
+  assert.deepEqual(complete(['nosh', '--docker', '--qemu', '']), []);
+});
 
 test('Nosh emits its sourceable Bash completion without runtime setup', () => {
   const result = runNosh(['completion', 'bash'], {
@@ -234,6 +249,48 @@ test('Nosh completes semantic review and policy workflow commands', () => {
   ]) assert.ok(grant.includes(option), option);
 });
 
+test('Nosh scopes init completion to configuration options', () => {
+  assert.ok(complete(['nosh', 'in']).includes('init'));
+  assert.ok(!complete(['nosh', 'start', '--']).includes('init'));
+  const expected = ['--review', '--policy-digest', '--workload', '--agents', '--codex-home', '--agent-baseline', '--workdir', '--image', '--guard-prefix', '--dry-run', '--check', '--advanced', '--step', '--help'];
+  assert.deepEqual(complete(['nosh', 'init', '']), expected);
+  assert.deepEqual(complete(['nosh', 'init', '--image', 'nosh', '--']), expected);
+  for (const prefix of ['--security', '--start-app']) {
+    assert.deepEqual(complete(['nosh', 'init', prefix]), []);
+  }
+  assert.deepEqual(complete(['nosh', 'init', '--image', '']), []);
+  assert.deepEqual(complete(['nosh', 'init', '--image=']), []);
+});
+
+test('Nosh completes init workspace and Guard directories', (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'notty-init-completion-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(fixture, 'work space'));
+  fs.mkdirSync(path.join(fixture, 'guard'));
+  fs.writeFileSync(path.join(fixture, 'guard.json'), '{}\n');
+  assert.deepEqual(
+    complete(['nosh', 'init', '--workdir', 'work'], { cwd: fixture }),
+    ['work space/'],
+  );
+  assert.deepEqual(
+    complete(['nosh', 'init', '--workdir=work'], { cwd: fixture }),
+    ['--workdir=work space/'],
+  );
+  assert.deepEqual(
+    complete(['nosh', 'init', '--guard-prefix', `${fixture}/gua`], { cwd: fixture }),
+    [`${fixture}/guard/`],
+  );
+  assert.deepEqual(
+    complete(['nosh', 'init', `--guard-prefix=${fixture}/gua`], { cwd: fixture }),
+    [`--guard-prefix=${fixture}/guard/`],
+  );
+  assert.deepEqual(
+    complete(['nosh', 'init', '--guard-prefix', '=', `${fixture}/gua`], { cwd: fixture }),
+    [`${fixture}/guard/`],
+  );
+  assert.deepEqual(complete(['nosh', 'init', '--guard-prefix', 'gua'], { cwd: fixture }), []);
+});
+
 test('Nosh completes nested network workflow commands and scoped options', () => {
   assert.deepEqual(
     complete(['nosh', 'net', '']),
@@ -258,6 +315,7 @@ test('Nosh completes nested network workflow commands and scoped options', () =>
   assert.deepEqual(
     complete(['nosh', 'net', 'approve', '--']),
     [
+      '--workload',
       '--revision',
       '--reviewer',
       '--yes',
@@ -272,7 +330,7 @@ test('Nosh completes nested network workflow commands and scoped options', () =>
   );
   assert.deepEqual(
     complete(['nosh', 'net', 'status', '--']),
-    ['--json', '--repair', '--workdir', '--dry-run', '--help'],
+    ['--workload', '--json', '--repair', '--workdir', '--dry-run', '--help'],
   );
   assert.deepEqual(
     complete(['nosh', 'net', 'approve', '--revision=']),
@@ -416,4 +474,30 @@ test('Nosh completes config files and directory-valued options', (t) => {
     ),
     ['bar/project/'],
   );
+});
+
+
+test('init completes only configuration steps', () => {
+  assert.deepEqual(complete(['nosh', 'init', '--step', '']),
+    ['install', 'setup', 'build', 'preflight', 'network', 'learn', 'review', 'signing', 'apply', 'status', 'tools-review', 'tools-check', 'tools-apply', 'tools-status', 'tools-init']);
+  assert.deepEqual(complete(['nosh', 'init', '--step', 'enforce']), []);
+});
+
+test('tool environment commands, modes, and wizard steps complete', () => {
+  assert.ok(complete(['nosh', 'tools', '']).includes('apply'));
+  assert.ok(complete(['nosh', '--tool-mode', '']).includes('read-only'));
+  assert.ok(complete(['nosh', 'init', '--step', 'tools-']).includes('tools-apply'));
+});
+
+test('tool initialization offers scopes and output options', () => {
+  assert.ok(complete(['nosh', 'tools', '']).includes('init'));
+  assert.deepEqual(complete(['nosh', 'tools', 'init', '--scope', '']), ['repo', 'directory', 'all']);
+  assert.ok(complete(['nosh', 'tools', 'init', '--']).includes('--no-prompt'));
+});
+
+test('tool review completes UI setup options only for review', () => {
+  const review = complete(['nosh', 'tools', 'review', '--']);
+  assert.ok(review.includes('--build-ui'));
+  assert.ok(review.includes('--no-browser'));
+  assert.ok(!complete(['nosh', 'tools', 'apply', '--']).includes('--build-ui'));
 });

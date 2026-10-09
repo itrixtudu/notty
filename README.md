@@ -115,13 +115,50 @@ links:
 
 ```sh
 cd /path/to/notty
-./build-nosh.sh
-./setup-nosh.sh
+./scripts/build-nosh.sh
+./scripts/setup-nosh.sh
 ```
+
+Use `nosh config` for browser-based repository profiles, copyable host setup
+commands, and portable CI build-capture settings. See
+[repository setup profiles](docs/nosh-repository-config.md).
 
 `setup-nosh.sh` creates launch links under `~/.local/bin` by default but does
 not edit shell startup files. Ensure that directory is on `PATH`, or invoke
-`/path/to/notty/nosh.sh` directly.
+`/path/to/notty/scripts/nosh.sh` directly.
+
+The initialization wizard (`nosh init`, advanced step 2, or `nosh init --step setup`)
+uses a host-side Python TUI by default, configures the current workspace, and stops after policy application; use
+`nosh start` to start or attach afterward. See the [initialization guide](init.md).
+Use `nosh init --classic` for the original guided prompts. The TUI uses an
+isolated, hash-pinned Python virtual environment and never installs Node packages
+on the host. Press `s` in the TUI to review and save portable setup selections
+and immutable network/tool policy references as `.nosh/project.json`; host paths,
+evidence, keys, and activation state remain local. The [initialization guide](init.md)
+describes the manifest boundary.
+
+Use `nosh uninstall` for a two-phase removal that cleans verified user setup
+before separately offering Guard removal. Configuration and evidence are
+preserved unless purge options are explicit. A Docker-only, kernel-qualified
+Ubuntu 24.04 amd64 `.deb` build is documented in the
+[Debian package guide](docs/nosh-debian-package.md).
+It offers an optional Bubble Bai Codex pet installation after configuring launchers.
+The default is No. **Bubble Bai has only been tested in Kitty terminal. Support
+in other terminals is unverified.**
+
+**Disclaimer:** Using Codex with Kitty, pets, and voice is an escape hatch
+outside the coverage of the eBPF run profile. Do not treat host terminal, pet,
+or voice integrations as contained or fully monitored by that profile.
+
+To install it separately from this checkout:
+
+```sh
+sh bubble-bai-codex/install.sh
+```
+
+This installs as the current user, without sudo, into
+`${CODEX_HOME:-$HOME/.codex}/pets/bubble-bai/`. See the
+[Bubble Bai guide](bubble-bai-codex/README.md) for activation instructions.
 
 Then launch Notty for a project. Publishing only to host loopback is
 intentional:
@@ -191,6 +228,43 @@ login` or custom headers. Non-spawn tools are unauthenticated, but every spawn
 still requires a fresh OTP. OAuth browser callbacks are initiated on the host;
 do not try to perform the Codex login flow inside the container.
 
+Plain `nosh` uses Docker. Select a backend before the command and its options:
+
+```sh
+nosh --docker
+nosh --qemu
+nosh --qemu status
+```
+
+`--qemu` uses the existing persistent VM with Docker inside it; its options
+are listed by `nosh --qemu --help`. `--bwrap` is reserved and currently exits
+with a not-implemented error. Conflicting backend selectors are rejected.
+For persistent Codex work inside QEMU, see [persistent sessions](docs/nosh-qemu.md#persistent-codex-sessions).
+
+Optional shell aliases (add them to your shell configuration yourself):
+
+```sh
+alias noshq='nosh --qemu'
+alias noshb='nosh --bwrap'
+alias noshd='nosh --docker'
+```
+
+Checkout launchers live in `scripts/`. Refresh an existing installed link with
+`./scripts/setup-nosh.sh --replace-links`. The old `nosha`/`noshan`, `noshc`, and
+`noshn` wrappers are replaced by `nosh attach`, `nosh --image noshc`, and
+`nosh --network none`, respectively.
+
+For ordinary Docker launches, a missing local image is built automatically when
+`Dockerfile.<image-name>` exists in the project directory or this checkout
+(project directory takes precedence). For example, `nosh --image nosh-zig`
+builds `Dockerfile.nosh-zig`, including its local `nosh` base if needed. Image
+tags share the same Dockerfile: `nosh-zig:dev` also uses `Dockerfile.nosh-zig`.
+When an image and matching Dockerfile both exist, interactive launches offer
+using the existing image (the default) or rebuilding it. Noninteractive launches
+reuse existing images. Without a matching Dockerfile, Docker retains its
+normal pull behavior. `--dry-run` never builds images. Guarded launches keep
+their existing build and review workflow.
+
 Use the same project directory for lifecycle commands so Nosh resolves the
 same project-scoped container name:
 
@@ -213,15 +287,142 @@ dependencies you trust. The [copyable examples](EXAMPLES.md) cover Codex MCP
 registration, Collab, tmux, offline containers, `vlock`, and guarded modes in
 more detail.
 
+## Audit Codex tool history
+
+Generate local inspection and pending-review inventories from selected active
+and archived Codex session history:
+
+```sh
+nosh tools init
+# Explicit scope for a noninteractive audit:
+nosh tools init --scope repo --no-prompt
+# Optional input and output locations; the output directory must be new.
+nosh tools init --scope all \
+  --codex-home "$HOME/.codex" \
+  --output-dir "$HOME/.local/state/nosh/codex-tool-audit/review-01"
+```
+
+`nosh tools init` asks for **this Git checkout**, **this directory and its
+subdirectories**, or **all recorded history**. Every scope includes all recorded
+dates. Repository scope starts at the checkout root, excludes other linked
+worktrees, and is the default inside Git; elsewhere the default is directory
+scope. Use `--workdir PATH` to select a different starting directory. With prompts
+disabled or redirected input/output, `--scope repo|directory|all` is required.
+Scope follows recorded session/turn working directories, not every file touched
+by a command. Missing location metadata is excluded from scoped audits and makes
+coverage incomplete. Moved/deleted checkout identities cannot be reconstructed.
+The direct Python command remains available and defaults to all history.
+
+This offline Python tool never executes recorded commands or changes active
+Codex configuration. It requires no package installation. Its default output is
+`${XDG_STATE_HOME:-$HOME/.local/state}/nosh/codex-tool-audit/<timestamp>-<pid>`.
+Reports use private directory/file permissions and cannot be written inside the
+checkout or Codex home.
+
+When run in an interactive terminal, the audit finishes with a next-action menu:
+review existing escape rules, browse pending or inspection groups, compare the
+read-only and workspace-write profiles, open the tool-review UI, or finish.
+Terminal groups are displayed 25 at a time. The UI saves proposed selections;
+neither interface installs profiles, edits rules, or replays requests.
+Start with the existing escape rules. Use `--no-prompt` to
+skip the menu; redirected input or output also skips it automatically. An
+incomplete snapshot still returns exit code `2` after review.
+
+Choose **5 — Open review UI** for the same table and autosave workflow used by
+network-profile review. Reopen a saved audit without scanning history again:
+
+```sh
+nosh tools review --review \
+  "$HOME/.local/state/nosh/codex-tool-audit/REPORT_ID"
+```
+
+Run review on the host with Docker available. With no configured image, the
+launcher finds a compatible local `nosh-policy-review:managed` image and remembers
+its exact ID in the private `~/.config/nosh/policy-review-images.conf` used by
+network review. If the image is missing or outdated, it offers to build the UI
+in Docker and then opens this saved report. No rescan or manual image-ID export
+is needed. Use `nosh tools review --review REPORT --build-ui` to allow that build
+without a prompt. Builds may download dependencies; launching uses `--pull never`.
+An explicit `NOSH_POLICY_REVIEW_UI_IMAGE=sha256:…` override is still supported and
+is never automatically replaced.
+See [tool-review setup](policy-review/README.md#tool-activity-review).
+
+Classify each grouped form as **Expected**, **Investigate**, or **Unreviewed**.
+Scanner suggestions start unconfirmed.
+Progress saves under the report's private `review/` directory; review all forms,
+enter a reviewer name, and acknowledge the proposal before finalizing. Download
+or import JSON under **More options**. Imports must match the exact snapshot.
+Incomplete audits can save drafts but cannot finalize a proposal. Saving never
+changes runtime capabilities or creates sandbox-escape allow rules.
+
+After saving the proposal, approve the container environment in the UI. Use
+`nosh tools check`, then `nosh tools apply --policy-digest …` on the host.
+`nosh init --advanced` includes tool review, check, apply, and status steps.
+New containers automatically use the applied policy; `--tool-mode implementation`
+requires explicit approval. The policy stays read-only inside Docker in both modes.
+Codex remains an unmodified upstream executable. Activity classifications are informational;
+Nosh enforces container filesystem capabilities, with network policy managed
+separately. See [application, startup, rollback, and limits](docs/nosh-tool-policy.md).
+
+- `allow.json`: reviewed local inspection forms, with frequencies and source
+  line references. These are candidates for use **inside a sandbox**, not
+  executable allow rules.
+- `not-yet.json`: modifying, networked, and uncertain requests, grouped by
+  tool/form and review reason. Unknown options, compound shell commands,
+  embedded programs, JavaScript orchestration, and unreviewed MCP calls stay here.
+- `rules-review.json`: accessible user, system, and current workspace ancestor
+  rules that need review. It does not resolve project trust or remote managed rules.
+- `summary.txt`: totals, classification limits, and any input problems.
+- `planning.config.toml` and `implementation.config.toml`: proposed configuration
+  profiles, **not installed automatically**.
+
+Reports omit command arguments, prompts, credentials, and tool outputs. Source
+references use conventional relative rollout filenames and 1-based line numbers;
+other history filenames use `source-` plus the first 16 hex digits of SHA-256 of
+the path relative to Codex home. Apart from `user/rules/default.rules`, rule
+references use `rules-` plus the same hash length of their absolute path.
+Each group includes up to three example references. Duplicate requests are
+removed only when session ID, call ID, and request content match; conflicting
+versions and requests without identities are retained. Counts reflect requests,
+not proof that a command ran or succeeded. The scanner reads each file only up
+to its opening size; changes during reading, oversized/malformed records, or
+unreadable inputs are reported. Exit `0` means a complete scan, `2` means a
+report was produced with input issues, and `1` means setup/output failed.
+
+For Codex CLI 0.151.0, configuration profiles live beside `config.toml`. After
+reviewing the generated files and inherited rules, install the selected profile
+files there yourself and choose explicitly:
+
+```sh
+codex --profile planning        # Read-only local shell; no escalation prompts
+codex --profile implementation  # Workspace writes; escalation requires review
+```
+
+Planning mode and permission selection are separate. Both examples keep shell
+network access disabled. Implementation permits normal workspace/temp writes;
+it does not make every pending command approved. A recorded `git diff`, `show`,
+or `log` stays pending unless external diff and text conversion helpers are
+disabled with `--no-ext-diff --no-textconv`. Interpreter and wrapper names alone
+are never sufficient to classify their payloads as inspection.
+
+Existing `prefix_rule(..., decision="allow")` entries may authorize execution
+outside the sandbox. Review or remove conflicting entries before relying on the
+planning boundary; do not convert this inventory into blanket executable-prefix
+allows. Filesystem profiles also do not restrict remote MCP side effects. See
+the official [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
+and [command rules](https://learn.chatgpt.com/docs/agent-configuration/rules).
+The offline audit does not test live sandbox enforcement; validate profiles on
+a host that supports the required sandbox before relying on them.
+
 ## Build profiling and Policy Review
 
 The project wrapper retains the normal Nosh image build and adds two evidence
 workflows:
 
 ```sh
-./build-nosh.sh
-./build-nosh.sh profile
-./build-nosh.sh net learn
+./scripts/build-nosh.sh
+./scripts/build-nosh.sh profile
+./scripts/build-nosh.sh net learn
 ```
 
 `profile` captures build behavior and performance evidence. `net learn` forces
@@ -231,7 +432,7 @@ Docker-bridge `172.*` review link. Use `--no-review` for CI or capture-only
 runs:
 
 ```sh
-./build-nosh.sh net learn --no-review
+./scripts/build-nosh.sh net learn --no-review
 ```
 
 The one-click build learner opens **build evidence**. It does not create a
@@ -244,7 +445,7 @@ targets that report `tcpDns:false`.
 The combined build-and-runtime capture entrypoint is:
 
 ```sh
-./profile-build-and-review.sh --cache-mode cold
+./scripts/profile-build-and-review.sh --cache-mode cold
 ```
 
 It requires the installed Guard host components and the exact reviewed tooling
@@ -288,7 +489,7 @@ start:
 Run the release baseline from the host:
 
 ```sh
-./release-audit.sh
+./scripts/release-audit.sh
 ```
 
 Docker is mandatory. The audit performs dependency acquisition in constrained
@@ -308,7 +509,7 @@ After reviewing a dependency edit, regenerate the lockfile through its Docker
 wrapper rather than a host package manager:
 
 ```sh
-./regenerate-package-lock.sh
+./scripts/regenerate-package-lock.sh
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for validation and contribution rules.
@@ -349,3 +550,5 @@ kind to all yourselves. ^.^
 processes. The ANSI/CP437 side of the project lives under [`ansi/`](ansi/).*
 
 Notty is available under the [0BSD license](LICENSE).
+
+Development is the default runtime workload. See [build, dev, and run workloads](docs/nosh-workloads.md) for persistent agent homes, separate application policies, and reusable agent network baselines.

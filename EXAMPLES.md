@@ -46,7 +46,7 @@ Run the audit host entrypoint from the Notty checkout:
 
 ```sh
 cd /path/to/notty
-./release-audit.sh
+./scripts/release-audit.sh
 ```
 
 Docker is mandatory; the audit stops instead of falling back to host npm. The
@@ -63,7 +63,7 @@ an `INCOMPLETE` or `INTERRUPTED` outcome instead of implying that unrun gates
 passed. To retain a named report outside the ignored local report directory:
 
 ```sh
-./release-audit.sh --report /path/to/notty-audit.md
+./scripts/release-audit.sh --report /path/to/notty-audit.md
 ```
 
 Custom reports must be outside the checkout or under `.release-audit/` so they
@@ -80,7 +80,7 @@ After reviewing dependency constraints in `package.json`, run:
 
 ```sh
 cd /path/to/notty
-./regenerate-package-lock.sh
+./scripts/regenerate-package-lock.sh
 ```
 
 This is a maintenance command, not a release certification. It sends only
@@ -96,11 +96,11 @@ If the old lock already has partial generated changes that you have reviewed
 and intend to replace, acknowledge that explicitly:
 
 ```sh
-./regenerate-package-lock.sh --replace-dirty-lock
+./scripts/regenerate-package-lock.sh --replace-dirty-lock
 ```
 
 Review `git diff -- package.json package-lock.json`, then commit all reviewed
-dependency and generator changes. Run `./release-audit.sh` only after the
+dependency and generator changes. Run `./scripts/release-audit.sh` only after the
 worktree is clean. Leave `v1.0.0` uncreated until its absence is the sole
 automated audit failure; tag that exact commit and rerun the audit.
 
@@ -111,13 +111,13 @@ host package-manager installation is needed:
 
 ```sh
 cd /path/to/notty
-./build-nosh.sh
-./setup-nosh.sh
+./scripts/build-nosh.sh
+./scripts/setup-nosh.sh
 ```
 
 The setup command creates the `nosh` and development `nosh-guard` links. Use
 `--bin-dir DIR` to choose another command directory, or invoke
-`/path/to/notty/nosh.sh` directly.
+`/path/to/notty/scripts/nosh.sh` directly.
 
 Start the project-scoped service in its default authentication mode:
 
@@ -199,7 +199,7 @@ derived workspace database through its management socket (or add `--dry-run`
 to preview the delegation):
 
 ```sh
-sudo ./nosh.sh auth reset --secure --workdir /absolute/path/to/project
+sudo ./scripts/nosh.sh auth reset --secure --workdir /absolute/path/to/project
 ```
 
 Run lifecycle commands from the same project directory so Nosh resolves the
@@ -218,7 +218,7 @@ updates:
 
 1. Change MCP registrations and agent authentication on the host.
 2. Change reviewed agent version pins or image source in the Notty checkout.
-3. Rebuild the image with `./build-nosh.sh`.
+3. Rebuild the image with `./scripts/build-nosh.sh`.
 4. Return to the source directory and run `nosh recreate` with the desired
    profiles and flags.
 
@@ -292,7 +292,7 @@ to a different tmux session.
 A local Tilix profile can set its custom command to:
 
 ```sh
-bash -lc 'cd /path/to/project && exec /path/to/notty/nosh.sh attach'
+bash -lc 'cd /path/to/project && exec /path/to/notty/scripts/nosh.sh attach'
 ```
 
 Keep that profile local: its project path, profile UUID, pane layout, and
@@ -440,7 +440,7 @@ cd /path/to/notty
 Start a representative learning run:
 
 ```sh
-sudo ./nosh.sh start \
+sudo ./scripts/nosh.sh start \
   --security-mode learn \
   --image nosh \
   --workdir "$PROJECT_DIR" \
@@ -454,14 +454,14 @@ default-deny enforcement. Stop deliberately so collectors can flush and the
 manifest can be finalized:
 
 ```sh
-sudo ./nosh.sh stop \
+sudo ./scripts/nosh.sh stop \
   --security-mode learn \
   --image nosh \
   --workdir "$PROJECT_DIR"
 
 sudo ./bin/nosh-guard runs
 
-sudo ./nosh.sh rm \
+sudo ./scripts/nosh.sh rm \
   --security-mode learn \
   --image nosh \
   --workdir "$PROJECT_DIR"
@@ -491,7 +491,7 @@ container-name override.
 Run the exact, unchanged candidate in audit mode:
 
 ```sh
-sudo ./nosh.sh start \
+sudo ./scripts/nosh.sh start \
   --security-mode audit \
   --security-profile-dir \
     /var/lib/nosh-guard/profiles/example-v1-audit-input \
@@ -499,14 +499,14 @@ sudo ./nosh.sh start \
   --workdir "$PROJECT_DIR" \
   --persist
 
-sudo ./nosh.sh stop \
+sudo ./scripts/nosh.sh stop \
   --security-mode audit \
   --image nosh \
   --workdir "$PROJECT_DIR"
 
 sudo ./bin/nosh-guard runs
 
-sudo ./nosh.sh rm \
+sudo ./scripts/nosh.sh rm \
   --security-mode audit \
   --image nosh \
   --workdir "$PROJECT_DIR"

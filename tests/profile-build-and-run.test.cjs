@@ -9,7 +9,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const appRoot = path.resolve(__dirname, '..');
-const workflowPath = path.join(appRoot, 'profile-build-and-run.sh');
+const workflowPath = path.join(appRoot, 'scripts/profile-build-and-run.sh');
 
 function writeExecutable(filePath, lines) {
   fs.writeFileSync(filePath, `${lines.join('\n')}\n`, { mode: 0o755 });
@@ -605,6 +605,9 @@ test('workflow rejects missing, drifted, or ABI-incompatible policy tooling befo
     const result = runWorkflow(fixture, ['--duration', '3'], override);
     assert.notEqual(result.status, 0);
     assert.match(output(result), /policy-tooling|NOSH_POLICY_TOOLING_IMAGE/);
+    assert.ok(result.stderr.includes("export NOSH_POLICY_TOOLING_IMAGE=\"$(docker image inspect --format '{{.Id}}' nosh)\""));
+    assert.match(result.stderr, /same shell/);
+    assert.match(result.stderr, /\.\/scripts\/build-nosh\.sh/);
   }
   assert.deepEqual(events(fixture), []);
   assert.deepEqual(dockerEvents(fixture), []);
