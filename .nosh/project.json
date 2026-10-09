@@ -1,0 +1,36 @@
+{
+  "environments": [
+    "docker"
+  ],
+  "images": [
+    {
+      "buildNetwork": false,
+      "dev": false,
+      "dockerfile": "Dockerfile.nosh",
+      "name": "nosh",
+      "run": false
+    }
+  ],
+  "kind": "NoshProject",
+  "policyReferences": {
+    "runtime": [
+      {
+        "decisionDigests": [
+          "sha256:c8dee5c41ea6f63bb2c44f7d27b13d1ebb4d48c34039d14c80b4598b49c82b8b"
+        ],
+        "image": "nosh",
+        "imageDigest": "sha256:b2b0b566e7e00dec9618b6a50647016f6a12f1dfb7eb50d2df94d21cb6227c3b",
+        "learnRevision": "3f7eb856-8b33-45d5-96fd-70a6e954822e",
+        "workload": "dev"
+      },
+      {
+        "image": "nosh",
+        "imageDigest": "sha256:b2b0b566e7e00dec9618b6a50647016f6a12f1dfb7eb50d2df94d21cb6227c3b",
+        "workload": "run"
+      }
+    ]
+  },
+  "preflight": false,
+  "schemaVersion": 1,
+  "toolProfiling": false
+}

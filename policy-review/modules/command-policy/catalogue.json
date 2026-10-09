@@ -1,0 +1,603 @@
+{
+  "rg": {
+    "short": [
+      "F",
+      "H",
+      "I",
+      "L",
+      "P",
+      "S",
+      "U",
+      "a",
+      "c",
+      "i",
+      "l",
+      "n",
+      "o",
+      "q",
+      "s",
+      "u",
+      "v",
+      "w",
+      "x",
+      "z"
+    ],
+    "shortValues": [
+      "A",
+      "B",
+      "C",
+      "T",
+      "e",
+      "f",
+      "g",
+      "m",
+      "t"
+    ],
+    "long": [
+      "count",
+      "count-matches",
+      "files",
+      "files-with-matches",
+      "files-without-match",
+      "fixed-strings",
+      "heading",
+      "help",
+      "hidden",
+      "ignore-case",
+      "invert-match",
+      "json",
+      "line-number",
+      "line-regexp",
+      "multiline",
+      "multiline-dotall",
+      "no-config",
+      "no-filename",
+      "no-heading",
+      "no-ignore",
+      "no-ignore-parent",
+      "no-ignore-vcs",
+      "no-messages",
+      "no-unicode",
+      "null",
+      "null-data",
+      "only-matching",
+      "pcre2",
+      "quiet",
+      "smart-case",
+      "stats",
+      "text",
+      "version",
+      "with-filename",
+      "word-regexp"
+    ],
+    "longValues": [
+      "after-context",
+      "before-context",
+      "color",
+      "colors",
+      "context",
+      "encoding",
+      "file",
+      "glob",
+      "iglob",
+      "max-count",
+      "max-depth",
+      "max-filesize",
+      "path-separator",
+      "regexp",
+      "sort",
+      "sortr",
+      "type",
+      "type-not"
+    ]
+  },
+  "grep": {
+    "short": [
+      "E",
+      "F",
+      "H",
+      "I",
+      "L",
+      "R",
+      "Z",
+      "a",
+      "b",
+      "c",
+      "h",
+      "i",
+      "l",
+      "n",
+      "o",
+      "q",
+      "r",
+      "s",
+      "v",
+      "w",
+      "x",
+      "z"
+    ],
+    "shortValues": [
+      "A",
+      "B",
+      "C",
+      "e",
+      "f",
+      "m"
+    ],
+    "long": [
+      "count",
+      "dereference-recursive",
+      "extended-regexp",
+      "files-with-matches",
+      "files-without-match",
+      "fixed-strings",
+      "help",
+      "ignore-case",
+      "invert-match",
+      "line-number",
+      "line-regexp",
+      "no-filename",
+      "no-messages",
+      "null",
+      "null-data",
+      "only-matching",
+      "quiet",
+      "recursive",
+      "text",
+      "version",
+      "with-filename",
+      "word-regexp"
+    ],
+    "longValues": [
+      "after-context",
+      "before-context",
+      "binary-files",
+      "color",
+      "context",
+      "exclude",
+      "exclude-dir",
+      "file",
+      "include",
+      "max-count",
+      "regexp"
+    ]
+  },
+  "diff": {
+    "short": [
+      "B",
+      "E",
+      "N",
+      "T",
+      "U",
+      "a",
+      "b",
+      "c",
+      "i",
+      "q",
+      "r",
+      "s",
+      "t",
+      "u",
+      "w",
+      "y"
+    ],
+    "shortValues": [
+      "C",
+      "F",
+      "I",
+      "L",
+      "U",
+      "W"
+    ],
+    "long": [
+      "brief",
+      "help",
+      "ignore-all-space",
+      "ignore-blank-lines",
+      "ignore-case",
+      "ignore-space-change",
+      "new-file",
+      "recursive",
+      "report-identical-files",
+      "strip-trailing-cr",
+      "text",
+      "version"
+    ],
+    "longValues": [
+      "context",
+      "exclude",
+      "exclude-from",
+      "ignore-matching-lines",
+      "label",
+      "tabsize",
+      "unified",
+      "width"
+    ]
+  },
+  "cmp": {
+    "short": [
+      "b",
+      "l",
+      "s"
+    ],
+    "shortValues": [
+      "i",
+      "n"
+    ],
+    "long": [
+      "help",
+      "print-bytes",
+      "quiet",
+      "silent",
+      "verbose",
+      "version"
+    ],
+    "longValues": [
+      "bytes",
+      "ignore-initial"
+    ]
+  },
+  "cat": {
+    "short": [
+      "A",
+      "E",
+      "T",
+      "b",
+      "n",
+      "s",
+      "t",
+      "u",
+      "v"
+    ],
+    "shortValues": [],
+    "long": [
+      "help",
+      "number",
+      "number-nonblank",
+      "show-all",
+      "show-ends",
+      "show-nonprinting",
+      "show-tabs",
+      "squeeze-blank",
+      "version"
+    ],
+    "longValues": []
+  },
+  "head": {
+    "short": [
+      "q",
+      "v",
+      "z"
+    ],
+    "shortValues": [
+      "c",
+      "n"
+    ],
+    "long": [
+      "help",
+      "quiet",
+      "silent",
+      "verbose",
+      "version",
+      "zero-terminated"
+    ],
+    "longValues": [
+      "bytes",
+      "lines"
+    ]
+  },
+  "tail": {
+    "short": [
+      "q",
+      "v",
+      "z"
+    ],
+    "shortValues": [
+      "c",
+      "n"
+    ],
+    "long": [
+      "help",
+      "quiet",
+      "silent",
+      "verbose",
+      "version",
+      "zero-terminated"
+    ],
+    "longValues": [
+      "bytes",
+      "lines"
+    ]
+  },
+  "wc": {
+    "short": [
+      "L",
+      "c",
+      "l",
+      "m",
+      "w"
+    ],
+    "shortValues": [],
+    "long": [
+      "bytes",
+      "chars",
+      "help",
+      "lines",
+      "max-line-length",
+      "version",
+      "words"
+    ],
+    "longValues": []
+  },
+  "ls": {
+    "short": [
+      "1",
+      "A",
+      "B",
+      "C",
+      "D",
+      "F",
+      "G",
+      "H",
+      "I",
+      "L",
+      "N",
+      "Q",
+      "R",
+      "S",
+      "T",
+      "U",
+      "X",
+      "a",
+      "b",
+      "c",
+      "d",
+      "f",
+      "g",
+      "h",
+      "i",
+      "k",
+      "l",
+      "m",
+      "n",
+      "o",
+      "p",
+      "r",
+      "s",
+      "t",
+      "u",
+      "v",
+      "w",
+      "x"
+    ],
+    "shortValues": [
+      "I",
+      "T",
+      "w"
+    ],
+    "long": [
+      "all",
+      "almost-all",
+      "author",
+      "directory",
+      "help",
+      "human-readable",
+      "inode",
+      "literal",
+      "numeric-uid-gid",
+      "recursive",
+      "reverse",
+      "size",
+      "version"
+    ],
+    "longValues": [
+      "block-size",
+      "color",
+      "format",
+      "hide",
+      "ignore",
+      "quoting-style",
+      "sort",
+      "tabsize",
+      "time",
+      "time-style",
+      "width"
+    ]
+  },
+  "pwd": {
+    "short": [
+      "L",
+      "P"
+    ],
+    "shortValues": [],
+    "long": [
+      "help",
+      "logical",
+      "physical",
+      "version"
+    ],
+    "longValues": []
+  },
+  "stat": {
+    "short": [
+      "L",
+      "f",
+      "t"
+    ],
+    "shortValues": [
+      "c"
+    ],
+    "long": [
+      "dereference",
+      "file-system",
+      "help",
+      "terse",
+      "version"
+    ],
+    "longValues": [
+      "format",
+      "printf"
+    ]
+  },
+  "file": {
+    "short": [
+      "L",
+      "N",
+      "b",
+      "h",
+      "i",
+      "r"
+    ],
+    "shortValues": [],
+    "long": [
+      "brief",
+      "dereference",
+      "help",
+      "mime",
+      "mime-encoding",
+      "mime-type",
+      "no-dereference",
+      "no-pad",
+      "raw",
+      "version"
+    ],
+    "longValues": []
+  },
+  "readlink": {
+    "short": [
+      "e",
+      "f",
+      "m",
+      "n",
+      "q",
+      "s",
+      "v",
+      "z"
+    ],
+    "shortValues": [],
+    "long": [
+      "canonicalize",
+      "canonicalize-existing",
+      "canonicalize-missing",
+      "help",
+      "no-newline",
+      "quiet",
+      "silent",
+      "verbose",
+      "version",
+      "zero"
+    ],
+    "longValues": []
+  },
+  "realpath": {
+    "short": [
+      "L",
+      "P",
+      "e",
+      "m",
+      "q",
+      "s",
+      "z"
+    ],
+    "shortValues": [],
+    "long": [
+      "canonicalize-existing",
+      "canonicalize-missing",
+      "help",
+      "logical",
+      "no-symlinks",
+      "physical",
+      "quiet",
+      "strip",
+      "version",
+      "zero"
+    ],
+    "longValues": [
+      "relative-base",
+      "relative-to"
+    ]
+  },
+  "du": {
+    "short": [
+      "B",
+      "H",
+      "L",
+      "P",
+      "S",
+      "a",
+      "c",
+      "d",
+      "h",
+      "k",
+      "l",
+      "m",
+      "s",
+      "x"
+    ],
+    "shortValues": [
+      "B",
+      "d"
+    ],
+    "long": [
+      "all",
+      "apparent-size",
+      "bytes",
+      "count-links",
+      "help",
+      "human-readable",
+      "null",
+      "one-file-system",
+      "separate-dirs",
+      "summarize",
+      "total",
+      "version"
+    ],
+    "longValues": [
+      "block-size",
+      "exclude",
+      "exclude-from",
+      "max-depth"
+    ]
+  },
+  "sed": {
+    "short": [
+      "n",
+      "E",
+      "r",
+      "s",
+      "u",
+      "z"
+    ],
+    "shortValues": [
+      "e",
+      "f",
+      "l"
+    ],
+    "long": [
+      "quiet",
+      "silent",
+      "debug",
+      "posix",
+      "regexp-extended",
+      "separate",
+      "sandbox",
+      "unbuffered",
+      "null-data",
+      "zero-terminated",
+      "follow-symlinks",
+      "help",
+      "version"
+    ],
+    "longValues": [
+      "expression",
+      "file",
+      "line-length"
+    ],
+    "optionalShort": [
+      "i"
+    ],
+    "optionalLong": [
+      "in-place"
+    ]
+  }
+}

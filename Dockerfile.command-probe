@@ -1,0 +1,9 @@
+ARG NODE_IMAGE=node:24.18.0-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
+FROM ${NODE_IMAGE} AS build
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev && rm -rf /var/lib/apt/lists/*
+COPY scripts/nosh-command-bootstrap.c /src/bootstrap.c
+RUN gcc -Wall -Wextra -Werror -O2 -D_FORTIFY_SOURCE=2 -fstack-protector-strong -Wl,-z,relro,-z,now /src/bootstrap.c -o /bootstrap
+FROM ${NODE_IMAGE}
+COPY --from=build --chmod=0555 /bootstrap /usr/local/libexec/nosh-command-bootstrap
+USER 65534:65534
+ENTRYPOINT ["/usr/local/libexec/nosh-command-bootstrap"]

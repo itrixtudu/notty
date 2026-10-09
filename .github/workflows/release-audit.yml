@@ -1,0 +1,78 @@
+name: Docker release audit
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out the tested commit with host Git
+        shell: bash
+        env:
+          CHECKOUT_REF: ${{ github.ref }}
+          CHECKOUT_REPOSITORY: ${{ github.repository }}
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          git init .
+          git remote add origin "https://github.com/${CHECKOUT_REPOSITORY}.git"
+          checkout_auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 | tr -d '\n')"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $checkout_auth" \
+            git fetch --force --prune --tags origin "$CHECKOUT_REF"
+          unset CHECKOUT_TOKEN checkout_auth
+          [[ -z "$(git config --local --get-all \
+            http.https://github.com/.extraheader || true)" ]]
+          expected_commit="$(git rev-parse --verify "${CHECKOUT_SHA}^{commit}")"
+          fetched_commit="$(git rev-parse --verify 'FETCH_HEAD^{commit}')"
+          [[ "$fetched_commit" == "$expected_commit" ]]
+          git checkout --detach --force "$expected_commit"
+          [[ "$(git rev-parse --verify HEAD)" == "$expected_commit" ]]
+
+      - name: Check committed whitespace
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          zero=0000000000000000000000000000000000000000
+          if [[ -n "${BASE_SHA:-}" ]] && git cat-file -e "$BASE_SHA^{commit}"; then
+            git diff --check "$BASE_SHA" HEAD --
+          elif [[ "${BEFORE_SHA:-}" =~ ^[0-9a-f]{40}$ && "$BEFORE_SHA" != "$zero" ]] &&
+               git cat-file -e "$BEFORE_SHA^{commit}"
+          then
+            git diff --check "$BEFORE_SHA" HEAD --
+          else
+            read -r -a commit_and_parents < <(git rev-list --parents -n 1 HEAD)
+            if (( ${#commit_and_parents[@]} == 1 )); then
+              git diff-tree --check --root -r HEAD --
+            else
+              for parent in "${commit_and_parents[@]:1}"; do
+                git diff --check "$parent" HEAD --
+              done
+            fi
+          fi
+
+      - name: Run tagged release audit
+        if: startsWith(github.ref, 'refs/tags/')
+        run: ./scripts/release-audit.sh
+
+      - name: Run pre-tag release audit
+        if: ${{ startsWith(github.ref, 'refs/tags/') == false }}
+        run: ./scripts/ci-release-audit.sh

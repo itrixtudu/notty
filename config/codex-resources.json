@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "resources": [
+    {"root":"codex","path":"auth.json","category":"credentials","kind":"file","initial":"{}\n"},
+    {"root":"codex","path":"config.toml","category":"settings","kind":"file","initial":""},
+    {"root":"codex","path":"AGENTS.md","category":"settings","kind":"file","initial":""},
+    {"root":"codex","path":"AGENTS.override.md","category":"settings","kind":"file","optional":true},
+    {"root":"codex","path":"rules","category":"settings","kind":"directory"},
+    {"root":"codex","path":"prompts","category":"settings","kind":"directory"},
+    {"root":"codex","path":"skills","category":"skills","kind":"directory"},
+    {"root":"codex","path":"plugins","category":"plugins","kind":"directory"},
+    {"root":"home","path":".agents/skills","category":"skills","kind":"directory"},
+    {"root":"workspace","path":".agents/skills","category":"skills","kind":"directory"},
+    {"root":"workspace","path":".codex/skills","category":"skills","kind":"directory"},
+    {"root":"workspace","path":".codex/config.toml","category":"settings","kind":"file","initial":""},
+    {"root":"workspace","path":"AGENTS.md","category":"settings","kind":"file","initial":""},
+    {"root":"workspace","path":"AGENTS.override.md","category":"settings","kind":"file","optional":true}
+  ]
+}

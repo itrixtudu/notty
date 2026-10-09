@@ -1,0 +1,450 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nosh repository settings v1",
+  "type": "object",
+  "properties": {
+    "settings": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "default": "Repository",
+          "maxLength": 4096,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+        },
+        "build": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "default": "network",
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+              "enum": [
+                "network",
+                "profile"
+              ]
+            },
+            "context": {
+              "type": "string",
+              "default": ".",
+              "maxLength": 4096,
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!-)[^\\u0000-\\u001f\\u007f,]+$",
+              "minLength": 1
+            },
+            "dockerfile": {
+              "type": "string",
+              "default": "Dockerfile",
+              "maxLength": 4096,
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!-)[^\\u0000-\\u001f\\u007f,]+$",
+              "minLength": 1
+            },
+            "target": {
+              "type": "string",
+              "default": "",
+              "maxLength": 4096,
+              "pattern": "^[A-Za-z0-9_.-]*$"
+            },
+            "platform": {
+              "type": "string",
+              "default": "",
+              "maxLength": 4096,
+              "pattern": "^(?:linux/[a-z0-9_]+(?:/[a-z0-9_]+)?)?$"
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "default": "",
+                "maxLength": 4096,
+                "pattern": "^(?!-)[A-Za-z0-9_./:@+-]*$"
+              },
+              "maxItems": 64,
+              "default": []
+            },
+            "buildArgs": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "default": "",
+                "maxLength": 4096,
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*=[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "maxItems": 64,
+              "default": []
+            },
+            "cacheMode": {
+              "type": "string",
+              "default": "cold",
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+              "enum": [
+                "cold",
+                "warm",
+                "compare"
+              ]
+            },
+            "depth": {
+              "type": "string",
+              "default": "policy",
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+              "enum": [
+                "balanced",
+                "policy",
+                "deep"
+              ]
+            },
+            "httpCapture": {
+              "type": "string",
+              "default": "none",
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+              "enum": [
+                "none",
+                "mitmproxy"
+              ]
+            },
+            "outputMode": {
+              "type": "string",
+              "default": "load",
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+              "enum": [
+                "load",
+                "push",
+                "cache",
+                "local"
+              ]
+            },
+            "outputDirectory": {
+              "type": "string",
+              "default": "nosh-build-output",
+              "maxLength": 4096,
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!-)[^\\u0000-\\u001f\\u007f,]+$",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "mode",
+            "context",
+            "dockerfile",
+            "target",
+            "platform",
+            "tags",
+            "buildArgs",
+            "cacheMode",
+            "depth",
+            "httpCapture",
+            "outputMode",
+            "outputDirectory"
+          ],
+          "additionalProperties": false
+        },
+        "runtime": {
+          "type": "object",
+          "properties": {
+            "dev": {
+              "type": "object",
+              "properties": {
+                "image": {
+                  "type": "string",
+                  "default": "nosh",
+                  "maxLength": 4096,
+                  "pattern": "^(?!-)[A-Za-z0-9_./:@+-]*$"
+                },
+                "startApp": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "agents": {
+                  "type": "string",
+                  "default": "auto",
+                  "maxLength": 4096,
+                  "pattern": "^(auto|none|(?:codex|claude|gemini)(?:,(?:codex|claude|gemini))*)$"
+                },
+                "presets": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "default": "",
+                    "maxLength": 4096,
+                    "pattern": "^[a-zA-Z0-9_-]+$"
+                  },
+                  "maxItems": 64,
+                  "default": []
+                },
+                "baselines": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "default": "",
+                    "maxLength": 4096,
+                    "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!-)[^\\u0000-\\u001f\\u007f,@]+@sha256:[a-f0-9]{64}$"
+                  },
+                  "maxItems": 64,
+                  "default": []
+                },
+                "duration": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 86400,
+                  "default": 0
+                },
+                "launchMode": {
+                  "type": "string",
+                  "default": "enforce",
+                  "maxLength": 4096,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+                  "enum": [
+                    "enforce",
+                    "legacy"
+                  ]
+                }
+              },
+              "required": [
+                "image",
+                "startApp",
+                "agents",
+                "presets",
+                "baselines",
+                "duration",
+                "launchMode"
+              ],
+              "additionalProperties": false
+            },
+            "run": {
+              "type": "object",
+              "properties": {
+                "image": {
+                  "type": "string",
+                  "default": "nosh",
+                  "maxLength": 4096,
+                  "pattern": "^(?!-)[A-Za-z0-9_./:@+-]*$"
+                },
+                "startApp": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "agents": {
+                  "type": "string",
+                  "default": "none",
+                  "maxLength": 4096,
+                  "pattern": "^(auto|none|(?:codex|claude|gemini)(?:,(?:codex|claude|gemini))*)$"
+                },
+                "presets": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "default": "",
+                    "maxLength": 4096,
+                    "pattern": "^[a-zA-Z0-9_-]+$"
+                  },
+                  "maxItems": 64,
+                  "default": []
+                },
+                "baselines": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "default": "",
+                    "maxLength": 4096,
+                    "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!-)[^\\u0000-\\u001f\\u007f,@]+@sha256:[a-f0-9]{64}$"
+                  },
+                  "maxItems": 64,
+                  "default": []
+                },
+                "duration": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 86400,
+                  "default": 0
+                },
+                "launchMode": {
+                  "type": "string",
+                  "default": "enforce",
+                  "maxLength": 4096,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+                  "enum": [
+                    "enforce",
+                    "legacy"
+                  ]
+                }
+              },
+              "required": [
+                "image",
+                "startApp",
+                "agents",
+                "presets",
+                "baselines",
+                "duration",
+                "launchMode"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "dev",
+            "run"
+          ],
+          "additionalProperties": false
+        },
+        "tools": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "default": "read-only",
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+              "enum": [
+                "read-only",
+                "implementation"
+              ]
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "label",
+        "build",
+        "runtime",
+        "tools"
+      ],
+      "additionalProperties": false
+    },
+    "host": {
+      "type": "object",
+      "properties": {
+        "guardPrefix": {
+          "type": "string",
+          "default": "/opt/notty",
+          "maxLength": 4096,
+          "pattern": "^/[a-zA-Z0-9_+.-]+(?:/[a-zA-Z0-9_+.-]+)*$"
+        },
+        "toolingImage": {
+          "type": "string",
+          "default": "",
+          "maxLength": 4096,
+          "pattern": "^(?:sha256:[a-f0-9]{64})?$"
+        },
+        "reviewImage": {
+          "type": "string",
+          "default": "",
+          "maxLength": 4096,
+          "pattern": "^(?:sha256:[a-f0-9]{64})?$"
+        },
+        "reviewPool": {
+          "type": "string",
+          "default": "",
+          "maxLength": 4096,
+          "pattern": "^(?:[0-9.]+/[0-9]+)?$"
+        },
+        "excludedCidrs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "default": "",
+            "maxLength": 4096,
+            "pattern": "^[0-9a-fA-F:./]+$"
+          },
+          "maxItems": 64,
+          "default": []
+        },
+        "codexHome": {
+          "type": "string",
+          "default": "",
+          "maxLength": 4096,
+          "pattern": "^(?:/[^\\u0000-\\u001f\\u007f,]*)?$"
+        },
+        "toolReport": {
+          "type": "string",
+          "default": "",
+          "maxLength": 4096,
+          "pattern": "^(?:/[^\\u0000-\\u001f\\u007f,]*)?$"
+        },
+        "toolPolicyDigest": {
+          "type": "string",
+          "default": "",
+          "maxLength": 4096,
+          "pattern": "^(?:sha256:[a-f0-9]{64})?$"
+        },
+        "reviews": {
+          "type": "object",
+          "properties": {
+            "dev": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string",
+                  "default": "",
+                  "maxLength": 4096,
+                  "pattern": "^(?:/[^\\u0000-\\u001f\\u007f,]*)?$"
+                },
+                "decisionDigest": {
+                  "type": "string",
+                  "default": "",
+                  "maxLength": 4096,
+                  "pattern": "^(?:sha256:[a-f0-9]{64})?$"
+                }
+              },
+              "required": [
+                "directory",
+                "decisionDigest"
+              ],
+              "additionalProperties": false
+            },
+            "run": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string",
+                  "default": "",
+                  "maxLength": 4096,
+                  "pattern": "^(?:/[^\\u0000-\\u001f\\u007f,]*)?$"
+                },
+                "decisionDigest": {
+                  "type": "string",
+                  "default": "",
+                  "maxLength": 4096,
+                  "pattern": "^(?:sha256:[a-f0-9]{64})?$"
+                }
+              },
+              "required": [
+                "directory",
+                "decisionDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "dev",
+            "run"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "guardPrefix",
+        "toolingImage",
+        "reviewImage",
+        "reviewPool",
+        "excludedCidrs",
+        "codexHome",
+        "toolReport",
+        "toolPolicyDigest",
+        "reviews"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "settings",
+    "host"
+  ],
+  "additionalProperties": false
+}

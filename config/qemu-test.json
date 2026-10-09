@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "image": {
+    "url": "https://cloud-images.ubuntu.com/noble/20260926/noble-server-cloudimg-amd64.img",
+    "sha256": "6a81c37564db9b1ee84e141922625e1d7c5b389b99bb3c572e0243607d5bb4d2",
+    "release": "Ubuntu 24.04 LTS (Noble Numbat), 20260926",
+    "architecture": "amd64",
+    "format": "qcow2"
+  },
+  "guest": {
+    "aptSnapshot": "20260928T000000Z",
+    "packages": {
+      "docker.io": "29.1.3-0ubuntu3~24.04.2",
+      "docker-buildx": "0.30.1-0ubuntu1~24.04.1",
+      "git": "1:2.43.0-1ubuntu7.3",
+      "python3": "3.12.3-0ubuntu2.1",
+      "curl": "8.5.0-2ubuntu10.15",
+      "ca-certificates": "20260601~24.04.1",
+      "jq": "1.7.1-3ubuntu0.24.04.2",
+      "apparmor": "4.0.1really4.0.1-0ubuntu0.24.04.8",
+      "iproute2": "6.1.0-1ubuntu6.4",
+      "libbpf1": "1:1.3.0-2build2",
+      "libelf1t64": "0.190-1.1ubuntu0.1",
+      "zlib1g": "1:1.3.dfsg-3.1ubuntu2.2",
+      "libc6": "2.39-0ubuntu8.9"
+    }
+  }
+}

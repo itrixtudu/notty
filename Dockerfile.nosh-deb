@@ -1,0 +1,24 @@
+ARG BASE_IMAGE=node:24.18.0-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
+FROM ${BASE_IMAGE}
+
+LABEL io.notty.nosh-deb-builder="1"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      coreutils \
+      dpkg-dev \
+      findutils \
+      git \
+      gzip \
+      python3 \
+      tar \
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -o node -g node -m 0555 /input /bundle \
+    && install -d -o node -g node -m 0755 /output /work
+
+COPY --chown=root:root scripts/build-nosh-deb-container.sh /usr/local/libexec/build-nosh-deb
+RUN chmod 0555 /usr/local/libexec/build-nosh-deb
+
+USER node
+WORKDIR /work
+ENTRYPOINT ["/usr/local/libexec/build-nosh-deb"]

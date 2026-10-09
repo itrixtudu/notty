@@ -1,0 +1,31 @@
+.shell { height: auto; min-height: 100vh; overflow: visible; display: block; }
+.content { max-width: 1500px; margin: 0 auto; padding: 20px; }
+.toolbar { position: sticky; top: 0; z-index: 2; }
+.stats { display: flex; flex-wrap: wrap; gap: 24px; margin: 18px 0; }
+.stat { padding: 14px 18px; background: var(--review-panel); border: 1px solid var(--review-border); border-radius: 8px; min-width: 140px; }
+.stat strong { display: block; font-size: 24px; color: var(--review-accent); }
+.stat span { font-size: 12px; color: var(--review-muted); }
+.badge { color: var(--review-accent); border: 1px solid var(--review-border); padding: 5px 10px; border-radius: 20px; font-size: 12px; }
+.error { color: #fda4af; }
+.success { color: #86efac; }
+.controls { border: 0; margin: 0; padding: 0; min-width: 0; }
+.panel { border: 1px solid var(--review-border); border-radius: 10px; margin-bottom: 20px; }
+.toolName { background: var(--review-panel-strong); color: var(--review-accent); font-size: 13px; }
+.note { display: block; margin-top: 10px; width: 100%; }
+.evidence { margin-top: 10px; }
+.requestBrowser { padding: 12px 0; min-width: 0; }
+.requestEntry { border-top: 1px solid var(--review-border); padding: 12px 0; overflow-wrap: anywhere; }
+.requestEntry summary { cursor: pointer; }
+.requestCode { max-height: 380px; overflow: auto; padding: 12px; background: var(--review-panel-strong); user-select: text; }
+.toolDifference { max-width: 560px; }
+.experimentalRules { margin-top: 16px; }
+.ruleEditor { display: flex; flex-wrap: wrap; gap: 14px; margin: 14px 0; padding: 14px; border: 1px solid var(--review-border); border-radius: 8px; }
+.ruleEditor label { display: flex; flex-direction: column; gap: 6px; min-width: 180px; }
+.ruleEditor input[type=checkbox] { width: auto; }
+.ruleEditor textarea { min-height: 80px; max-width: 100%; }
+.ruleEditor p { flex-basis: 100%; }
+.shell :is(button, input, select, summary):focus-visible { outline: 2px solid var(--review-accent); outline-offset: 3px; }
+.shell button { cursor: pointer; }
+.shell button:disabled { cursor: not-allowed; }
+.shell pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .content { padding: 8px; } .toolbar { position: static; display: flex; flex-wrap: wrap; } }
